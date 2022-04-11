@@ -1,0 +1,8 @@
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.tmp
+
+tests/demo
+tests/tmp
