@@ -44,3 +44,6 @@ test-clean:
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
 
+.PHONY: pb
+pb:
+	protoc -I=./tests/pb --go_out=./tests ./tests/pb/demo.proto
