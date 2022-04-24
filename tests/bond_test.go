@@ -104,11 +104,11 @@ func TestRecord(t *testing.T) {
 // and we have .Set and .Get() and then .Query(), which will use indexes etc.
 // we need the bond.Store metaphor, because,
 
-func XTestCreate(t *testing.T) {
+func TestCreate(t *testing.T) {
 	makeRecords(t, 1000, 1500)
 }
 
-func XTestGetRecords(t *testing.T) {
+func TestGetRecords(t *testing.T) {
 	for i := 1000; i < 1500; i++ {
 		val, _, err := DB.Get(accountKey(uint32(i)))
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func XTestGetRecords(t *testing.T) {
 	}
 }
 
-func XTestIter(t *testing.T) {
+func TestIter(t *testing.T) {
 	keyUpperBound := func(b []byte) []byte {
 		end := make([]byte, len(b))
 		copy(end, b)
@@ -152,7 +152,7 @@ func XTestIter(t *testing.T) {
 	}
 }
 
-func XTestIterSeek(t *testing.T) {
+func TestIterSeek(t *testing.T) {
 	iter := DB.NewIter(nil)
 	if iter.SeekGE([]byte("account/1002")); iter.Valid() {
 		fmt.Printf("%s\n", iter.Key())
@@ -201,4 +201,93 @@ func makeRecords(t *testing.T, start, end int) {
 
 	err := batch.Commit(pebble.Sync)
 	require.NoError(t, err)
+}
+
+func TestIndex(t *testing.T) {
+	fmt.Println("hi")
+
+	// idx1
+	idx := bond.Index{
+		Table:     0,
+		EntryType: 1,
+		Column:    []byte("accountName/"),
+		Value:     []byte("peter"),
+		ID:        []byte{1},
+	}
+	err := DB.Set(idx.Key(), nil, pebble.Sync)
+	require.NoError(t, err)
+	// spew.Dump(idx.Key())
+
+	// idx2
+	idx2 := bond.Index{
+		Table:     0,
+		EntryType: 1,
+		Column:    []byte("accountName/"),
+		Value:     []byte("julia"),
+		ID:        []byte{2},
+	}
+	err = DB.Set(idx2.Key(), nil, pebble.Sync)
+	require.NoError(t, err)
+	// spew.Dump(idx.Key())
+
+	// idx3
+	idx3 := bond.Index{
+		Table:     0,
+		EntryType: 1,
+		Column:    []byte("contractAddress/"),
+		Value:     []byte("0xa"),
+		ID:        []byte{1},
+	}
+	err = DB.Set(idx3.Key(), nil, pebble.Sync)
+	require.NoError(t, err)
+
+	// idx4
+	idx4 := bond.Index{
+		Table:     0,
+		EntryType: 1,
+		Column:    []byte("contractAddress/"),
+		Value:     []byte("0xb"),
+		ID:        []byte{2},
+	}
+	err = DB.Set(idx4.Key(), nil, pebble.Sync)
+	require.NoError(t, err)
+
+	//--
+
+	// z := seekIndex(0, []byte("contractAddress/"))
+	z := seekIndex(0, []byte("accountAddress/"))
+	z2 := seekIndex(0, []byte("b"))
+
+	// iter := DB.NewIter(nil)
+	iter := DB.NewIter(&pebble.IterOptions{
+		LowerBound: z, UpperBound: z2,
+		OnlyReadGuaranteedDurable: true,
+	})
+
+	if iter.SeekGE(z); iter.Valid() {
+		// fmt.Printf("%s\n", iter.Key())
+		spew.Dump(iter.Key())
+	}
+	for iter.Next() {
+		// fmt.Printf("next %s\n", iter.Key())
+		spew.Dump(iter.Key())
+	}
+}
+
+func seekIndex(tableID bond.TableID, column []byte) []byte {
+	b := []byte{byte(tableID), 1}
+	b = append(b, column...)
+	return b
+}
+
+func keyUpperBound(b []byte) []byte {
+	end := make([]byte, len(b))
+	copy(end, b)
+	for i := len(end) - 1; i >= 0; i-- {
+		end[i] = end[i] + 1
+		if end[i] != 0 {
+			return end[:i+1]
+		}
+	}
+	return nil // no upper-bound
 }
