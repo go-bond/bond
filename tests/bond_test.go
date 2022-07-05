@@ -255,14 +255,22 @@ func TestIndex(t *testing.T) {
 	//--
 
 	// z := seekIndex(0, []byte("contractAddress/"))
-	z := seekIndex(0, []byte("accountAddress/"))
-	z2 := seekIndex(0, []byte("b"))
+	z := seekIndex(0, []byte("accountName/"))
+	// z2 := seekIndex(0, []byte("b"))
+	// upper := []byte("accountName")
+	// upper = append(upper, '0')
+	// z2 := seekIndex(0, upper)
+
+	z2 := keyUpperBound(z)
 
 	// iter := DB.NewIter(nil)
 	iter := DB.NewIter(&pebble.IterOptions{
 		LowerBound: z, UpperBound: z2,
 		OnlyReadGuaranteedDurable: true,
 	})
+
+	// spew.Dump(z)
+	// spew.Dump(z2)
 
 	if iter.SeekGE(z); iter.Valid() {
 		// fmt.Printf("%s\n", iter.Key())
