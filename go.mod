@@ -3,18 +3,18 @@ module github.com/go-bond/bond
 go 1.18
 
 require (
-	github.com/cockroachdb/pebble v0.0.0-20220421143146-8decd08cdb9d
+	github.com/cockroachdb/pebble v0.0.0-20220701152857-1f4dfe6f2a75
 	github.com/davecgh/go-spew v1.1.1
 	github.com/stretchr/testify v1.7.1
 )
 
 require (
 	github.com/DataDog/zstd v1.5.2 // indirect
+	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
-	github.com/codahale/hdrhistogram v0.9.0 // indirect
 	github.com/getsentry/sentry-go v0.13.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
