@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,7 +91,22 @@ func Test_Table(t *testing.T) {
 
 	it := db.NewIter(nil)
 
+	fmt.Printf("----------------- Database Contents ----------------- \n")
+
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("%s: %s\n", it.Key(), it.Value())
 	}
+
+	fmt.Printf("----------------- GetAll Contents ----------------- \n")
+
+	tkns, err := tokenBalanceTable.GetAll()
+	require.Nil(t, err)
+
+	spew.Dump(tkns)
+
+	fmt.Printf("----------------- GetAllForIndex Contents ----------------- \n")
+	tkns, err = tokenBalanceTable.GetAllForIndex(DefaultMainIndexID+1, TokenBalance{AccountID: 1})
+	require.Nil(t, err)
+
+	spew.Dump(tkns)
 }

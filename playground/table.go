@@ -1,6 +1,7 @@
 package playground
 
 import (
+	"bytes"
 	"encoding/json"
 	"sync"
 
@@ -104,12 +105,55 @@ func (t *Table[T]) Insert(tr T) error {
 	return nil
 }
 
-func (t *Table[T]) GetFromIndex(idxID IndexID, tmpl T) []T {
-	return nil
+func (t *Table[T]) GetAll() ([]T, error) {
+	lowerBound := t.compoundKeyDefaultIndex(DefaultMainIndexID)
+	iter := t.db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+	})
+
+	var ret []T
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
+			break
+		}
+
+		var t T
+		err := json.Unmarshal(iter.Value(), &t)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, t)
+	}
+
+	return ret, nil
 }
 
-func (t *Table[T]) GetAll() []T {
-	return nil
+func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
+	t.mutex.RLock()
+	lowerBound := t.compoundKeyNoRecord(t.indexes[idxID], tmpl)
+	t.mutex.RUnlock()
+
+	iter := t.db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+	})
+
+	var ret []T
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
+			break
+		}
+
+		var t T
+		err := json.Unmarshal(iter.Value(), &t)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, t)
+	}
+
+	return ret, nil
 }
 
 func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
@@ -117,5 +161,16 @@ func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
 	compKey = append(compKey, idx.IndexKey(tr)...)
 	compKey = append(compKey, []byte("-")...)
 	compKey = append(compKey, t.recordKeyFunc(tr)...)
+	return compKey
+}
+
+func (t *Table[T]) compoundKeyDefaultIndex(indexID IndexID) []byte {
+	return []byte{byte(t.TableID), byte(indexID), byte('-')}
+}
+
+func (t *Table[T]) compoundKeyNoRecord(idx *Index[T], tr T) []byte {
+	compKey := []byte{byte(t.TableID)}
+	compKey = append(compKey, idx.IndexKey(tr)...)
+	compKey = append(compKey, []byte("-")...)
 	return compKey
 }
