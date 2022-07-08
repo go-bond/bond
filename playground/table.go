@@ -22,23 +22,23 @@ type Index[T any] struct {
 	IndexFilterFunction IndexFilterFunction[T]
 }
 
-func NewIndex[T any](idxID IndexID, iFn IndexKeyFunction[T], ifFn ...IndexFilterFunction[T]) *Index[T] {
+func NewIndex[T any](idxID IndexID, idxFn IndexKeyFunction[T], idxFFn ...IndexFilterFunction[T]) *Index[T] {
 	idx := &Index[T]{
 		IndexID:          idxID,
-		IndexKeyFunction: iFn,
+		IndexKeyFunction: idxFn,
 		IndexFilterFunction: func(t T) bool {
 			return true
 		},
 	}
 
-	if len(ifFn) > 0 {
-		idx.IndexFilterFunction = ifFn[0]
+	if len(idxFFn) > 0 {
+		idx.IndexFilterFunction = idxFFn[0]
 	}
 
 	return idx
 }
 
-func (i *Index[T]) IndexKeyForRecord(t T) []byte {
+func (i *Index[T]) IndexKey(t T) []byte {
 	return append([]byte{byte(i.IndexID)}, i.IndexKeyFunction(t)...)
 }
 
@@ -114,7 +114,7 @@ func (t *Table[T]) GetAll() []T {
 
 func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
-	compKey = append(compKey, idx.IndexKeyForRecord(tr)...)
+	compKey = append(compKey, idx.IndexKey(tr)...)
 	compKey = append(compKey, []byte("-")...)
 	compKey = append(compKey, t.recordKeyFunc(tr)...)
 	return compKey
