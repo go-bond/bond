@@ -1,51 +1,144 @@
 package bond
 
-// Maybe 'Table' .. maybe 'Store' .. as interface type
+import (
+	"bytes"
+	"sync"
 
-// structure is:
-// key = [tableID (1 byte)][entry type (1 byte)][...]
-// for entry type, we could have > 1 means its one of the indexs.. it works..
-//
-// for table, [...]:
-// key = [column (1 byte)][record id]
-// value = binaryEncode([record])
-//
-// for index, [...]:
-// key = [column id (1 byte)][column value]/[record id]
-// value = nil
-
-type TableID uint8
-
-type EntryType uint8
-
-const (
-	TableEntryType EntryType = iota
-	IndexEntryType
+	"github.com/cockroachdb/pebble"
 )
 
-type Index struct { // interesting, this structure, might work for all of our tables and indexes..? maybe. doesn't have to though
-	Table     TableID
-	EntryType EntryType
-	Column    []byte // TODO: can change later to just byte or uint8 (same thing)
-	Value     []byte
-	ID        []byte
+type TableID uint8
+type TableRecordKeyFunc[T any] func(t T) []byte
 
-	// TODO: what we're missing is the key!
-	// we know the table, column, cool.. we need the ID
+type Table[T any] struct {
+	TableID TableID
 
-	ComputedKey []byte
+	db *DB
+
+	recordKeyFunc TableRecordKeyFunc[T]
+
+	indexes map[IndexID]*Index[T]
+
+	mutex sync.RWMutex
 }
 
-func (i *Index) Key() []byte {
-	if len(i.ComputedKey) > 0 {
-		return i.ComputedKey
+func NewTable[T any](db *DB, id TableID, trkFn TableRecordKeyFunc[T]) *Table[T] {
+	t := &Table[T]{
+		TableID:       id,
+		db:            db,
+		recordKeyFunc: trkFn,
+		indexes:       make(map[IndexID]*Index[T]),
+		mutex:         sync.RWMutex{},
 	}
-	b := []byte{byte(i.Table), byte(i.EntryType)}
-	b = append(b, i.Column...)
-	// b = append(b, '/')
-	b = append(b, i.Value...)
-	b = append(b, '/')
-	b = append(b, i.ID...)
-	i.ComputedKey = b
-	return b
+
+	t.AddIndexes([]*Index[T]{
+		NewIndex[T](DefaultMainIndexID, func(t T) []byte { return []byte{} }),
+	}, false)
+
+	return t
+}
+
+func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
+	t.mutex.Lock()
+	for _, idx := range idxs {
+		t.indexes[idx.IndexID] = idx
+	}
+	t.mutex.Unlock()
+
+	if len(reIndex) > 0 && reIndex[0] {
+		// todo: build index
+	}
+}
+
+func (t *Table[T]) Insert(tr T) error {
+	t.mutex.RLock()
+	keysForInsert := make([][]byte, 0, len(t.indexes))
+
+	for _, idx := range t.indexes {
+		if idx.IndexFilterFunction(tr) {
+			keysForInsert = append(keysForInsert, t.compoundKey(idx, tr))
+		}
+	}
+	t.mutex.RUnlock()
+
+	// todo: insert to pebble shall indexes contain pointers to main index or duplicated data?
+	data, _ := t.db.RecordSerializer().Serialize(tr)
+	for _, key := range keysForInsert {
+		err := t.db.Set(key, data, pebble.Sync)
+		if err != nil {
+			// todo: handle rollback
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *Table[T]) GetAll() ([]T, error) {
+	lowerBound := t.compoundKeyDefaultIndex(DefaultMainIndexID)
+	iter := t.db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+	})
+
+	var ret []T
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
+			break
+		}
+
+		var record T
+		err := t.db.RecordSerializer().Deserialize(iter.Value(), &record)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, record)
+	}
+
+	return ret, nil
+}
+
+func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
+	t.mutex.RLock()
+	lowerBound := t.compoundKeyNoRecord(t.indexes[idxID], tmpl)
+	t.mutex.RUnlock()
+
+	iter := t.db.NewIter(&pebble.IterOptions{
+		LowerBound: lowerBound,
+	})
+
+	var ret []T
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
+			break
+		}
+
+		var record T
+		err := t.db.RecordSerializer().Deserialize(iter.Value(), &record)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, record)
+	}
+
+	return ret, nil
+}
+
+func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
+	compKey := []byte{byte(t.TableID)}
+	compKey = append(compKey, idx.IndexKey(tr)...)
+	compKey = append(compKey, []byte("-")...)
+	compKey = append(compKey, t.recordKeyFunc(tr)...)
+	return compKey
+}
+
+func (t *Table[T]) compoundKeyDefaultIndex(indexID IndexID) []byte {
+	return []byte{byte(t.TableID), byte(indexID), byte('-')}
+}
+
+func (t *Table[T]) compoundKeyNoRecord(idx *Index[T], tr T) []byte {
+	compKey := []byte{byte(t.TableID)}
+	compKey = append(compKey, idx.IndexKey(tr)...)
+	compKey = append(compKey, []byte("-")...)
+	return compKey
 }
