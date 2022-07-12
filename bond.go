@@ -36,14 +36,6 @@ func Open(dirname string, opts *Options) (*DB, error) {
 	return &DB{DB: pdb, recordSerializer: serializer}, nil
 }
 
-func CreateTable[T any](db *DB, trkFn TableRecordKeyFunc[T]) *Table[T] {
-	return NewTable[T](db, db.nextTableId(), trkFn)
-}
-
-func CreateTableWithTableID[T any](db *DB, tableId TableID, trkFn TableRecordKeyFunc[T]) *Table[T] {
-	return NewTable[T](db, tableId, trkFn)
-}
-
 func (db *DB) RecordSerializer() Serializer {
 	return db.recordSerializer
 }

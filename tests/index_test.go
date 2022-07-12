@@ -7,8 +7,45 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBond_NewIndex(t *testing.T) {
+	const (
+		TokenBalanceAccountIndexID = bond.IndexID(1)
+	)
+
+	TokenBalanceAccountIndex := bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountIndexID,
+		func(tb *TokenBalance) []byte {
+			buffer := bytes.NewBuffer([]byte{})
+			_, _ = fmt.Fprintf(buffer, "%d", tb.AccountID)
+			return buffer.Bytes()
+		},
+	)
+
+	assert.Equal(t, TokenBalanceAccountIndexID, TokenBalanceAccountIndex.IndexID)
+	assert.Equal(t, []uint8{0x1, 0x31}, TokenBalanceAccountIndex.IndexKey(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, true, TokenBalanceAccountIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
+
+	TokenBalanceAccountIndexSelective := bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountIndexID,
+		func(tb *TokenBalance) []byte {
+			buffer := bytes.NewBuffer([]byte{})
+			_, _ = fmt.Fprintf(buffer, "%d", tb.AccountID)
+			return buffer.Bytes()
+		},
+		func(tb *TokenBalance) bool {
+			return tb.AccountID == 1
+		},
+	)
+
+	assert.Equal(t, TokenBalanceAccountIndexID, TokenBalanceAccountIndexSelective.IndexID)
+	assert.Equal(t, []uint8{0x1, 0x31}, TokenBalanceAccountIndexSelective.IndexKey(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, true, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, false, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 2}))
+}
 
 func TestBond_Table_Index(t *testing.T) {
 	db := setupDatabase()
