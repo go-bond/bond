@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Table(t *testing.T) {
+func TestBond_Table_Index(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
 

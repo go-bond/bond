@@ -16,7 +16,6 @@ func TestBond_CreateTable(t *testing.T) {
 	tokenBalanceTable := bond.CreateTable[*TokenBalance](db, func(tb *TokenBalance) []byte {
 		key := make([]byte, 8)
 		binary.LittleEndian.PutUint64(key, tb.ID)
-
 		return key
 	})
 	require.NotNil(t, tokenBalanceTable)
@@ -27,17 +26,19 @@ func TestBond_CreateTableWithTableID(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
 
-	tokenBalanceTableID := bond.TableID(0xC0)
+	const (
+		TokenBalanceTableID bond.TableID = 0xC0
+	)
+
 	tokenBalanceTable := bond.CreateTableWithTableID[*TokenBalance](
 		db,
-		tokenBalanceTableID,
+		TokenBalanceTableID,
 		func(tb *TokenBalance) []byte {
 			key := make([]byte, 8)
 			binary.LittleEndian.PutUint64(key, tb.ID)
-
 			return key
 		},
 	)
 	require.NotNil(t, tokenBalanceTable)
-	assert.Equal(t, tokenBalanceTableID, tokenBalanceTable.TableID)
+	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.TableID)
 }
