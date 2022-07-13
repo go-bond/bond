@@ -1,8 +1,6 @@
 package bond
 
 import (
-	"sync/atomic"
-
 	"github.com/cockroachdb/pebble"
 )
 
@@ -16,8 +14,6 @@ type DB struct {
 	*pebble.DB
 
 	recordSerializer Serializer
-
-	lastTableID uint32
 }
 
 func Open(dirname string, opts *Options) (*DB, error) {
@@ -42,8 +38,4 @@ func (db *DB) RecordSerializer() Serializer {
 
 func (db *DB) Close() error {
 	return db.DB.Close()
-}
-
-func (db *DB) nextTableId() TableID {
-	return TableID(atomic.AddUint32(&db.lastTableID, 1))
 }
