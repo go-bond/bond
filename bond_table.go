@@ -62,7 +62,7 @@ func (t *Table[T]) Insert(tr T) error {
 	t.mutex.RUnlock()
 
 	// todo: insert to pebble shall indexes contain pointers to main index or duplicated data?
-	data, _ := t.db.RecordSerializer().Serialize(tr)
+	data, _ := t.db.Serializer().Serialize(tr)
 	for _, key := range keysForInsert {
 		err := t.db.Set(key, data, pebble.Sync)
 		if err != nil {
@@ -86,7 +86,7 @@ func (t *Table[T]) GetAll() ([]T, error) {
 		}
 
 		var record T
-		err := t.db.RecordSerializer().Deserialize(iter.Value(), &record)
+		err := t.db.Serializer().Deserialize(iter.Value(), &record)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +99,7 @@ func (t *Table[T]) GetAll() ([]T, error) {
 
 func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
 	t.mutex.RLock()
-	lowerBound := t.compoundKeyNoRecord(t.indexes[idxID], tmpl)
+	lowerBound := t.tableKey(t.indexes[idxID], tmpl)
 	t.mutex.RUnlock()
 
 	iter := t.db.NewIter(&pebble.IterOptions{
@@ -113,7 +113,7 @@ func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
 		}
 
 		var record T
-		err := t.db.RecordSerializer().Deserialize(iter.Value(), &record)
+		err := t.db.Serializer().Deserialize(iter.Value(), &record)
 		if err != nil {
 			return nil, err
 		}
@@ -124,21 +124,19 @@ func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
 	return ret, nil
 }
 
-func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
+func (t *Table[T]) tableKey(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
 	compKey = append(compKey, idx.IndexKey(tr)...)
 	compKey = append(compKey, []byte("-")...)
+	return compKey
+}
+
+func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
+	compKey := t.tableKey(idx, tr)
 	compKey = append(compKey, t.recordKeyFunc(tr)...)
 	return compKey
 }
 
 func (t *Table[T]) compoundKeyDefaultIndex(indexID IndexID) []byte {
 	return []byte{byte(t.TableID), byte(indexID), byte('-')}
-}
-
-func (t *Table[T]) compoundKeyNoRecord(idx *Index[T], tr T) []byte {
-	compKey := []byte{byte(t.TableID)}
-	compKey = append(compKey, idx.IndexKey(tr)...)
-	compKey = append(compKey, []byte("-")...)
-	return compKey
 }

@@ -13,7 +13,7 @@ type Options struct {
 type DB struct {
 	*pebble.DB
 
-	recordSerializer Serializer
+	serializer Serializer
 }
 
 func Open(dirname string, opts *Options) (*DB, error) {
@@ -29,11 +29,11 @@ func Open(dirname string, opts *Options) (*DB, error) {
 		serializer = &JsonSerializer{}
 	}
 
-	return &DB{DB: pdb, recordSerializer: serializer}, nil
+	return &DB{DB: pdb, serializer: serializer}, nil
 }
 
-func (db *DB) RecordSerializer() Serializer {
-	return db.recordSerializer
+func (db *DB) Serializer() Serializer {
+	return db.serializer
 }
 
 func (db *DB) Close() error {
