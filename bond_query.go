@@ -76,54 +76,91 @@ func (o *Or[R]) Eval(r R) bool {
 	return evalReturn
 }
 
+// EvaluableAndIndex the pair of evaluable and index on which query is executed.
+type evaluableAndIndex[R any] struct {
+	Evaluable     Evaluable[R]
+	Index         *Index[R]
+	IndexSelector R
+}
+
 // OrderLessFunc is the function template to be used for sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
 
 // Query is the structure that is used to build record query.
 //
 // Example:
-//		bond.Query[*Contract]{}.
-//			With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
-//			Where(&bond.Gt[*Contract, uint64]{
-//				Record: func(c *Contract) uint64 {
-//					return c.Balance
-//				},
-//				Greater: 10,
-//			}).
-//			Limit(50)
+//	bond.Query[*Contract]{}.
+//		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
+//		Where(&bond.Gt[*Contract, uint64]{
+//			Record: func(c *Contract) uint64 {
+//				return c.Balance
+//			},
+//			Greater: 10,
+//		}).
+//		Limit(50)
 //
 type Query[R any] struct {
+	table         *Table[R]
+	index         *Index[R]
+	indexSelector R
+
+	where         []evaluableAndIndex[R]
+	orderLessFunc OrderLessFunc[R]
+	offset        uint64
+	limit         uint64
+}
+
+func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
+	return Query[R]{
+		table:         t,
+		index:         i,
+		where:         []evaluableAndIndex[R]{},
+		orderLessFunc: nil,
+		offset:        0,
+		limit:         0,
+	}
 }
 
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
 // indexed fields set.
 func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
-	panic("implement me!")
+	q.index = idx
+	q.indexSelector = selector
+	return q
 }
 
 // Where adds additional filtering to the query. The conditions can be built with
 // structures that implement Evaluable interface.
 func (q Query[R]) Where(evaluable Evaluable[R]) Query[R] {
-	panic("implement me!")
+	newWhere := make([]evaluableAndIndex[R], 0, len(q.where)+1)
+	q.where = append(append(newWhere, q.where...), evaluableAndIndex[R]{
+		Evaluable:     evaluable,
+		Index:         q.index,
+		IndexSelector: q.indexSelector,
+	})
+	return q
 }
 
 // Order sets order of the records.
 func (q Query[R]) Order(less OrderLessFunc[R]) Query[R] {
-	panic("implement me!")
+	q.orderLessFunc = less
+	return q
 }
 
 // Offset sets offset of the records.
 func (q Query[R]) Offset(offset uint64) Query[R] {
-	panic("implement me!")
+	q.offset = offset
+	return q
 }
 
 // Limit sets the maximal number of records returned.
 func (q Query[R]) Limit(limit uint64) Query[R] {
-	panic("implement me!")
+	q.limit = limit
+	return q
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(a interface{}) error {
+func (q Query[R]) Execute(a any) error {
 	panic("implement me!")
 }
