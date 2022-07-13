@@ -62,20 +62,30 @@ func (t *Table[T]) Insert(tr T) error {
 		return err
 	}
 
+	batch := t.db.NewBatch()
+
 	// insert data
-	err = t.db.Set(t.tableKey(tr), data, pebble.Sync)
+	err = batch.Set(t.tableKey(tr), data, pebble.Sync)
 	if err != nil {
+		_ = batch.Close()
 		return err
 	}
 
 	// update indexes
 	for _, key := range keysForIndexInsert {
-		err = t.db.Set(key, []byte{}, pebble.Sync)
+		err = batch.Set(key, []byte{}, pebble.Sync)
 		if err != nil {
-			// todo: handle rollback
+			_ = batch.Close()
 			return err
 		}
 	}
+
+	err = batch.Commit(pebble.Sync)
+	if err != nil {
+		_ = batch.Close()
+		return err
+	}
+
 	return nil
 }
 

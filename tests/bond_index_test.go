@@ -29,6 +29,7 @@ func TestBond_NewIndex(t *testing.T) {
 	assert.Equal(t, TokenBalanceAccountIndexID, TokenBalanceAccountIndex.IndexID)
 	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIndex.IndexKey(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, true, TokenBalanceAccountIndex.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 
 	TokenBalanceAccountIndexSelective := bond.NewIndex[*TokenBalance](
 		TokenBalanceAccountIndexID,
