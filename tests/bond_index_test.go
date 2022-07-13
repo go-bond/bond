@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,9 +61,9 @@ func TestBond_Table_Index(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID                   = bond.DefaultMainIndexID
-		TokenBalanceAccountIndexID                   = iota
-		TokenBalanceAccountAndContractAddressIndexID = iota
+		TokenBalanceDefaultIndexID = bond.DefaultMainIndexID
+		TokenBalanceAccountIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
 	)
 
 	var (
@@ -134,23 +133,4 @@ func TestBond_Table_Index(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("%s: %s\n", it.Key(), it.Value())
 	}
-
-	fmt.Printf("----------------- GetAll Contents ----------------- \n")
-
-	tkns, err := tokenBalanceTable.GetAll()
-	require.Nil(t, err)
-
-	spew.Dump(tkns)
-
-	fmt.Printf("----------------- GetAllForIndex Account=1 Contents ----------------- \n")
-	tkns, err = tokenBalanceTable.GetAllForIndex(bond.DefaultMainIndexID+1, &TokenBalance{AccountID: 1})
-	require.Nil(t, err)
-
-	spew.Dump(tkns)
-
-	fmt.Printf("----------------- GetAllForIndex Account=2 Contents ----------------- \n")
-	tkns, err = tokenBalanceTable.GetAllForIndex(bond.DefaultMainIndexID+1, &TokenBalance{AccountID: 2})
-	require.Nil(t, err)
-
-	spew.Dump(tkns)
 }

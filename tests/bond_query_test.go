@@ -1,110 +1,110 @@
 package tests
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/go-bond/bond"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestBond_Eq(t *testing.T) {
-	eq := &bond.Eq[*TokenBalance, uint32]{func(tb *TokenBalance) uint32 {
-		return tb.AccountID
-	}, 1}
+func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
+	db := setupDatabase()
 
-	evaluable := bond.Evaluable[*TokenBalance](eq)
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
 
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 1}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 2}))
-}
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
+		buffer := bytes.NewBuffer([]byte{})
+		_, _ = fmt.Fprintf(buffer, "%d", tb.ID)
+		return buffer.Bytes()
+	})
 
-func TestBond_Gt(t *testing.T) {
-	gt := &bond.Gt[*TokenBalance, uint32]{func(tb *TokenBalance) uint32 {
-		return tb.AccountID
-	}, 0}
+	const (
+		TokenBalanceDefaultIndexID = bond.DefaultMainIndexID
+		TokenBalanceAccountIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
 
-	evaluable := bond.Evaluable[*TokenBalance](gt)
-
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 1}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 0}))
-}
-
-func TestBond_Gte(t *testing.T) {
-	gte := &bond.Gte[*TokenBalance, uint32]{func(tb *TokenBalance) uint32 {
-		return tb.AccountID
-	}, 1}
-
-	evaluable := bond.Evaluable[*TokenBalance](gte)
-
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 1}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 0}))
-}
-
-func TestBond_Lt(t *testing.T) {
-	lt := &bond.Lt[*TokenBalance, uint32]{func(tb *TokenBalance) uint32 {
-		return tb.AccountID
-	}, 1}
-
-	evaluable := bond.Evaluable[*TokenBalance](lt)
-
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 1}))
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 0}))
-}
-
-func TestBond_Lte(t *testing.T) {
-	lte := &bond.Lte[*TokenBalance, uint32]{func(tb *TokenBalance) uint32 {
-		return tb.AccountID
-	}, 0}
-
-	evaluable := bond.Evaluable[*TokenBalance](lte)
-
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 1}))
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 0}))
-}
-
-func TestBond_And(t *testing.T) {
-	andCond := &bond.And[*TokenBalance]{
-		&bond.Gte[*TokenBalance, uint32]{
-			func(tb *TokenBalance) uint32 {
-				return tb.AccountID
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountIndexID,
+			func(tb *TokenBalance) []byte {
+				buffer := bytes.NewBuffer([]byte{})
+				_, _ = fmt.Fprintf(buffer, "%s", tb.AccountAddress)
+				return buffer.Bytes()
 			},
-			5,
-		},
-		&bond.Lt[*TokenBalance, uint32]{
-			func(tb *TokenBalance) uint32 {
-				return tb.AccountID
+		)
+		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAndContractAddressIndexID,
+			func(tb *TokenBalance) []byte {
+				return append(append([]byte{}, tb.AccountAddress...), tb.ContractAddress...)
 			},
-			6,
-		},
+			func(tb *TokenBalance) bool {
+				return tb.ContractAddress == "0xtestContract"
+			},
+		)
+	)
+
+	var TokenBalanceIndexes = []*bond.Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	evaluable := bond.Evaluable[*TokenBalance](andCond)
+	tokenBalanceTable.AddIndexes(TokenBalanceIndexes, false)
 
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 4}))
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 5}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 6}))
+	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
 }
 
-func TestBond_Or(t *testing.T) {
-	orCond := &bond.Or[*TokenBalance]{
-		&bond.Gte[*TokenBalance, uint32]{
-			func(tb *TokenBalance) uint32 {
-				return tb.AccountID
-			},
-			5,
-		},
-		&bond.Lt[*TokenBalance, uint32]{
-			func(tb *TokenBalance) uint32 {
-				return tb.AccountID
-			},
-			3,
-		},
-	}
+func TestBond_Query(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
 
-	evaluable := bond.Evaluable[*TokenBalance](orCond)
+	var tokenBalances []*TokenBalance
 
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 2}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 3}))
-	assert.False(t, evaluable.Eval(&TokenBalance{AccountID: 4}))
-	assert.True(t, evaluable.Eval(&TokenBalance{AccountID: 5}))
+	query := TokenBalanceTable.Query().
+		Where(&bond.Gt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Greater: 10,
+		}).
+		Limit(50)
+
+	err := query.Execute(tokenBalances)
+	require.Nil(t, err)
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0x0c"}).
+		Where(&bond.Gt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Greater: 10,
+		}).
+		Limit(50)
+
+	err = query.Execute(tokenBalances)
+	require.Nil(t, err)
+
+	query = TokenBalanceTable.Query().
+		With(
+			TokenBalanceAccountAndContractAddressIndex,
+			&TokenBalance{AccountAddress: "0x0c", ContractAddress: "0xtestContract"},
+		).
+		Where(&bond.Gt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Greater: 10,
+		}).
+		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+			return tb.Balance > tb.Balance
+		}).
+		Limit(50)
+
+	err = query.Execute(tokenBalances)
+	require.Nil(t, err)
 }

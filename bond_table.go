@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"bytes"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -73,8 +72,14 @@ func (t *Table[T]) Insert(tr T) error {
 	return nil
 }
 
+func (t *Table[T]) Query() Query[T] {
+	// todo: implement query
+	return Query[T]{}
+}
+
+/*
 func (t *Table[T]) GetAll() ([]T, error) {
-	lowerBound := t.compoundKeyDefaultIndex(DefaultMainIndexID)
+	lowerBound := t.compoundKeyDefaultIndex()
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound: lowerBound,
 	})
@@ -122,7 +127,7 @@ func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
 	}
 
 	return ret, nil
-}
+}*/
 
 func (t *Table[T]) tableKey(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
@@ -137,6 +142,6 @@ func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
 	return compKey
 }
 
-func (t *Table[T]) compoundKeyDefaultIndex(indexID IndexID) []byte {
-	return []byte{byte(t.TableID), byte(indexID), byte('-')}
+func (t *Table[T]) compoundKeyDefaultIndex() []byte {
+	return []byte{byte(t.TableID), byte(DefaultMainIndexID), byte('-')}
 }
