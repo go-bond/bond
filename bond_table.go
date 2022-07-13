@@ -55,7 +55,7 @@ func (t *Table[T]) Insert(tr T) error {
 
 	for _, idx := range t.indexes {
 		if idx.IndexFilterFunction(tr) {
-			keysForInsert = append(keysForInsert, t.compoundKey(idx, tr))
+			keysForInsert = append(keysForInsert, t.tableKey(idx, tr))
 		}
 	}
 	t.mutex.RUnlock()
@@ -73,75 +73,83 @@ func (t *Table[T]) Insert(tr T) error {
 }
 
 func (t *Table[T]) Query() Query[T] {
-	// todo: implement query
-	return Query[T]{}
-}
-
-/*
-func (t *Table[T]) GetAll() ([]T, error) {
-	lowerBound := t.compoundKeyDefaultIndex()
-	iter := t.db.NewIter(&pebble.IterOptions{
-		LowerBound: lowerBound,
-	})
-
-	var ret []T
-	for iter.First(); iter.Valid(); iter.Next() {
-		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
-			break
-		}
-
-		var record T
-		err := t.db.Serializer().Deserialize(iter.Value(), &record)
-		if err != nil {
-			return nil, err
-		}
-
-		ret = append(ret, record)
-	}
-
-	return ret, nil
-}
-
-func (t *Table[T]) GetAllForIndex(idxID IndexID, tmpl T) ([]T, error) {
 	t.mutex.RLock()
-	lowerBound := t.tableKey(t.indexes[idxID], tmpl)
+	mainIndex := t.indexes[0]
 	t.mutex.RUnlock()
 
+	return newQuery[T](t, mainIndex)
+}
+
+func (t *Table[T]) Scan(tr *[]T) error {
+	t.mutex.RLock()
+	mainIndex := t.indexes[0]
+	t.mutex.RUnlock()
+
+	return t.ScanIndex(tr, mainIndex, make([]T, 1)[0])
+}
+
+func (t *Table[T]) ScanIndex(tr *[]T, i *Index[T], s T) error {
+	return t.ScanIndexForEach(i, s, func(record T) {
+		*tr = append(*tr, record)
+	})
+}
+
+func (t *Table[T]) ScanForEach(f func(t T)) error {
+	t.mutex.RLock()
+	mainIndex := t.indexes[0]
+	t.mutex.RUnlock()
+
+	return t.ScanIndexForEach(mainIndex, make([]T, 1)[0], f)
+}
+
+func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
+	prefix := t.indexKey(i, s)
+
 	iter := t.db.NewIter(&pebble.IterOptions{
-		LowerBound: lowerBound,
+		LowerBound:      prefix,
+		RangeKeyMasking: pebble.RangeKeyMasking{},
 	})
 
-	var ret []T
-	for iter.First(); iter.Valid(); iter.Next() {
-		if bytes.Compare(lowerBound, iter.Key()[:len(lowerBound)]) != 0 {
-			break
-		}
+	iter.SeekPrefixGE(prefix)
 
-		var record T
-		err := t.db.Serializer().Deserialize(iter.Value(), &record)
-		if err != nil {
-			return nil, err
+	var getValue func() error
+	if i.IndexID == DefaultMainIndexID {
+		getValue = func() error {
+			var record T
+			if err := t.db.Serializer().Deserialize(iter.Value(), &record); err == nil {
+				f(record)
+				return nil
+			} else {
+				return err
+			}
 		}
-
-		ret = append(ret, record)
+	} else {
+		getValue = func() error { return nil }
 	}
 
-	return ret, nil
-}*/
+	for iter.First(); iter.Valid(); iter.Next() {
+		err := getValue()
+		if err != nil {
+			return err
+		}
+	}
 
-func (t *Table[T]) tableKey(idx *Index[T], tr T) []byte {
+	return nil
+}
+
+func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
 	compKey = append(compKey, idx.IndexKey(tr)...)
 	compKey = append(compKey, []byte("-")...)
 	return compKey
 }
 
-func (t *Table[T]) compoundKey(idx *Index[T], tr T) []byte {
-	compKey := t.tableKey(idx, tr)
+func (t *Table[T]) tableKey(idx *Index[T], tr T) []byte {
+	compKey := t.indexKey(idx, tr)
 	compKey = append(compKey, t.recordKeyFunc(tr)...)
 	return compKey
 }
 
-func (t *Table[T]) compoundKeyDefaultIndex() []byte {
+func (t *Table[T]) fromIndexKeyToTableKey(idxKey []byte) []byte {
 	return []byte{byte(t.TableID), byte(DefaultMainIndexID), byte('-')}
 }

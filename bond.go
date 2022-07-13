@@ -17,6 +17,11 @@ type DB struct {
 }
 
 func Open(dirname string, opts *Options) (*DB, error) {
+	if opts.Comparer == nil {
+		opts.Comparer = pebble.DefaultComparer
+		opts.Comparer.Split = keyPrefixSplitFunc
+	}
+
 	pdb, err := pebble.Open(dirname, &opts.Options)
 	if err != nil {
 		return nil, err
@@ -38,4 +43,13 @@ func (db *DB) Serializer() Serializer {
 
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+func keyPrefixSplitFunc(a []byte) int {
+	for i := len(a) - 1; i > 0; i-- {
+		if a[i] == '-' {
+			return i
+		}
+	}
+	return 0
 }
