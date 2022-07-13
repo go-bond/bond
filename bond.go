@@ -1,8 +1,12 @@
 package bond
 
 import (
+	"bytes"
+
 	"github.com/cockroachdb/pebble"
 )
+
+var KeyPrefixSeparator = []byte{'-'}
 
 type Options struct {
 	pebble.Options
@@ -47,7 +51,7 @@ func (db *DB) Close() error {
 
 func keyPrefixSplitFunc(a []byte) int {
 	for i := len(a) - 1; i > 0; i-- {
-		if a[i] == '-' {
+		if bytes.Compare(a[i:i+len(KeyPrefixSeparator)], KeyPrefixSeparator) == 0 {
 			return i
 		}
 	}

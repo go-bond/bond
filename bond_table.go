@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -149,7 +150,7 @@ func (t *Table[T]) tableKey(tr T) []byte {
 func (t *Table[T]) indexKeyPrefix(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
 	compKey = append(compKey, idx.IndexKey(tr)...)
-	compKey = append(compKey, []byte("-")...)
+	compKey = append(compKey, KeyPrefixSeparator...)
 	return compKey
 }
 
@@ -158,5 +159,8 @@ func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
 }
 
 func (t *Table[T]) fromIndexKeyToTableKey(idxKey []byte) []byte {
-	return []byte{byte(t.TableID), byte(DefaultMainIndexID), byte('-')}
+	return append(
+		[]byte{byte(t.TableID), 0x00},
+		idxKey[strings.LastIndex(string(idxKey), string(KeyPrefixSeparator))+1:]...,
+	)
 }
