@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -17,9 +18,9 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	)
 
 	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		buffer := bytes.NewBuffer([]byte{})
-		_, _ = fmt.Fprintf(buffer, "%d", tb.ID)
-		return buffer.Bytes()
+		keyBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(keyBytes, tb.AccountID)
+		return keyBytes
 	})
 
 	const (

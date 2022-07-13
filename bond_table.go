@@ -16,31 +16,27 @@ type Table[T any] struct {
 
 	recordKeyFunc TableRecordKeyFunc[T]
 
-	indexes map[IndexID]*Index[T]
+	mainIndex    *Index[T]
+	otherIndexes map[IndexID]*Index[T]
 
 	mutex sync.RWMutex
 }
 
 func NewTable[T any](db *DB, id TableID, trkFn TableRecordKeyFunc[T]) *Table[T] {
-	t := &Table[T]{
+	return &Table[T]{
 		TableID:       id,
 		db:            db,
 		recordKeyFunc: trkFn,
-		indexes:       make(map[IndexID]*Index[T]),
+		mainIndex:     NewIndex[T](DefaultMainIndexID, func(t T) []byte { return []byte{} }),
+		otherIndexes:  make(map[IndexID]*Index[T]),
 		mutex:         sync.RWMutex{},
 	}
-
-	t.AddIndexes([]*Index[T]{
-		NewIndex[T](DefaultMainIndexID, func(t T) []byte { return []byte{} }),
-	}, false)
-
-	return t
 }
 
 func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 	t.mutex.Lock()
 	for _, idx := range idxs {
-		t.indexes[idx.IndexID] = idx
+		t.otherIndexes[idx.IndexID] = idx
 	}
 	t.mutex.Unlock()
 
@@ -51,19 +47,30 @@ func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 
 func (t *Table[T]) Insert(tr T) error {
 	t.mutex.RLock()
-	keysForInsert := make([][]byte, 0, len(t.indexes))
+	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
-	for _, idx := range t.indexes {
+	for _, idx := range t.otherIndexes {
 		if idx.IndexFilterFunction(tr) {
-			keysForInsert = append(keysForInsert, t.tableKey(idx, tr))
+			keysForIndexInsert = append(keysForIndexInsert, t.indexKey(idx, tr))
 		}
 	}
 	t.mutex.RUnlock()
 
-	// todo: insert to pebble shall indexes contain pointers to main index or duplicated data?
-	data, _ := t.db.Serializer().Serialize(tr)
-	for _, key := range keysForInsert {
-		err := t.db.Set(key, data, pebble.Sync)
+	// serialize
+	data, err := t.db.Serializer().Serialize(tr)
+	if err != nil {
+		return err
+	}
+
+	// insert data
+	err = t.db.Set(t.tableKey(tr), data, pebble.Sync)
+	if err != nil {
+		return err
+	}
+
+	// update indexes
+	for _, key := range keysForIndexInsert {
+		err = t.db.Set(key, []byte{}, pebble.Sync)
 		if err != nil {
 			// todo: handle rollback
 			return err
@@ -73,19 +80,11 @@ func (t *Table[T]) Insert(tr T) error {
 }
 
 func (t *Table[T]) Query() Query[T] {
-	t.mutex.RLock()
-	mainIndex := t.indexes[0]
-	t.mutex.RUnlock()
-
-	return newQuery[T](t, mainIndex)
+	return newQuery[T](t, t.mainIndex)
 }
 
 func (t *Table[T]) Scan(tr *[]T) error {
-	t.mutex.RLock()
-	mainIndex := t.indexes[0]
-	t.mutex.RUnlock()
-
-	return t.ScanIndex(tr, mainIndex, make([]T, 1)[0])
+	return t.ScanIndex(tr, t.mainIndex, make([]T, 1)[0])
 }
 
 func (t *Table[T]) ScanIndex(tr *[]T, i *Index[T], s T) error {
@@ -95,15 +94,11 @@ func (t *Table[T]) ScanIndex(tr *[]T, i *Index[T], s T) error {
 }
 
 func (t *Table[T]) ScanForEach(f func(t T)) error {
-	t.mutex.RLock()
-	mainIndex := t.indexes[0]
-	t.mutex.RUnlock()
-
-	return t.ScanIndexForEach(mainIndex, make([]T, 1)[0], f)
+	return t.ScanIndexForEach(t.mainIndex, make([]T, 1)[0], f)
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
-	prefix := t.indexKey(i, s)
+	prefix := t.indexKeyPrefix(i, s)
 
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound:      prefix,
@@ -137,17 +132,19 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 	return nil
 }
 
-func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
+func (t *Table[T]) tableKey(tr T) []byte {
+	return append(t.indexKeyPrefix(t.mainIndex, tr), t.recordKeyFunc(tr)...)
+}
+
+func (t *Table[T]) indexKeyPrefix(idx *Index[T], tr T) []byte {
 	compKey := []byte{byte(t.TableID)}
 	compKey = append(compKey, idx.IndexKey(tr)...)
 	compKey = append(compKey, []byte("-")...)
 	return compKey
 }
 
-func (t *Table[T]) tableKey(idx *Index[T], tr T) []byte {
-	compKey := t.indexKey(idx, tr)
-	compKey = append(compKey, t.recordKeyFunc(tr)...)
-	return compKey
+func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
+	return append(t.indexKeyPrefix(idx, tr), t.recordKeyFunc(tr)...)
 }
 
 func (t *Table[T]) fromIndexKeyToTableKey(idxKey []byte) []byte {
