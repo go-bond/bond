@@ -4,7 +4,7 @@ type IndexID uint8
 type IndexKeyFunction[T any] func(t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
 
-const DefaultMainIndexID = IndexID(0)
+const MainIndexID = IndexID(0)
 
 type Index[T any] struct {
 	IndexID             IndexID

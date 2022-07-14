@@ -1,7 +1,7 @@
 package tests
 
 import (
-	"bytes"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -12,36 +12,39 @@ import (
 
 func TestBond_NewIndex(t *testing.T) {
 	const (
-		TokenBalanceAccountIndexID = bond.IndexID(1)
+		TokenBalanceAccountIDIndexID = bond.IndexID(1)
 	)
 
-	TokenBalanceAccountIndex := bond.NewIndex[*TokenBalance](
-		TokenBalanceAccountIndexID,
+	TokenBalanceAccountIDIndex := bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountIDIndexID,
 		func(tb *TokenBalance) []byte {
-			buffer := bytes.NewBuffer([]byte{})
-			_, _ = fmt.Fprintf(buffer, "%d", tb.AccountID)
-			return buffer.Bytes()
+			keyBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(keyBytes, tb.AccountID)
+			return keyBytes
 		},
 	)
 
-	assert.Equal(t, TokenBalanceAccountIndexID, TokenBalanceAccountIndex.IndexID)
-	assert.Equal(t, []uint8{0x1, 0x31}, TokenBalanceAccountIndex.IndexKey(&TokenBalance{AccountID: 1}))
-	assert.Equal(t, true, TokenBalanceAccountIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
+	expectedIndexKey := []uint8{0x1, 0x00, 0x00, 0x00, 0x01}
+
+	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
+	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIDIndex.IndexKey(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 
 	TokenBalanceAccountIndexSelective := bond.NewIndex[*TokenBalance](
-		TokenBalanceAccountIndexID,
+		TokenBalanceAccountIDIndexID,
 		func(tb *TokenBalance) []byte {
-			buffer := bytes.NewBuffer([]byte{})
-			_, _ = fmt.Fprintf(buffer, "%d", tb.AccountID)
-			return buffer.Bytes()
+			keyBytes := make([]byte, 4)
+			binary.BigEndian.PutUint32(keyBytes, tb.AccountID)
+			return keyBytes
 		},
 		func(tb *TokenBalance) bool {
 			return tb.AccountID == 1
 		},
 	)
 
-	assert.Equal(t, TokenBalanceAccountIndexID, TokenBalanceAccountIndexSelective.IndexID)
-	assert.Equal(t, []uint8{0x1, 0x31}, TokenBalanceAccountIndexSelective.IndexKey(&TokenBalance{AccountID: 1}))
+	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIndexSelective.IndexID)
+	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIndexSelective.IndexKey(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, false, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 }
@@ -55,24 +58,22 @@ func TestBond_Table_Index(t *testing.T) {
 	)
 
 	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		buffer := bytes.NewBuffer([]byte{})
-		_, _ = fmt.Fprintf(buffer, "%d", tb.ID)
-		return buffer.Bytes()
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
+		return keyBytes
 	})
 
 	const (
-		TokenBalanceDefaultIndexID = bond.DefaultMainIndexID
-		TokenBalanceAccountIndexID = iota
+		TokenBalanceDefaultIndexID        = bond.MainIndexID
+		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
 
 	var (
-		TokenBalanceAccountIndex = bond.NewIndex[*TokenBalance](
-			TokenBalanceAccountIndexID,
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
 			func(tb *TokenBalance) []byte {
-				buffer := bytes.NewBuffer([]byte{})
-				_, _ = fmt.Fprintf(buffer, "%d", tb.AccountID)
-				return buffer.Bytes()
+				return append([]byte{}, tb.AccountAddress...)
 			},
 		)
 		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
@@ -87,7 +88,7 @@ func TestBond_Table_Index(t *testing.T) {
 	)
 
 	var TokenBalanceIndexes = []*bond.Index[*TokenBalance]{
-		TokenBalanceAccountIndex,
+		TokenBalanceAccountAddressIndex,
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
@@ -97,7 +98,7 @@ func TestBond_Table_Index(t *testing.T) {
 		ID:              1,
 		AccountID:       1,
 		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount",
+		AccountAddress:  "0xtestAccount1",
 		Balance:         5,
 	}
 
@@ -105,7 +106,7 @@ func TestBond_Table_Index(t *testing.T) {
 		ID:              2,
 		AccountID:       1,
 		ContractAddress: "0xtestContract2",
-		AccountAddress:  "0xtestAccount",
+		AccountAddress:  "0xtestAccount1",
 		Balance:         15,
 	}
 
@@ -117,20 +118,20 @@ func TestBond_Table_Index(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(tokenBalanceAccount1)
-	require.Nil(t, err)
-
-	err = tokenBalanceTable.Insert(tokenBalance2Account1)
-	require.Nil(t, err)
-
-	err = tokenBalanceTable.Insert(tokenBalance1Account2)
-	require.Nil(t, err)
+	err := tokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
 
 	it := db.NewIter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
 	for it.First(); it.Valid(); it.Next() {
-		fmt.Printf("%s: %s\n", it.Key(), it.Value())
+		fmt.Printf("0x%x: %s\n", it.Key(), it.Value())
 	}
 }
