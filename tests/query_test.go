@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-bond/bond"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,20 +17,20 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	)
 
 	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(keyBytes, tb.AccountID)
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
 		return keyBytes
 	})
 
 	const (
-		TokenBalanceDefaultIndexID = bond.MainIndexID
-		TokenBalanceAccountIndexID = iota
+		TokenBalanceDefaultIndexID        = bond.MainIndexID
+		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
 
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
-			TokenBalanceAccountIndexID,
+			TokenBalanceAccountAddressIndexID,
 			func(tb *TokenBalance) []byte {
 				return append([]byte{}, tb.AccountAddress...)
 			},
@@ -38,9 +39,6 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 			TokenBalanceAccountAndContractAddressIndexID,
 			func(tb *TokenBalance) []byte {
 				return append(append([]byte{}, tb.AccountAddress...), tb.ContractAddress...)
-			},
-			func(tb *TokenBalance) bool {
-				return tb.ContractAddress == "0xtestContract"
 			},
 		)
 	)
@@ -55,9 +53,51 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
 }
 
-func TestBond_Query(t *testing.T) {
-	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
+func TestBond_Query_Where(t *testing.T) {
+	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
 
 	var tokenBalances []*TokenBalance
 
@@ -70,11 +110,281 @@ func TestBond_Query(t *testing.T) {
 		}).
 		Limit(50)
 
-	err := query.Execute(tokenBalances)
+	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
+	require.Equal(t, 1, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0x0c"}).
+		Where(&bond.Eq[*TokenBalance, string]{
+			Record: func(c *TokenBalance) string {
+				return c.AccountAddress
+			},
+			Equal: "0xtestAccount",
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
+}
+
+func TestBond_Query_Where_Offset_Limit(t *testing.T) {
+	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	query := TokenBalanceTable.Query().
+		Where(&bond.Eq[*TokenBalance, string]{
+			Record: func(c *TokenBalance) string {
+				return c.AccountAddress
+			},
+			Equal: "0xtestAccount",
+		}).
+		Limit(2)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+
+	query = TokenBalanceTable.Query().
+		Where(&bond.Eq[*TokenBalance, string]{
+			Record: func(c *TokenBalance) string {
+				return c.AccountAddress
+			},
+			Equal: "0xtestAccount",
+		}).
+		Offset(1).
+		Limit(2)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
+
+	query = TokenBalanceTable.Query().
+		Where(&bond.Eq[*TokenBalance, string]{
+			Record: func(c *TokenBalance) string {
+				return c.AccountAddress
+			},
+			Equal: "0xtestAccount",
+		}).
+		Offset(3).
+		Limit(2)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 0, len(tokenBalances))
+}
+
+func TestBond_Query_Order(t *testing.T) {
+	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	query := TokenBalanceTable.Query().
+		Where(&bond.Lt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Less: 10,
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
+
+	query = TokenBalanceTable.Query().
+		Where(&bond.Lt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Less: 10,
+		}).
+		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+			return tb.Balance < tb2.Balance
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance1Account2, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
+
+	query = TokenBalanceTable.Query().
+		Where(&bond.Lt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Less: 10,
+		}).
+		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
+	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
+}
+
+func TestBond_Query_Indexes_Mix(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	query := TokenBalanceTable.Query().
 		Where(&bond.Gt[*TokenBalance, uint64]{
 			Record: func(c *TokenBalance) uint64 {
 				return c.Balance
@@ -83,25 +393,66 @@ func TestBond_Query(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(tokenBalances)
+	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
+	require.Equal(t, 1, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
+		Where(&bond.Lt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Less: 10,
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
+		Where(&bond.Lt[*TokenBalance, uint64]{
+			Record: func(c *TokenBalance) uint64 {
+				return c.Balance
+			},
+			Less: 10,
+		}).
+		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).
+		Limit(50)
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
 		With(
 			TokenBalanceAccountAndContractAddressIndex,
-			&TokenBalance{AccountAddress: "0x0c", ContractAddress: "0xtestContract"},
+			&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract"},
 		).
-		Where(&bond.Gt[*TokenBalance, uint64]{
+		Where(&bond.Lt[*TokenBalance, uint64]{
 			Record: func(c *TokenBalance) uint64 {
 				return c.Balance
 			},
-			Greater: 10,
-		}).
-		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
-			return tb.Balance > tb.Balance
+			Less: 15,
 		}).
 		Limit(50)
 
-	err = query.Execute(tokenBalances)
+	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
+
+	require.Equal(t, 1, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 }
