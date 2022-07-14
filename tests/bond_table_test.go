@@ -21,9 +21,9 @@ func TestBond_NewTable(t *testing.T) {
 		db,
 		TokenBalanceTableID,
 		func(tb *TokenBalance) []byte {
-			key := make([]byte, 8)
-			binary.LittleEndian.PutUint64(key, tb.ID)
-			return key
+			keyBytes := make([]byte, 8)
+			binary.BigEndian.PutUint64(keyBytes, tb.ID)
+			return keyBytes
 		},
 	)
 	require.NotNil(t, tokenBalanceTable)

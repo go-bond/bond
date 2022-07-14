@@ -151,8 +151,6 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 			} else {
 				return err
 			}
-
-			return nil
 		}
 	}
 
