@@ -1,9 +1,7 @@
 package tests
 
 import (
-	"bytes"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/go-bond/bond"
@@ -24,7 +22,7 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	})
 
 	const (
-		TokenBalanceDefaultIndexID = bond.DefaultMainIndexID
+		TokenBalanceDefaultIndexID = bond.MainIndexID
 		TokenBalanceAccountIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -33,9 +31,7 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountIndexID,
 			func(tb *TokenBalance) []byte {
-				buffer := bytes.NewBuffer([]byte{})
-				_, _ = fmt.Fprintf(buffer, "%s", tb.AccountAddress)
-				return buffer.Bytes()
+				return append([]byte{}, tb.AccountAddress...)
 			},
 		)
 		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](

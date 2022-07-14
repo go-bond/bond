@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	"golang.org/x/exp/maps"
 )
 
 type TableID uint8
@@ -28,7 +29,7 @@ func NewTable[T any](db *DB, id TableID, trkFn TableRecordKeyFunc[T]) *Table[T] 
 		TableID:       id,
 		db:            db,
 		recordKeyFunc: trkFn,
-		mainIndex:     NewIndex[T](DefaultMainIndexID, func(t T) []byte { return []byte{} }),
+		mainIndex:     NewIndex[T](MainIndexID, func(t T) []byte { return []byte{} }),
 		otherIndexes:  make(map[IndexID]*Index[T]),
 		mutex:         sync.RWMutex{},
 	}
@@ -46,42 +47,48 @@ func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 	}
 }
 
-func (t *Table[T]) Insert(tr T) error {
+func (t *Table[T]) Insert(tr []T) error {
 	t.mutex.RLock()
-	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
-
-	for _, idx := range t.otherIndexes {
-		if idx.IndexFilterFunction(tr) {
-			keysForIndexInsert = append(keysForIndexInsert, t.indexKey(idx, tr))
-		}
-	}
+	indexes := make(map[IndexID]*Index[T])
+	maps.Copy(indexes, t.otherIndexes)
 	t.mutex.RUnlock()
 
-	// serialize
-	data, err := t.db.Serializer().Serialize(tr)
-	if err != nil {
-		return err
-	}
-
 	batch := t.db.NewBatch()
+	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
-	// insert data
-	err = batch.Set(t.tableKey(tr), data, pebble.Sync)
-	if err != nil {
-		_ = batch.Close()
-		return err
-	}
+	for _, r := range tr {
+		// index keys
+		keysForIndexInsert = keysForIndexInsert[:0]
+		for _, idx := range t.otherIndexes {
+			if idx.IndexFilterFunction(r) {
+				keysForIndexInsert = append(keysForIndexInsert, t.indexKey(idx, r))
+			}
+		}
 
-	// update indexes
-	for _, key := range keysForIndexInsert {
-		err = batch.Set(key, []byte{}, pebble.Sync)
+		// serialize
+		data, err := t.db.Serializer().Serialize(r)
+		if err != nil {
+			return err
+		}
+
+		// insert data
+		err = batch.Set(t.tableKey(r), data, pebble.Sync)
 		if err != nil {
 			_ = batch.Close()
 			return err
 		}
+
+		// update indexes
+		for _, key := range keysForIndexInsert {
+			err = batch.Set(key, []byte{}, pebble.Sync)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
+		}
 	}
 
-	err = batch.Commit(pebble.Sync)
+	err := batch.Commit(pebble.Sync)
 	if err != nil {
 		_ = batch.Close()
 		return err
@@ -95,10 +102,10 @@ func (t *Table[T]) Query() Query[T] {
 }
 
 func (t *Table[T]) Scan(tr *[]T) error {
-	return t.ScanIndex(tr, t.mainIndex, make([]T, 1)[0])
+	return t.ScanIndex(t.mainIndex, make([]T, 1)[0], tr)
 }
 
-func (t *Table[T]) ScanIndex(tr *[]T, i *Index[T], s T) error {
+func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T) error {
 	return t.ScanIndexForEach(i, s, func(record T) {
 		*tr = append(*tr, record)
 	})
@@ -112,14 +119,11 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 	prefix := t.indexKeyPrefix(i, s)
 
 	iter := t.db.NewIter(&pebble.IterOptions{
-		LowerBound:      prefix,
-		RangeKeyMasking: pebble.RangeKeyMasking{},
+		LowerBound: prefix,
 	})
 
-	iter.SeekPrefixGE(prefix)
-
 	var getValue func() error
-	if i.IndexID == DefaultMainIndexID {
+	if i.IndexID == MainIndexID {
 		getValue = func() error {
 			var record T
 			if err := t.db.Serializer().Deserialize(iter.Value(), &record); err == nil {
@@ -130,10 +134,29 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 			}
 		}
 	} else {
-		getValue = func() error { return nil }
+		getValue = func() error {
+			tableKey := t.fromIndexKeyToTableKey(iter.Key())
+
+			valueData, closer, err := t.db.Get(tableKey)
+			if err != nil {
+				return err
+			}
+
+			defer func() { _ = closer.Close() }()
+
+			var record T
+			if err = t.db.Serializer().Deserialize(valueData, &record); err == nil {
+				f(record)
+				return nil
+			} else {
+				return err
+			}
+
+			return nil
+		}
 	}
 
-	for iter.First(); iter.Valid(); iter.Next() {
+	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
 		err := getValue()
 		if err != nil {
 			return err
@@ -160,7 +183,7 @@ func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
 
 func (t *Table[T]) fromIndexKeyToTableKey(idxKey []byte) []byte {
 	return append(
-		[]byte{byte(t.TableID), 0x00},
-		idxKey[strings.LastIndex(string(idxKey), string(KeyPrefixSeparator))+1:]...,
+		[]byte{byte(t.TableID), byte(MainIndexID)},
+		idxKey[strings.LastIndex(string(idxKey), string(KeyPrefixSeparator)):]...,
 	)
 }
