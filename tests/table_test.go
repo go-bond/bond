@@ -7,6 +7,7 @@ import (
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 func TestBond_NewTable(t *testing.T) {
@@ -301,6 +302,216 @@ func BenchmarkBondTableScanIndex_1000(b *testing.B) {
 
 func BenchmarkBondTableScanIndex_1000000(b *testing.B) {
 	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
+		return keyBytes
+	})
+
+	const (
+		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceAccountAddressIndexID = iota
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(tb *TokenBalance) []byte {
+				return append([]byte{}, tb.AccountAddress...)
+			},
+		)
+	)
+
+	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+	})
+
+	var tokenBalancesForInsert []*TokenBalance
+	for i := 0; i < 1000000; i++ {
+		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
+			ID:              uint64(i + 1),
+			AccountID:       uint32(i % 10),
+			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			AccountAddress:  "0xtestAccount",
+			Balance:         uint64((i % 100) * 10),
+		})
+	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var tokenBalances []*TokenBalance
+		err := tokenBalanceTable.ScanIndex(
+			TokenBalanceAccountAddressIndex,
+			&TokenBalance{
+				AccountAddress: "0xtestAccount",
+			},
+			&tokenBalances,
+		)
+		if err != nil {
+			panic(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkBondTableScan_MsgPack_1000(b *testing.B) {
+	msgpack.GetEncoder().SetCustomStructTag("json")
+	msgpack.GetDecoder().SetCustomStructTag("json")
+
+	db := setupDatabase(&bond.MsgPackSerializer{})
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
+		return keyBytes
+	})
+
+	var tokenBalancesForInsert []*TokenBalance
+	for i := 0; i < 1000; i++ {
+		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
+			ID:              uint64(i + 1),
+			AccountID:       uint32(i % 10),
+			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			AccountAddress:  "0xtestAccount" + string([]byte{byte(i % 10)}),
+			Balance:         uint64((i % 100) * 10),
+		})
+	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var tokenBalances []*TokenBalance
+		err := tokenBalanceTable.Scan(&tokenBalances)
+		if err != nil {
+			panic(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkBondTableScan_MsgPack_1000000(b *testing.B) {
+	msgpack.GetEncoder().SetCustomStructTag("json")
+	msgpack.GetDecoder().SetCustomStructTag("json")
+
+	db := setupDatabase(&bond.MsgPackSerializer{})
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
+		return keyBytes
+	})
+
+	var tokenBalancesForInsert []*TokenBalance
+	for i := 0; i < 1000000; i++ {
+		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
+			ID:              uint64(i + 1),
+			AccountID:       uint32(i % 10),
+			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			AccountAddress:  "0xtestAccount" + string([]byte{byte(i % 10)}),
+			Balance:         uint64((i % 100) * 10),
+		})
+	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		var tokenBalances []*TokenBalance
+		err := tokenBalanceTable.Scan(&tokenBalances)
+		if err != nil {
+			panic(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkBondTableScanIndex_MsgPack_1000(b *testing.B) {
+	msgpack.GetEncoder().SetCustomStructTag("json")
+	msgpack.GetDecoder().SetCustomStructTag("json")
+
+	db := setupDatabase(&bond.MsgPackSerializer{})
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
+		keyBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(keyBytes, tb.ID)
+		return keyBytes
+	})
+
+	const (
+		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceAccountAddressIndexID = iota
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(tb *TokenBalance) []byte {
+				return append([]byte{}, tb.AccountAddress...)
+			},
+		)
+	)
+
+	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+	})
+
+	var tokenBalancesForInsert []*TokenBalance
+	for i := 0; i < 1000; i++ {
+		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
+			ID:              uint64(i + 1),
+			AccountID:       uint32(i % 10),
+			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			AccountAddress:  "0xtestAccount",
+			Balance:         uint64((i % 100) * 10),
+		})
+	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var tokenBalances []*TokenBalance
+		err := tokenBalanceTable.ScanIndex(
+			TokenBalanceAccountAddressIndex,
+			&TokenBalance{
+				AccountAddress: "0xtestAccount",
+			},
+			&tokenBalances,
+		)
+		if err != nil {
+			panic(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
+	msgpack.GetEncoder().SetCustomStructTag("json")
+	msgpack.GetDecoder().SetCustomStructTag("json")
+
+	db := setupDatabase(&bond.MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (

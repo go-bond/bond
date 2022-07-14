@@ -1,6 +1,10 @@
 package bond
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/vmihailenco/msgpack/v5"
+)
 
 type Serializer interface {
 	Serialize(i interface{}) ([]byte, error)
@@ -16,4 +20,15 @@ func (s *JsonSerializer) Serialize(i interface{}) ([]byte, error) {
 
 func (s *JsonSerializer) Deserialize(b []byte, i interface{}) error {
 	return json.Unmarshal(b, i)
+}
+
+type MsgPackSerializer struct {
+}
+
+func (m *MsgPackSerializer) Serialize(i interface{}) ([]byte, error) {
+	return msgpack.Marshal(i)
+}
+
+func (m *MsgPackSerializer) Deserialize(b []byte, i interface{}) error {
+	return msgpack.Unmarshal(b, i)
 }

@@ -11,7 +11,7 @@ var KeyPrefixSeparator = []byte{'-'}
 type Options struct {
 	pebble.Options
 
-	RecordSerializer Serializer
+	Serializer Serializer
 }
 
 type DB struct {
@@ -32,8 +32,8 @@ func Open(dirname string, opts *Options) (*DB, error) {
 	}
 
 	var serializer Serializer
-	if opts.RecordSerializer != nil {
-		serializer = opts.RecordSerializer
+	if opts.Serializer != nil {
+		serializer = opts.Serializer
 	} else {
 		serializer = &JsonSerializer{}
 	}
