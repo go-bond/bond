@@ -10,8 +10,13 @@ import (
 
 const dbName = "demo"
 
-func setupDatabase() *bond.DB {
-	db, _ := bond.Open(dbName, &bond.Options{})
+func setupDatabase(serializer ...bond.Serializer) *bond.DB {
+	options := &bond.Options{}
+	if len(serializer) > 0 && serializer[0] != nil {
+		options.Serializer = serializer[0]
+	}
+
+	db, _ := bond.Open(dbName, options)
 	return db
 }
 
