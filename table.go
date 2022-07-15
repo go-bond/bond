@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"strings"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -57,11 +56,21 @@ func (t *Table[T]) Insert(tr []T) error {
 	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
 	for _, r := range tr {
+		recordKey := t.recordKeyFunc(r)
+
 		// index keys
 		keysForIndexInsert = keysForIndexInsert[:0]
 		for _, idx := range t.otherIndexes {
 			if idx.IndexFilterFunction(r) {
-				keysForIndexInsert = append(keysForIndexInsert, t.indexKey(idx, r))
+				keysForIndexInsert = append(
+					keysForIndexInsert,
+					KeyEncode(Key{
+						TableID:   t.TableID,
+						IndexID:   idx.IndexID,
+						IndexKey:  idx.IndexKey(r),
+						RecordKey: recordKey,
+					}),
+				)
 			}
 		}
 
@@ -72,7 +81,13 @@ func (t *Table[T]) Insert(tr []T) error {
 		}
 
 		// insert data
-		err = batch.Set(t.tableKey(r), data, pebble.Sync)
+		keyRaw := KeyEncode(Key{
+			TableID:   t.TableID,
+			IndexID:   MainIndexID,
+			IndexKey:  []byte{},
+			RecordKey: recordKey,
+		})
+		err = batch.Set(keyRaw, data, pebble.Sync)
 		if err != nil {
 			_ = batch.Close()
 			return err
@@ -116,7 +131,14 @@ func (t *Table[T]) ScanForEach(f func(t T)) error {
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
-	prefix := t.indexKeyPrefix(i, s)
+
+	prefixKey := Key{
+		TableID:   t.TableID,
+		IndexID:   i.IndexID,
+		IndexKey:  i.IndexKey(s),
+		RecordKey: []byte{},
+	}
+	prefix := KeyEncode(prefixKey)
 
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
@@ -135,7 +157,9 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 		}
 	} else {
 		getValue = func() error {
-			tableKey := t.fromIndexKeyToTableKey(iter.Key())
+			tableKey := KeyEncode(
+				KeyDecode(iter.Key()).ToTableKey(),
+			)
 
 			valueData, closer, err := t.db.Get(tableKey)
 			if err != nil {
@@ -162,26 +186,4 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 	}
 
 	return nil
-}
-
-func (t *Table[T]) tableKey(tr T) []byte {
-	return append(t.indexKeyPrefix(t.mainIndex, tr), t.recordKeyFunc(tr)...)
-}
-
-func (t *Table[T]) indexKeyPrefix(idx *Index[T], tr T) []byte {
-	compKey := []byte{byte(t.TableID)}
-	compKey = append(compKey, idx.IndexKey(tr)...)
-	compKey = append(compKey, KeyPrefixSeparator...)
-	return compKey
-}
-
-func (t *Table[T]) indexKey(idx *Index[T], tr T) []byte {
-	return append(t.indexKeyPrefix(idx, tr), t.recordKeyFunc(tr)...)
-}
-
-func (t *Table[T]) fromIndexKeyToTableKey(idxKey []byte) []byte {
-	return append(
-		[]byte{byte(t.TableID), byte(MainIndexID)},
-		idxKey[strings.LastIndex(string(idxKey), string(KeyPrefixSeparator)):]...,
-	)
 }

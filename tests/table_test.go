@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/go-bond/bond"
@@ -483,7 +484,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000(b *testing.B) {
 		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
 			ID:              uint64(i + 1),
 			AccountID:       uint32(i % 10),
-			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			ContractAddress: "0xtestContract" + fmt.Sprintf("%d", i),
 			AccountAddress:  "0xtestAccount",
 			Balance:         uint64((i % 100) * 10),
 		})
@@ -547,7 +548,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
 		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
 			ID:              uint64(i + 1),
 			AccountID:       uint32(i % 10),
-			ContractAddress: "0xtestContract" + string([]byte{byte(i % 3)}),
+			ContractAddress: "0xtestContract" + fmt.Sprintf("%d", i),
 			AccountAddress:  "0xtestAccount",
 			Balance:         uint64((i % 100) * 10),
 		})

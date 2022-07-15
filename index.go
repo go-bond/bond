@@ -29,5 +29,5 @@ func NewIndex[T any](idxID IndexID, idxFn IndexKeyFunction[T], idxFFn ...IndexFi
 }
 
 func (i *Index[T]) IndexKey(t T) []byte {
-	return append([]byte{byte(i.IndexID)}, i.IndexKeyFunction(t)...)
+	return i.IndexKeyFunction(t)
 }
