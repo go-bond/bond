@@ -62,8 +62,7 @@ func (t *Table[T]) Insert(tr []T) error {
 		keysForIndexInsert = keysForIndexInsert[:0]
 		for _, idx := range t.otherIndexes {
 			if idx.IndexFilterFunction(r) {
-				keysForIndexInsert = append(
-					keysForIndexInsert,
+				keysForIndexInsert = append(keysForIndexInsert,
 					KeyEncode(Key{
 						TableID:   t.TableID,
 						IndexID:   idx.IndexID,
@@ -87,6 +86,7 @@ func (t *Table[T]) Insert(tr []T) error {
 			IndexKey:  []byte{},
 			RecordKey: recordKey,
 		})
+
 		err = batch.Set(keyRaw, data, pebble.Sync)
 		if err != nil {
 			_ = batch.Close()
@@ -131,14 +131,12 @@ func (t *Table[T]) ScanForEach(f func(t T)) error {
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
-
-	prefixKey := Key{
+	prefix := KeyEncode(Key{
 		TableID:   t.TableID,
 		IndexID:   i.IndexID,
 		IndexKey:  i.IndexKey(s),
 		RecordKey: []byte{},
-	}
-	prefix := KeyEncode(prefixKey)
+	})
 
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
