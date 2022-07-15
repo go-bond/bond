@@ -7,12 +7,6 @@ import (
 	"github.com/cockroachdb/pebble"
 )
 
-type Options struct {
-	pebble.Options
-
-	Serializer Serializer
-}
-
 type Key struct {
 	TableID   TableID
 	IndexID   IndexID
@@ -92,6 +86,12 @@ func KeyDecode(keyBytes []byte) Key {
 
 func KeyPrefixSplitIndex(rawKey []byte) int {
 	return 6 + int(binary.BigEndian.Uint32(rawKey[2:6]))
+}
+
+type Options struct {
+	pebble.Options
+
+	Serializer Serializer
 }
 
 type DB struct {
