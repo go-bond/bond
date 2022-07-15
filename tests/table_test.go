@@ -331,6 +331,7 @@ func BenchmarkBondTableScan_1000(b *testing.B) {
 			Balance:         uint64((i % 100) * 10),
 		})
 	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
 
