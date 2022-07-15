@@ -515,7 +515,7 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 			Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
 				return tb.Balance > tb2.Balance
 			}).
-			Limit(500).
+			Limit(200).
 			Execute(&tokenBalances)
 		if err != nil {
 			panic(err)
@@ -713,7 +713,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 			Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
 				return tb.Balance > tb2.Balance
 			}).
-			Limit(500).
+			Limit(200).
 			Execute(&tokenBalances)
 		if err != nil {
 			panic(err)
