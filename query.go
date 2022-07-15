@@ -1,6 +1,8 @@
 package bond
 
 import (
+	"sort"
+
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/exp/constraints"
 )
@@ -161,6 +163,49 @@ func (q Query[R]) Limit(limit uint64) Query[R] {
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(a any) error {
-	panic("implement me!")
+func (q Query[R]) Execute(r *[]R) error {
+	if len(q.where) == 0 {
+		q.where = append([]evaluableAndIndex[R]{
+			{
+				Evaluable:     &And[R]{},
+				Index:         q.index,
+				IndexSelector: q.indexSelector,
+			},
+		})
+	}
+
+	var records []R
+	for _, where := range q.where {
+		err := q.table.ScanIndexForEach(where.Index, where.IndexSelector, func(record R) {
+			if where.Evaluable.Eval(record) {
+				records = append(records, record)
+			}
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	// sorting
+	if q.orderLessFunc != nil {
+		sort.Slice(records, func(i, j int) bool {
+			return q.orderLessFunc(records[i], records[j])
+		})
+	}
+
+	// offset
+	if int(q.offset) >= len(records) {
+		*r = make([]R, 0)
+		return nil
+	}
+
+	// limit
+	lastIndex := q.offset + q.limit
+	if int(lastIndex) >= len(records) {
+		lastIndex = uint64(len(records))
+	}
+
+	*r = records[q.offset:lastIndex]
+
+	return nil
 }

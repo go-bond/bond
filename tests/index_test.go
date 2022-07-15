@@ -24,7 +24,7 @@ func TestBond_NewIndex(t *testing.T) {
 		},
 	)
 
-	expectedIndexKey := []uint8{0x1, 0x00, 0x00, 0x00, 0x01}
+	expectedIndexKey := []uint8{0x00, 0x00, 0x00, 0x01}
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
 	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIDIndex.IndexKey(&TokenBalance{AccountID: 1}))
