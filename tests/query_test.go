@@ -104,11 +104,8 @@ func TestBond_Query_Where(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Where(&bond.Gt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Greater: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance > 10
 		}).
 		Limit(50)
 
@@ -119,11 +116,8 @@ func TestBond_Query_Where(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 
 	query = TokenBalanceTable.Query().
-		Where(&bond.Eq[*TokenBalance, string]{
-			Record: func(c *TokenBalance) string {
-				return c.AccountAddress
-			},
-			Equal: "0xtestAccount",
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
 		}).
 		Limit(50)
 
@@ -185,11 +179,8 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Where(&bond.Eq[*TokenBalance, string]{
-			Record: func(c *TokenBalance) string {
-				return c.AccountAddress
-			},
-			Equal: "0xtestAccount",
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
 		}).
 		Limit(2)
 
@@ -201,11 +192,8 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Where(&bond.Eq[*TokenBalance, string]{
-			Record: func(c *TokenBalance) string {
-				return c.AccountAddress
-			},
-			Equal: "0xtestAccount",
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
 		}).
 		Offset(1).
 		Limit(2)
@@ -218,11 +206,8 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Where(&bond.Eq[*TokenBalance, string]{
-			Record: func(c *TokenBalance) string {
-				return c.AccountAddress
-			},
-			Equal: "0xtestAccount",
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
 		}).
 		Offset(3).
 		Limit(2)
@@ -281,11 +266,8 @@ func TestBond_Query_Order(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 10
 		}).
 		Limit(50)
 
@@ -298,11 +280,8 @@ func TestBond_Query_Order(t *testing.T) {
 	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 10
 		}).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
 			return tb.Balance < tb2.Balance
@@ -318,11 +297,8 @@ func TestBond_Query_Order(t *testing.T) {
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 10
 		}).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
 			return tb.Balance > tb2.Balance
@@ -387,11 +363,8 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Where(&bond.Gt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Greater: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance > 10
 		}).
 		Limit(50)
 
@@ -403,11 +376,8 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 10
 		}).
 		Limit(50)
 
@@ -420,11 +390,8 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 10,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 10
 		}).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
 			return tb.Balance > tb2.Balance
@@ -443,11 +410,8 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 			TokenBalanceAccountAndContractAddressIndex,
 			&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract"},
 		).
-		Where(&bond.Lt[*TokenBalance, uint64]{
-			Record: func(c *TokenBalance) uint64 {
-				return c.Balance
-			},
-			Less: 15,
+		Filter(func(tb *TokenBalance) bool {
+			return tb.Balance < 15
 		}).
 		Limit(50)
 

@@ -2,90 +2,19 @@ package bond
 
 import (
 	"sort"
-
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/constraints"
 )
 
-type Evaluable[R any] interface {
-	Eval(r R) bool
-}
+// FilterFunc is the function template to be used for record filtering.
+type FilterFunc[R any] func(r R) bool
 
-type Value[R any, V any] func(r R) V
-
-type Eq[R any, V any] struct {
-	Record Value[R, V]
-	Equal  V
-}
-
-func (e *Eq[R, V]) Eval(r R) bool {
-	return assert.ObjectsAreEqual(e.Record(r), e.Equal)
-}
-
-type Gt[R any, V constraints.Ordered] struct {
-	Record  Value[R, V]
-	Greater V
-}
-
-func (g *Gt[R, V]) Eval(r R) bool {
-	return g.Record(r) > g.Greater
-}
-
-type Gte[R any, V constraints.Ordered] struct {
-	Record       Value[R, V]
-	GreaterEqual V
-}
-
-func (g *Gte[R, V]) Eval(r R) bool {
-	return g.Record(r) >= g.GreaterEqual
-}
-
-type Lt[R any, V constraints.Ordered] struct {
-	Record Value[R, V]
-	Less   V
-}
-
-func (l *Lt[R, V]) Eval(r R) bool {
-	return l.Record(r) < l.Less
-}
-
-type Lte[R any, V constraints.Ordered] struct {
-	Record    Value[R, V]
-	LessEqual V
-}
-
-func (l *Lte[R, V]) Eval(r R) bool {
-	return l.Record(r) <= l.LessEqual
-}
-
-type And[R any] []any
-
-func (a *And[R]) Eval(r R) bool {
-	evalReturn := true
-	for _, evaluable := range *a {
-		evalReturn = evalReturn && evaluable.(Evaluable[R]).Eval(r)
-	}
-	return evalReturn
-}
-
-type Or[R any] []any
-
-func (o *Or[R]) Eval(r R) bool {
-	evalReturn := false
-	for _, evaluable := range *o {
-		evalReturn = evalReturn || evaluable.(Evaluable[R]).Eval(r)
-	}
-	return evalReturn
-}
-
-// EvaluableAndIndex the pair of evaluable and index on which query is executed.
-type evaluableAndIndex[R any] struct {
-	Evaluable     Evaluable[R]
+// FilterAndIndex the pair of evaluable and index on which query is executed.
+type FilterAndIndex[R any] struct {
+	FilterFunc    FilterFunc[R]
 	Index         *Index[R]
 	IndexSelector R
 }
 
-// OrderLessFunc is the function template to be used for sorting.
+// OrderLessFunc is the function template to be used for record sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
 
 // Query is the structure that is used to build record query.
@@ -106,7 +35,7 @@ type Query[R any] struct {
 	index         *Index[R]
 	indexSelector R
 
-	where         []evaluableAndIndex[R]
+	queries       []FilterAndIndex[R]
 	orderLessFunc OrderLessFunc[R]
 	offset        uint64
 	limit         uint64
@@ -116,7 +45,7 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 	return Query[R]{
 		table:         t,
 		index:         i,
-		where:         []evaluableAndIndex[R]{},
+		queries:       []FilterAndIndex[R]{},
 		orderLessFunc: nil,
 		offset:        0,
 		limit:         0,
@@ -132,12 +61,12 @@ func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
 	return q
 }
 
-// Where adds additional filtering to the query. The conditions can be built with
+// Filter adds additional filtering to the query. The conditions can be built with
 // structures that implement Evaluable interface.
-func (q Query[R]) Where(evaluable Evaluable[R]) Query[R] {
-	newWhere := make([]evaluableAndIndex[R], 0, len(q.where)+1)
-	q.where = append(append(newWhere, q.where...), evaluableAndIndex[R]{
-		Evaluable:     evaluable,
+func (q Query[R]) Filter(filter FilterFunc[R]) Query[R] {
+	newWhere := make([]FilterAndIndex[R], 0, len(q.queries)+1)
+	q.queries = append(append(newWhere, q.queries...), FilterAndIndex[R]{
+		FilterFunc:    filter,
 		Index:         q.index,
 		IndexSelector: q.indexSelector,
 	})
@@ -164,10 +93,10 @@ func (q Query[R]) Limit(limit uint64) Query[R] {
 
 // Execute the built query.
 func (q Query[R]) Execute(r *[]R) error {
-	if len(q.where) == 0 {
-		q.where = append([]evaluableAndIndex[R]{
+	if len(q.queries) == 0 {
+		q.queries = append([]FilterAndIndex[R]{
 			{
-				Evaluable:     &And[R]{},
+				FilterFunc:    func(r R) bool { return true },
 				Index:         q.index,
 				IndexSelector: q.indexSelector,
 			},
@@ -175,9 +104,9 @@ func (q Query[R]) Execute(r *[]R) error {
 	}
 
 	var records []R
-	for _, where := range q.where {
-		err := q.table.ScanIndexForEach(where.Index, where.IndexSelector, func(record R) {
-			if where.Evaluable.Eval(record) {
+	for _, query := range q.queries {
+		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(record R) {
+			if query.FilterFunc(record) {
 				records = append(records, record)
 			}
 		})
