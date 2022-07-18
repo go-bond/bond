@@ -7,8 +7,12 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+const PrimaryKeyBufferSize = 10240
+const IndexKeyBufferSize = 10240
+const KeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize
+
 type TableID uint8
-type TableRecordKeyFunc[T any] func(t T) []byte
+type TableRecordKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
 type Table[T any] struct {
 	TableID TableID
@@ -28,7 +32,7 @@ func NewTable[T any](db *DB, id TableID, trkFn TableRecordKeyFunc[T]) *Table[T] 
 		TableID:       id,
 		db:            db,
 		recordKeyFunc: trkFn,
-		mainIndex:     NewIndex[T](MainIndexID, func(t T) []byte { return []byte{} }),
+		mainIndex:     NewIndex[T](MainIndexID, func(builder KeyBuilder, t T) []byte { return []byte{} }),
 		otherIndexes:  make(map[IndexID]*Index[T]),
 		mutex:         sync.RWMutex{},
 	}
@@ -55,24 +59,31 @@ func (t *Table[T]) Insert(tr []T) error {
 	batch := t.db.NewBatch()
 	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
-	keyBuffer := make([]byte, 0, 10240)
+	var (
+		keyBuffer       [KeyBufferSize]byte
+		indexKeyBuffer  [IndexKeyBufferSize]byte
+		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
+	)
 
 	for _, r := range tr {
-		recordKey := t.recordKeyFunc(r)
+		recordKey := t.recordKeyFunc(
+			NewKeyBuilder(keyBuffer[:0]),
+			r,
+		)
 
 		// index keys
 		keysForIndexInsert = keysForIndexInsert[:0]
 		for _, idx := range t.otherIndexes {
 			if idx.IndexFilterFunction(r) {
-				keysForIndexInsert = append(keysForIndexInsert,
-					KeyEncode(Key{
-						TableID:   t.TableID,
-						IndexID:   idx.IndexID,
-						IndexKey:  idx.IndexKey(r),
-						RecordKey: recordKey,
-					}),
-					keyBuffer[len(keyBuffer):],
-				)
+				rawIndexKey := KeyEncode(Key{
+					TableID:   t.TableID,
+					IndexID:   idx.IndexID,
+					IndexKey:  idx.IndexKey(NewKeyBuilder(indexKeyBuffer[:0]), r),
+					RecordKey: recordKey,
+				}, indexKeysBuffer)
+
+				keysForIndexInsert = append(keysForIndexInsert, rawIndexKey)
+				indexKeysBuffer = rawIndexKey[len(rawIndexKey):]
 			}
 		}
 
@@ -88,7 +99,7 @@ func (t *Table[T]) Insert(tr []T) error {
 			IndexID:   MainIndexID,
 			IndexKey:  []byte{},
 			RecordKey: recordKey,
-		}, keyBuffer[len(keyBuffer):])
+		}, keyBuffer[len(recordKey):len(recordKey)])
 
 		err = batch.Set(keyRaw, data, pebble.Sync)
 		if err != nil {
@@ -104,8 +115,6 @@ func (t *Table[T]) Insert(tr []T) error {
 				return err
 			}
 		}
-
-		keyBuffer = keyBuffer[:0]
 	}
 
 	err := batch.Commit(pebble.Sync)
@@ -136,20 +145,22 @@ func (t *Table[T]) ScanForEach(f func(t T)) error {
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
-	buffer := make([]byte, 0, 5120)
+	var prefixBuffer [KeyBufferSize]byte
+	var indexKeyBuffer [IndexKeyBufferSize]byte
 
 	prefix := KeyEncode(Key{
 		TableID:   t.TableID,
 		IndexID:   i.IndexID,
-		IndexKey:  i.IndexKey(s),
+		IndexKey:  i.IndexKey(NewKeyBuilder(indexKeyBuffer[:0]), s),
 		RecordKey: []byte{},
-	}, buffer[:0])
+	}, prefixBuffer[:0])
 
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
 	})
 
 	var getValue func() error
+	var keyBuffer [KeyBufferSize]byte
 	if i.IndexID == MainIndexID {
 		getValue = func() error {
 			var record T
@@ -162,9 +173,9 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 		}
 	} else {
 		getValue = func() error {
-			tableKey := KeyEncode(
-				KeyDecode(iter.Key()).ToTableKey(),
-				buffer[:0],
+			tableKey := KeyBytesToTableKeyBytes(
+				iter.Key(),
+				keyBuffer[:0],
 			)
 
 			valueData, closer, err := t.db.Get(tableKey)
