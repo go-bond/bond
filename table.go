@@ -55,6 +55,8 @@ func (t *Table[T]) Insert(tr []T) error {
 	batch := t.db.NewBatch()
 	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
+	keyBuffer := make([]byte, 0, 10240)
+
 	for _, r := range tr {
 		recordKey := t.recordKeyFunc(r)
 
@@ -69,6 +71,7 @@ func (t *Table[T]) Insert(tr []T) error {
 						IndexKey:  idx.IndexKey(r),
 						RecordKey: recordKey,
 					}),
+					keyBuffer[len(keyBuffer):],
 				)
 			}
 		}
@@ -85,7 +88,7 @@ func (t *Table[T]) Insert(tr []T) error {
 			IndexID:   MainIndexID,
 			IndexKey:  []byte{},
 			RecordKey: recordKey,
-		})
+		}, keyBuffer[len(keyBuffer):])
 
 		err = batch.Set(keyRaw, data, pebble.Sync)
 		if err != nil {
@@ -101,6 +104,8 @@ func (t *Table[T]) Insert(tr []T) error {
 				return err
 			}
 		}
+
+		keyBuffer = keyBuffer[:0]
 	}
 
 	err := batch.Commit(pebble.Sync)
@@ -131,12 +136,14 @@ func (t *Table[T]) ScanForEach(f func(t T)) error {
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
+	buffer := make([]byte, 0, 5120)
+
 	prefix := KeyEncode(Key{
 		TableID:   t.TableID,
 		IndexID:   i.IndexID,
 		IndexKey:  i.IndexKey(s),
 		RecordKey: []byte{},
-	})
+	}, buffer[:0])
 
 	iter := t.db.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
@@ -157,6 +164,7 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 		getValue = func() error {
 			tableKey := KeyEncode(
 				KeyDecode(iter.Key()).ToTableKey(),
+				buffer[:0],
 			)
 
 			valueData, closer, err := t.db.Get(tableKey)

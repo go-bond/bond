@@ -44,14 +44,19 @@ func (k Key) IsPrefix() bool {
 	return len(k.RecordKey) == 0
 }
 
-func KeyEncode(key Key) []byte {
-	buff := bytes.NewBuffer(make([]byte, 0, 128))
+func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
+	var rawBuff []byte
+	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
+		rawBuff = rawBuffs[0]
+	}
+
+	buff := bytes.NewBuffer(rawBuff)
 	buff.Write([]byte{byte(key.TableID)})
 	buff.Write([]byte{byte(key.IndexID)})
 
-	indexLenBuff := make([]byte, 4)
-	binary.BigEndian.PutUint32(indexLenBuff, uint32(len(key.IndexKey)))
-	buff.Write(indexLenBuff)
+	var indexLenBuff [4]byte
+	binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexKey)))
+	buff.Write(indexLenBuff[:4])
 	buff.Write(key.IndexKey)
 
 	buff.Write(key.RecordKey)
