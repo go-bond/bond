@@ -504,6 +504,8 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
@@ -569,6 +571,8 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
@@ -634,6 +638,8 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
@@ -702,6 +708,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
@@ -770,6 +778,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
@@ -838,6 +848,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
 
 	b.ResetTimer()
+	b.ReportAllocs()
+
 	for i := 0; i < b.N; i++ {
 		var tokenBalances []*TokenBalance
 
