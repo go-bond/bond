@@ -89,6 +89,25 @@ func KeyDecode(keyBytes []byte) Key {
 	}
 }
 
+func KeyBytesToTableKeyBytes(key []byte, rawBuffs ...[]byte) []byte {
+	var rawBuff []byte
+	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
+		rawBuff = rawBuffs[0]
+	}
+
+	buff := bytes.NewBuffer(rawBuff)
+
+	buff.WriteByte(key[0])
+	buff.WriteByte(0)
+
+	buff.Write([]byte{0, 0, 0, 0})
+
+	indexKeyLen := int(binary.BigEndian.Uint32(key[2:6]))
+	buff.Write(key[6+indexKeyLen:])
+
+	return buff.Bytes()
+}
+
 func KeyPrefixSplitIndex(rawKey []byte) int {
 	return 6 + int(binary.BigEndian.Uint32(rawKey[2:6]))
 }

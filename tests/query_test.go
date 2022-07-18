@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -18,10 +17,8 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -33,14 +30,17 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append(append([]byte{}, tb.AccountAddress...), tb.ContractAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
 			},
 		)
 	)
@@ -467,10 +467,8 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -481,8 +479,8 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
@@ -534,10 +532,8 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -548,8 +544,8 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
@@ -601,10 +597,8 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -615,8 +609,8 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
@@ -671,10 +665,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -685,8 +677,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
@@ -741,10 +733,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -755,8 +745,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
@@ -811,10 +801,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(tb *TokenBalance) []byte {
-		keyBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(keyBytes, tb.ID)
-		return keyBytes
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
@@ -825,8 +813,8 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 	var (
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(tb *TokenBalance) []byte {
-				return append([]byte{}, tb.AccountAddress...)
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
