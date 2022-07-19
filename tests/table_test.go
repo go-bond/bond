@@ -102,6 +102,35 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 	}
 }
 
+func TestBondTable_Delete(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	err = tokenBalanceTable.Delete([]*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	assert.False(t, db.NewIter(nil).First())
+}
+
 func TestBondTable_Exist(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
