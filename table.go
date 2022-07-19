@@ -132,6 +132,35 @@ func (t *Table[T]) Insert(tr []T) error {
 	return nil
 }
 
+func (t *Table[T]) Delete(trs []T) error {
+	batch := t.db.NewBatch()
+
+	var keyBuffer [KeyBufferSize]byte
+	for _, tr := range trs {
+		var recordKey = t.recordKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
+		var key = KeyEncode(Key{
+			TableID:   t.TableID,
+			IndexID:   MainIndexID,
+			IndexKey:  []byte{},
+			RecordKey: recordKey,
+		}, keyBuffer[len(recordKey):len(recordKey)])
+
+		err := batch.Delete(key, pebble.Sync)
+		if err != nil {
+			_ = batch.Close()
+			return err
+		}
+	}
+
+	err := batch.Commit(pebble.Sync)
+	if err != nil {
+		_ = batch.Close()
+		return err
+	}
+
+	return nil
+}
+
 func (t *Table[T]) Exist(tr T) (bool, T) {
 	var keyBuffer [KeyBufferSize]byte
 	var recordKey = t.recordKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
