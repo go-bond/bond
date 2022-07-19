@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -56,7 +57,7 @@ func (t *Table[T]) Insert(tr []T) error {
 	maps.Copy(indexes, t.otherIndexes)
 	t.mutex.RUnlock()
 
-	batch := t.db.NewBatch()
+	batch := t.db.NewIndexedBatch()
 	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
 
 	var (
@@ -101,6 +102,11 @@ func (t *Table[T]) Insert(tr []T) error {
 			RecordKey: recordKey,
 		}, keyBuffer[len(recordKey):len(recordKey)])
 
+		// check if exist
+		if ok, _ := t.exist(keyRaw, batch); ok {
+			return fmt.Errorf("record: 0x%x(%s) already exist", recordKey, recordKey)
+		}
+
 		err = batch.Set(keyRaw, data, pebble.Sync)
 		if err != nil {
 			_ = batch.Close()
@@ -124,6 +130,36 @@ func (t *Table[T]) Insert(tr []T) error {
 	}
 
 	return nil
+}
+
+func (t *Table[T]) Exist(tr T) (bool, T) {
+	var keyBuffer [KeyBufferSize]byte
+	var recordKey = t.recordKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
+	var key = KeyEncode(Key{
+		TableID:   t.TableID,
+		IndexID:   MainIndexID,
+		IndexKey:  []byte{},
+		RecordKey: recordKey,
+	}, keyBuffer[len(recordKey):len(recordKey)])
+
+	return t.exist(key, nil)
+}
+
+func (t *Table[T]) exist(key []byte, batch *pebble.Batch) (bool, T) {
+	data, closer, err := t.db.getBatchOrDB(key, batch)
+	if err != nil {
+		return false, make([]T, 1)[0]
+	}
+
+	defer func() { _ = closer.Close() }()
+
+	var tr T
+	err = t.db.Serializer().Deserialize(data, &tr)
+	if err != nil {
+		return false, make([]T, 1)[0]
+	}
+
+	return true, tr
 }
 
 func (t *Table[T]) Query() Query[T] {
