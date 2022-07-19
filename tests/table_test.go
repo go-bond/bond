@@ -202,7 +202,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 	})
 
 	const (
-		_                                 = bond.MainIndexID
+		_                                 = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -588,7 +588,7 @@ func BenchmarkBondTableScanIndex_1000(b *testing.B) {
 	})
 
 	const (
-		_                                 = bond.MainIndexID
+		_                                 = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -649,7 +649,7 @@ func BenchmarkBondTableScanIndex_1000000(b *testing.B) {
 	})
 
 	const (
-		_                                 = bond.MainIndexID
+		_                                 = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -793,7 +793,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000(b *testing.B) {
 	})
 
 	const (
-		_                                 = bond.MainIndexID
+		_                                 = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -857,7 +857,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
 	})
 
 	const (
-		_                                 = bond.MainIndexID
+		_                                 = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 

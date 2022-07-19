@@ -21,10 +21,7 @@ func TestBond_NewIndex(t *testing.T) {
 		},
 	)
 
-	expectedIndexKey := []uint8{0x01, 0x00, 0x00, 0x00, 0x01}
-
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
-	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIDIndex.IndexKey(bond.KeyBuilder{}, &TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 
@@ -39,7 +36,6 @@ func TestBond_NewIndex(t *testing.T) {
 	)
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIndexSelective.IndexID)
-	assert.Equal(t, expectedIndexKey, TokenBalanceAccountIndexSelective.IndexKey(bond.KeyBuilder{}, &TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, false, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 }
@@ -57,7 +53,7 @@ func TestBond_Table_Index(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = bond.MainIndexID
+		TokenBalanceDefaultIndexID        = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
