@@ -139,12 +139,12 @@ func (t *Table[T]) Insert(tr []T) error {
 func (t *Table[T]) Delete(trs []T) error {
 	batch := t.db.NewBatch()
 
-	var keyBuffer [KeyBufferSize]byte
+	var keyBuffer [DataKeyBufferSize]byte
 	for _, tr := range trs {
-		var recordKey = t.recordKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
-		var key = KeyEncode(Key{
+		var recordKey = t.primaryKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
+		var key = _KeyEncode(_Key{
 			TableID:   t.TableID,
-			IndexID:   MainIndexID,
+			IndexID:   PrimaryIndexID,
 			IndexKey:  []byte{},
 			RecordKey: recordKey,
 		}, keyBuffer[len(recordKey):len(recordKey)])
