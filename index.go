@@ -4,7 +4,7 @@ type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
 
-const MainIndexID = IndexID(0)
+const PrimaryIndexID = IndexID(0)
 
 type Index[T any] struct {
 	IndexID             IndexID
@@ -28,6 +28,6 @@ func NewIndex[T any](idxID IndexID, idxFn IndexKeyFunction[T], idxFFn ...IndexFi
 	return idx
 }
 
-func (i *Index[T]) IndexKey(builder KeyBuilder, t T) []byte {
+func (i *Index[T]) indexKey(builder KeyBuilder, t T) []byte {
 	return i.IndexKeyFunction(builder, t)
 }

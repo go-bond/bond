@@ -10,39 +10,39 @@ import (
 
 const PrimaryKeyBufferSize = 10240
 const IndexKeyBufferSize = 10240
-const KeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize
+const DataKeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize + 6
 
 type TableID uint8
-type TableRecordKeyFunc[T any] func(builder KeyBuilder, t T) []byte
+type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
 type Table[T any] struct {
 	TableID TableID
 
 	db *DB
 
-	recordKeyFunc TableRecordKeyFunc[T]
+	primaryKeyFunc TablePrimaryKeyFunc[T]
 
-	mainIndex    *Index[T]
-	otherIndexes map[IndexID]*Index[T]
+	primaryIndex     *Index[T]
+	secondaryIndexes map[IndexID]*Index[T]
 
 	mutex sync.RWMutex
 }
 
-func NewTable[T any](db *DB, id TableID, trkFn TableRecordKeyFunc[T]) *Table[T] {
+func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T]) *Table[T] {
 	return &Table[T]{
-		TableID:       id,
-		db:            db,
-		recordKeyFunc: trkFn,
-		mainIndex:     NewIndex[T](MainIndexID, func(builder KeyBuilder, t T) []byte { return []byte{} }),
-		otherIndexes:  make(map[IndexID]*Index[T]),
-		mutex:         sync.RWMutex{},
+		TableID:          id,
+		db:               db,
+		primaryKeyFunc:   trkFn,
+		primaryIndex:     NewIndex[T](PrimaryIndexID, func(builder KeyBuilder, t T) []byte { return []byte{} }),
+		secondaryIndexes: make(map[IndexID]*Index[T]),
+		mutex:            sync.RWMutex{},
 	}
 }
 
 func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 	t.mutex.Lock()
 	for _, idx := range idxs {
-		t.otherIndexes[idx.IndexID] = idx
+		t.secondaryIndexes[idx.IndexID] = idx
 	}
 	t.mutex.Unlock()
 
@@ -51,35 +51,39 @@ func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 	}
 }
 
+func (t *Table[T]) PrimaryIndex() *Index[T] {
+	return t.primaryIndex
+}
+
 func (t *Table[T]) Insert(tr []T) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.otherIndexes)
+	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
 	batch := t.db.NewIndexedBatch()
-	keysForIndexInsert := make([][]byte, 0, len(t.otherIndexes))
+	keysForIndexInsert := make([][]byte, 0, len(t.secondaryIndexes))
 
 	var (
-		keyBuffer       [KeyBufferSize]byte
+		keyBuffer       [DataKeyBufferSize]byte
 		indexKeyBuffer  [IndexKeyBufferSize]byte
 		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
 	)
 
 	for _, r := range tr {
-		recordKey := t.recordKeyFunc(
+		recordKey := t.primaryKeyFunc(
 			NewKeyBuilder(keyBuffer[:0]),
 			r,
 		)
 
 		// index keys
 		keysForIndexInsert = keysForIndexInsert[:0]
-		for _, idx := range t.otherIndexes {
+		for _, idx := range t.secondaryIndexes {
 			if idx.IndexFilterFunction(r) {
-				rawIndexKey := KeyEncode(Key{
+				rawIndexKey := _KeyEncode(_Key{
 					TableID:   t.TableID,
 					IndexID:   idx.IndexID,
-					IndexKey:  idx.IndexKey(NewKeyBuilder(indexKeyBuffer[:0]), r),
+					IndexKey:  idx.indexKey(NewKeyBuilder(indexKeyBuffer[:0]), r),
 					RecordKey: recordKey,
 				}, indexKeysBuffer)
 
@@ -95,9 +99,9 @@ func (t *Table[T]) Insert(tr []T) error {
 		}
 
 		// insert data
-		keyRaw := KeyEncode(Key{
+		keyRaw := _KeyEncode(_Key{
 			TableID:   t.TableID,
-			IndexID:   MainIndexID,
+			IndexID:   PrimaryIndexID,
 			IndexKey:  []byte{},
 			RecordKey: recordKey,
 		}, keyBuffer[len(recordKey):len(recordKey)])
@@ -162,11 +166,11 @@ func (t *Table[T]) Delete(trs []T) error {
 }
 
 func (t *Table[T]) Exist(tr T) (bool, T) {
-	var keyBuffer [KeyBufferSize]byte
-	var recordKey = t.recordKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
-	var key = KeyEncode(Key{
+	var keyBuffer [DataKeyBufferSize]byte
+	var recordKey = t.primaryKeyFunc(NewKeyBuilder(keyBuffer[:0]), tr)
+	var key = _KeyEncode(_Key{
 		TableID:   t.TableID,
-		IndexID:   MainIndexID,
+		IndexID:   PrimaryIndexID,
 		IndexKey:  []byte{},
 		RecordKey: recordKey,
 	}, keyBuffer[len(recordKey):len(recordKey)])
@@ -192,11 +196,11 @@ func (t *Table[T]) exist(key []byte, batch *pebble.Batch) (bool, T) {
 }
 
 func (t *Table[T]) Query() Query[T] {
-	return newQuery[T](t, t.mainIndex)
+	return newQuery[T](t, t.primaryIndex)
 }
 
 func (t *Table[T]) Scan(tr *[]T) error {
-	return t.ScanIndex(t.mainIndex, make([]T, 1)[0], tr)
+	return t.ScanIndex(t.primaryIndex, make([]T, 1)[0], tr)
 }
 
 func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T) error {
@@ -206,17 +210,17 @@ func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T) error {
 }
 
 func (t *Table[T]) ScanForEach(f func(t T)) error {
-	return t.ScanIndexForEach(t.mainIndex, make([]T, 1)[0], f)
+	return t.ScanIndexForEach(t.primaryIndex, make([]T, 1)[0], f)
 }
 
 func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
-	var prefixBuffer [KeyBufferSize]byte
+	var prefixBuffer [DataKeyBufferSize]byte
 	var indexKeyBuffer [IndexKeyBufferSize]byte
 
-	prefix := KeyEncode(Key{
+	prefix := _KeyEncode(_Key{
 		TableID:   t.TableID,
 		IndexID:   i.IndexID,
-		IndexKey:  i.IndexKey(NewKeyBuilder(indexKeyBuffer[:0]), s),
+		IndexKey:  i.indexKey(NewKeyBuilder(indexKeyBuffer[:0]), s),
 		RecordKey: []byte{},
 	}, prefixBuffer[:0])
 
@@ -225,8 +229,8 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 	})
 
 	var getValue func() error
-	var keyBuffer [KeyBufferSize]byte
-	if i.IndexID == MainIndexID {
+	var keyBuffer [DataKeyBufferSize]byte
+	if i.IndexID == PrimaryIndexID {
 		getValue = func() error {
 			var record T
 			if err := t.db.Serializer().Deserialize(iter.Value(), &record); err == nil {
@@ -238,7 +242,7 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 		}
 	} else {
 		getValue = func() error {
-			tableKey := KeyBytesToTableKeyBytes(
+			tableKey := _KeyBytesToDataKeyBytes(
 				iter.Key(),
 				keyBuffer[:0],
 			)

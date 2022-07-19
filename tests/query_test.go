@@ -22,7 +22,7 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = bond.MainIndexID
+		TokenBalanceDefaultIndexID        = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -436,7 +436,7 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -501,7 +501,7 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -566,7 +566,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -634,7 +634,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -702,7 +702,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -770,7 +770,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.MainIndexID
+		TokenBalanceMainIndexID           = bond.PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
