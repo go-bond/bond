@@ -62,3 +62,11 @@ func (b KeyBuilder) putFieldID() KeyBuilder {
 func (b KeyBuilder) Bytes() []byte {
 	return b.buff
 }
+
+type Lazy[T any] struct {
+	getFunc func() (T, error)
+}
+
+func (l Lazy[T]) Get() (T, error) {
+	return l.getFunc()
+}

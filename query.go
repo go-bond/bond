@@ -105,10 +105,27 @@ func (q Query[R]) Execute(r *[]R) error {
 
 	var records []R
 	for _, query := range q.queries {
-		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(record R) {
+		count := uint64(0)
+		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
+			// get and deserialize
+			record, err := lazy.Get()
+			if err != nil {
+				return false, err
+			}
+
+			// filter if filter available
 			if query.FilterFunc(record) {
 				records = append(records, record)
+				count++
 			}
+
+			// check if we need to iterate further
+			cont := true
+			if q.orderLessFunc == nil && query.FilterFunc == nil {
+				cont = count < q.offset+q.limit
+			}
+
+			return cont, nil
 		})
 		if err != nil {
 			return err

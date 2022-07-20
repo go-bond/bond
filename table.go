@@ -204,16 +204,21 @@ func (t *Table[T]) Scan(tr *[]T) error {
 }
 
 func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T) error {
-	return t.ScanIndexForEach(i, s, func(record T) {
-		*tr = append(*tr, record)
+	return t.ScanIndexForEach(i, s, func(lazy Lazy[T]) (bool, error) {
+		if record, err := lazy.Get(); err == nil {
+			*tr = append(*tr, record)
+			return true, nil
+		} else {
+			return false, err
+		}
 	})
 }
 
-func (t *Table[T]) ScanForEach(f func(t T)) error {
+func (t *Table[T]) ScanForEach(f func(l Lazy[T]) (bool, error)) error {
 	return t.ScanIndexForEach(t.primaryIndex, make([]T, 1)[0], f)
 }
 
-func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
+func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t Lazy[T]) (bool, error)) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 	var indexKeyBuffer [IndexKeyBufferSize]byte
 
@@ -228,20 +233,19 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 		LowerBound: prefix,
 	})
 
-	var getValue func() error
+	var getValue func() (T, error)
 	var keyBuffer [DataKeyBufferSize]byte
 	if i.IndexID == PrimaryIndexID {
-		getValue = func() error {
+		getValue = func() (T, error) {
 			var record T
 			if err := t.db.Serializer().Deserialize(iter.Value(), &record); err == nil {
-				f(record)
-				return nil
+				return record, nil
 			} else {
-				return err
+				return make([]T, 1)[0], err
 			}
 		}
 	} else {
-		getValue = func() error {
+		getValue = func() (T, error) {
 			tableKey := _KeyBytesToDataKeyBytes(
 				iter.Key(),
 				keyBuffer[:0],
@@ -249,26 +253,37 @@ func (t *Table[T]) ScanIndexForEach(i *Index[T], s T, f func(t T)) error {
 
 			valueData, closer, err := t.db.Get(tableKey)
 			if err != nil {
-				return err
+				return make([]T, 1)[0], err
 			}
 
 			defer func() { _ = closer.Close() }()
 
 			var record T
 			if err = t.db.Serializer().Deserialize(valueData, &record); err == nil {
-				f(record)
-				return nil
+				return record, nil
 			} else {
-				return err
+				return make([]T, 1)[0], err
 			}
 		}
 	}
 
 	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
-		err := getValue()
-		if err != nil {
-			return err
+		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
+			break
+		} else {
+			if err != nil {
+				return err
+			}
+
+			if !cont {
+				break
+			}
 		}
+	}
+
+	err := iter.Close()
+	if err != nil {
+		return err
 	}
 
 	return nil
