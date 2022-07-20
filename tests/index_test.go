@@ -73,6 +73,7 @@ func TestBond_Table_Index(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
+			// The function deciding what to index
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},

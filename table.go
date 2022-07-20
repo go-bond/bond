@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -113,7 +114,7 @@ func (t *Table[T]) Insert(trs []T) error {
 }
 
 func (t *Table[T]) Update(trs []T) error {
-	/*t.mutex.RLock()
+	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
@@ -133,20 +134,58 @@ func (t *Table[T]) Update(trs []T) error {
 		// old record
 		oldTrData, closer, err := batch.Get(key)
 		if err != nil {
+			_ = batch.Close()
 			return err
 		}
 
 		var oldTr T
 		err = t.db.Serializer().Deserialize(oldTrData, &oldTr)
 		if err != nil {
+			_ = batch.Close()
 			return err
 		}
 
 		_ = closer.Close()
 
-		// old indexes
-		//oldTrIndexKeys := t.indexKeys(oldTr, indexes, in)
-	}*/
+		// serialize
+		data, err := t.db.Serializer().Serialize(tr)
+		if err != nil {
+			return err
+		}
+
+		// update entry
+		err = batch.Set(key, data, pebble.Sync)
+		if err != nil {
+			_ = batch.Close()
+			return err
+		}
+
+		// indexKeys to add and remove
+		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes)
+
+		// update indexes
+		for _, indexKey := range toAddIndexKeys {
+			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
+		}
+
+		for _, indexKey := range toRemoveIndexKeys {
+			err = batch.Delete(indexKey, pebble.Sync)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
+		}
+	}
+
+	err := batch.Commit(pebble.Sync)
+	if err != nil {
+		_ = batch.Close()
+		return err
+	}
 
 	return nil
 }
@@ -349,4 +388,37 @@ func (t *Table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, inde
 		}
 	}
 	return indexKeys
+}
+
+func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T]) (toAdd [][]byte, toRemove [][]byte) {
+	newTrKeys := t.indexKeys(newTr, idxs, []byte{}, [][]byte{})
+	oldTrKeys := t.indexKeys(oldTr, idxs, []byte{}, [][]byte{})
+
+	for _, newKey := range newTrKeys {
+		found := false
+		for _, oldKey := range oldTrKeys {
+			if bytes.Compare(newKey, oldKey) == 0 {
+				found = true
+			}
+		}
+
+		if !found {
+			toAdd = append(toAdd, newKey)
+		}
+	}
+
+	for _, oldKey := range oldTrKeys {
+		found := false
+		for _, newKey := range newTrKeys {
+			if bytes.Compare(oldKey, newKey) == 0 {
+				found = true
+			}
+		}
+
+		if !found {
+			toAdd = append(toRemove, oldKey)
+		}
+	}
+
+	return
 }
