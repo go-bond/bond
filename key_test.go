@@ -8,10 +8,10 @@ import (
 
 func TestKey_Encode_Decode(t *testing.T) {
 	key := _Key{
-		TableID:   1,
-		IndexID:   1,
-		IndexKey:  []byte("indexKey"),
-		RecordKey: []byte("recordKey"),
+		TableID:    1,
+		IndexID:    1,
+		IndexKey:   []byte("indexKey"),
+		PrimaryKey: []byte("recordKey"),
 	}
 
 	keyRaw := _KeyEncode(key)
@@ -22,17 +22,17 @@ func TestKey_Encode_Decode(t *testing.T) {
 
 func TestKey_ToKeyPrefix(t *testing.T) {
 	key := _Key{
-		TableID:   1,
-		IndexID:   1,
-		IndexKey:  []byte("indexKey"),
-		RecordKey: []byte("recordKey"),
+		TableID:    1,
+		IndexID:    1,
+		IndexKey:   []byte("indexKey"),
+		PrimaryKey: []byte("recordKey"),
 	}
 
 	expectedPrefixKey := _Key{
-		TableID:   1,
-		IndexID:   1,
-		IndexKey:  []byte("indexKey"),
-		RecordKey: []byte{},
+		TableID:    1,
+		IndexID:    1,
+		IndexKey:   []byte("indexKey"),
+		PrimaryKey: []byte{},
 	}
 
 	expectedKeyPrefix := append([]byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x08}, []byte("indexKey")...)
@@ -48,17 +48,17 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 
 func TestKey_ToDataKey(t *testing.T) {
 	key := _Key{
-		TableID:   1,
-		IndexID:   1,
-		IndexKey:  []byte("indexKey"),
-		RecordKey: []byte("recordKey"),
+		TableID:    1,
+		IndexID:    1,
+		IndexKey:   []byte("indexKey"),
+		PrimaryKey: []byte("recordKey"),
 	}
 
 	expectedTableKey := _Key{
-		TableID:   1,
-		IndexID:   PrimaryIndexID,
-		IndexKey:  []byte{},
-		RecordKey: []byte("recordKey"),
+		TableID:    1,
+		IndexID:    PrimaryIndexID,
+		IndexKey:   []byte{},
+		PrimaryKey: []byte("recordKey"),
 	}
 
 	expectedTableKeyRaw := append([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, []byte("recordKey")...)
