@@ -2,6 +2,8 @@ package bond
 
 import (
 	"sort"
+
+	"github.com/cockroachdb/pebble"
 )
 
 // FilterFunc is the function template to be used for record filtering.
@@ -22,11 +24,8 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 // Example:
 //	bond.Query[*Contract]{}.
 //		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
-//		Where(&bond.Gt[*Contract, uint64]{
-//			Record: func(c *Contract) uint64 {
-//				return c.Balance
-//			},
-//			Greater: 10,
+//		Filter(func(c *Contract) bool {
+//			return c.Balance > 25
 //		}).
 //		Limit(50)
 //
@@ -92,7 +91,7 @@ func (q Query[R]) Limit(limit uint64) Query[R] {
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(r *[]R) error {
+func (q Query[R]) Execute(r *[]R, batches ...*pebble.Batch) error {
 	if len(q.queries) == 0 {
 		q.queries = append([]FilterAndIndex[R]{
 			{
@@ -137,7 +136,7 @@ func (q Query[R]) Execute(r *[]R) error {
 			}
 
 			return next, nil
-		})
+		}, batches...)
 		if err != nil {
 			return err
 		}
