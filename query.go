@@ -96,7 +96,7 @@ func (q Query[R]) Execute(r *[]R) error {
 	if len(q.queries) == 0 {
 		q.queries = append([]FilterAndIndex[R]{
 			{
-				FilterFunc:    func(r R) bool { return true },
+				FilterFunc:    nil,
 				Index:         q.index,
 				IndexSelector: q.indexSelector,
 			},
@@ -107,6 +107,12 @@ func (q Query[R]) Execute(r *[]R) error {
 	for _, query := range q.queries {
 		count := uint64(0)
 		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
+			// check if can apply offset in here
+			if q.shouldApplyOffsetEarly() && q.offset > count {
+				count++
+				return true, nil
+			}
+
 			// get and deserialize
 			record, err := lazy.Get()
 			if err != nil {
@@ -114,18 +120,23 @@ func (q Query[R]) Execute(r *[]R) error {
 			}
 
 			// filter if filter available
-			if query.FilterFunc(record) {
+			if q.shouldFilter(query) {
+				if query.FilterFunc(record) {
+					records = append(records, record)
+					count++
+				}
+			} else {
 				records = append(records, record)
 				count++
 			}
 
+			next := true
 			// check if we need to iterate further
-			cont := true
-			if q.orderLessFunc == nil && query.FilterFunc == nil {
-				cont = count < q.offset+q.limit
+			if !q.shouldSort() && q.shouldLimit() {
+				next = count < q.offset+q.limit
 			}
 
-			return cont, nil
+			return next, nil
 		})
 		if err != nil {
 			return err
@@ -133,25 +144,55 @@ func (q Query[R]) Execute(r *[]R) error {
 	}
 
 	// sorting
-	if q.orderLessFunc != nil {
+	if q.shouldSort() {
 		sort.Slice(records, func(i, j int) bool {
 			return q.orderLessFunc(records[i], records[j])
 		})
 	}
 
 	// offset
-	if int(q.offset) >= len(records) {
-		*r = make([]R, 0)
-		return nil
+	if !q.isOffsetApplied() {
+		if int(q.offset) >= len(records) {
+			records = make([]R, 0)
+		} else {
+			records = records[q.offset:]
+		}
 	}
 
 	// limit
-	lastIndex := q.offset + q.limit
-	if int(lastIndex) >= len(records) {
-		lastIndex = uint64(len(records))
+	if !q.isLimitApplied() && q.shouldLimit() {
+		lastIndex := q.limit
+		if int(lastIndex) >= len(records) {
+			lastIndex = uint64(len(records))
+		}
+		records = records[:lastIndex]
 	}
 
-	*r = records[q.offset:lastIndex]
+	*r = records
 
 	return nil
+}
+
+func (q Query[R]) shouldFilter(query FilterAndIndex[R]) bool {
+	return query.FilterFunc != nil
+}
+
+func (q Query[R]) shouldSort() bool {
+	return q.orderLessFunc != nil
+}
+
+func (q Query[R]) shouldApplyOffsetEarly() bool {
+	return q.orderLessFunc == nil && len(q.queries) == 1 && q.queries[0].FilterFunc == nil
+}
+
+func (q Query[R]) shouldLimit() bool {
+	return q.limit != 0
+}
+
+func (q Query[R]) isLimitApplied() bool {
+	return q.orderLessFunc == nil
+}
+
+func (q Query[R]) isOffsetApplied() bool {
+	return q.orderLessFunc == nil && len(q.queries) == 1 && q.queries[0].FilterFunc == nil
 }
