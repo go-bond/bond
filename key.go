@@ -6,27 +6,27 @@ import (
 )
 
 type _Key struct {
-	TableID   TableID
-	IndexID   IndexID
-	IndexKey  []byte
-	RecordKey []byte
+	TableID    TableID
+	IndexID    IndexID
+	IndexKey   []byte
+	PrimaryKey []byte
 }
 
 func (k _Key) ToDataKey() _Key {
 	return _Key{
-		TableID:   k.TableID,
-		IndexID:   PrimaryIndexID,
-		IndexKey:  []byte{},
-		RecordKey: k.RecordKey,
+		TableID:    k.TableID,
+		IndexID:    PrimaryIndexID,
+		IndexKey:   []byte{},
+		PrimaryKey: k.PrimaryKey,
 	}
 }
 
 func (k _Key) ToKeyPrefix() _Key {
 	return _Key{
-		TableID:   k.TableID,
-		IndexID:   k.IndexID,
-		IndexKey:  k.IndexKey,
-		RecordKey: []byte{},
+		TableID:    k.TableID,
+		IndexID:    k.IndexID,
+		IndexKey:   k.IndexKey,
+		PrimaryKey: []byte{},
 	}
 }
 
@@ -39,7 +39,7 @@ func (k _Key) IsIndexKey() bool {
 }
 
 func (k _Key) IsKeyPrefix() bool {
-	return len(k.RecordKey) == 0
+	return len(k.PrimaryKey) == 0
 }
 
 func _KeyEncode(key _Key, rawBuffs ...[]byte) []byte {
@@ -57,7 +57,7 @@ func _KeyEncode(key _Key, rawBuffs ...[]byte) []byte {
 	buff.Write(indexLenBuff[:4])
 	buff.Write(key.IndexKey)
 
-	buff.Write(key.RecordKey)
+	buff.Write(key.PrimaryKey)
 
 	return buff.Bytes()
 }
@@ -75,15 +75,15 @@ func _KeyDecode(keyBytes []byte) _Key {
 	indexKey := make([]byte, indexLen)
 	_, _ = buff.Read(indexKey)
 
-	recordKeyLen := len(keyBytes) - 6 - int(indexLen)
-	recordKey := make([]byte, recordKeyLen)
-	_, _ = buff.Read(recordKey)
+	primaryKeyLen := len(keyBytes) - 6 - int(indexLen)
+	primaryKey := make([]byte, primaryKeyLen)
+	_, _ = buff.Read(primaryKey)
 
 	return _Key{
-		TableID:   TableID(tableID),
-		IndexID:   IndexID(indexID),
-		IndexKey:  indexKey,
-		RecordKey: recordKey,
+		TableID:    TableID(tableID),
+		IndexID:    IndexID(indexID),
+		IndexKey:   indexKey,
+		PrimaryKey: primaryKey,
 	}
 }
 
