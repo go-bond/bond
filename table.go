@@ -122,9 +122,8 @@ func (t *Table[T]) Update(trs []T) error {
 	batch := t.db.NewIndexedBatch()
 
 	var (
-		keyBuffer [DataKeyBufferSize]byte
-		//indexKeyBuffer    = make([]byte, DataKeyBufferSize*len(indexes))
-		//oldIndexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes))
+		keyBuffer      [DataKeyBufferSize]byte
+		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
 	)
 
 	for _, tr := range trs {
@@ -161,7 +160,7 @@ func (t *Table[T]) Update(trs []T) error {
 		}
 
 		// indexKeys to add and remove
-		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes)
+		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0])
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
@@ -390,9 +389,14 @@ func (t *Table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, inde
 	return indexKeys
 }
 
-func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T]) (toAdd [][]byte, toRemove [][]byte) {
-	newTrKeys := t.indexKeys(newTr, idxs, []byte{}, [][]byte{})
-	oldTrKeys := t.indexKeys(oldTr, idxs, []byte{}, [][]byte{})
+func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
+	newTrKeys := t.indexKeys(newTr, idxs, buff[:0], [][]byte{})
+	if len(newTrKeys) != 0 {
+		buff = newTrKeys[len(newTrKeys)-1]
+		buff = buff[len(buff):]
+	}
+
+	oldTrKeys := t.indexKeys(oldTr, idxs, buff[:0], [][]byte{})
 
 	for _, newKey := range newTrKeys {
 		found := false
@@ -416,7 +420,7 @@ func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T]) (
 		}
 
 		if !found {
-			toAdd = append(toRemove, oldKey)
+			toRemove = append(toRemove, oldKey)
 		}
 	}
 
