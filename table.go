@@ -231,6 +231,35 @@ func (t *Table[T]) Delete(trs []T) error {
 	return nil
 }
 
+func (t *Table[T]) Upsert(trs []T) error {
+	var toInsert []T
+	var toUpdate []T
+
+	for _, tr := range trs {
+		if exist, _ := t.Exist(tr); exist {
+			toUpdate = append(toUpdate, tr)
+		} else {
+			toInsert = append(toInsert, tr)
+		}
+	}
+
+	if len(toInsert) > 0 {
+		err := t.Insert(toInsert)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(toUpdate) > 0 {
+		err := t.Update(toUpdate)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (t *Table[T]) Exist(tr T) (bool, T) {
 	var keyBuffer [DataKeyBufferSize]byte
 

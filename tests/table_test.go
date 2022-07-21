@@ -163,6 +163,79 @@ func TestBondTable_Update(t *testing.T) {
 	_ = it.Close()
 }
 
+func TestBondTable_Upsert(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalanceAccount2 := &TokenBalance{
+		ID:              2,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         15,
+	}
+
+	tokenBalanceAccountUpdated := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	it := db.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+
+	err = tokenBalanceTable.Upsert([]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2})
+	require.NoError(t, err)
+
+	it = db.NewIter(nil)
+
+	var tokenBalances []*TokenBalance
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccountFromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
+	}
+
+	_ = it.Close()
+
+	require.Equal(t, 2, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccountUpdated, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
+}
+
 func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
