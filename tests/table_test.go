@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -485,6 +486,55 @@ func BenchmarkBondTableInsert_1(b *testing.B) {
 		}
 	}
 	b.StopTimer()
+}
+
+func TestBond_Batch(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	batch := db.NewIndexedBatch()
+
+	exist, tokenBalance := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
+	require.True(t, exist)
+	require.NotNil(t, tokenBalance)
+
+	tokenBalance.Balance += 20
+
+	err = tokenBalanceTable.Update([]*TokenBalance{tokenBalance}, batch)
+	require.NoError(t, err)
+
+	err = batch.Commit(pebble.Sync)
+	require.NoError(t, err)
+
+	it := db.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccountFromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
+	}
 }
 
 func BenchmarkBondTableInsert_1000(b *testing.B) {
