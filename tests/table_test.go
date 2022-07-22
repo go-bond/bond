@@ -404,7 +404,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -839,7 +839,7 @@ func BenchmarkBondTableScanIndex_1000(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -900,7 +900,7 @@ func BenchmarkBondTableScanIndex_1000000(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1044,7 +1044,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1108,7 +1108,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1136,6 +1136,62 @@ func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
 			},
 			&tokenBalances,
 		)
+		if err != nil {
+			panic(err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkBondTableScanIndex_1000000_Skip_Through(b *testing.B) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	const (
+		_                                 = bond.PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+		)
+	)
+
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+	})
+
+	var tokenBalancesForInsert []*TokenBalance
+	for i := 0; i < 1000000; i++ {
+		tokenBalancesForInsert = append(tokenBalancesForInsert, &TokenBalance{
+			ID:              uint64(i + 1),
+			AccountID:       uint32(i % 10),
+			ContractAddress: "0xtestContract" + fmt.Sprintf("%d", i),
+			AccountAddress:  "0xtestAccount",
+			Balance:         uint64((i % 100) * 10),
+		})
+	}
+	_ = tokenBalanceTable.Insert(tokenBalancesForInsert)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		err := tokenBalanceTable.ScanForEach(func(l bond.Lazy[*TokenBalance]) (bool, error) {
+			return true, nil
+		})
 		if err != nil {
 			panic(err)
 		}

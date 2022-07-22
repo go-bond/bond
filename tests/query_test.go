@@ -50,7 +50,7 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndexes(TokenBalanceIndexes, false)
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
 
 	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
 }
@@ -637,7 +637,7 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -702,7 +702,7 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -767,7 +767,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -835,7 +835,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -903,7 +903,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -971,7 +971,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1036,7 +1036,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_200(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1098,7 +1098,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_500(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1160,7 +1160,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_200_Limit_500(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1223,7 +1223,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_500(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1286,7 +1286,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_200(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1352,7 +1352,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_200(b *testing.B
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1417,7 +1417,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_500(b *testing.B
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1482,7 +1482,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_200_Limit_500(b
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1548,7 +1548,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_500(b
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1614,7 +1614,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200(b
 		)
 	)
 
-	tokenBalanceTable.AddIndexes([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
