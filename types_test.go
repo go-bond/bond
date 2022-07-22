@@ -1,4 +1,4 @@
-package tests
+package bond
 
 type TokenBalance struct {
 	ID              uint64 `json:"id"`

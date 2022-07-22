@@ -1,42 +1,41 @@
-package tests
+package bond
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
+func setupDatabaseForQuery() (*DB, *Table[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance]) {
 	db := setupDatabase()
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = bond.PrimaryIndexID
+		TokenBalanceDefaultIndexID        = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
-		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
@@ -45,7 +44,7 @@ func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[
 		)
 	)
 
-	var TokenBalanceIndexes = []*bond.Index[*TokenBalance]{
+	var TokenBalanceIndexes = []*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 		TokenBalanceAccountAndContractAddressIndex,
 	}
@@ -616,28 +615,28 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -681,28 +680,28 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -746,28 +745,28 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -810,32 +809,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -878,32 +877,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -946,32 +945,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1011,32 +1010,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 }
 
 func BenchmarkBondTableQuery_1000000_Account_1000_Limit_200(b *testing.B) {
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1077,28 +1076,28 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_500(b *testing.B) {
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1139,28 +1138,28 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_200_Limit_500(b *testin
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1202,28 +1201,28 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_500(b *testin
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1265,28 +1264,28 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_200(b *testin
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1327,32 +1326,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_200(b *testing.B
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1392,32 +1391,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_500(b *testing.B
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1457,32 +1456,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_200_Limit_500(b
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1523,32 +1522,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_500(b
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -1589,32 +1588,32 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200(b
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
-	db := setupDatabase(&bond.MsgPackSerializer{})
+	db := setupDatabase(&MsgPackSerializer{})
 	defer tearDownDatabase(db)
 
 	const (
-		TokenBalanceTableID = bond.TableID(1)
+		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
 		return builder.AddUint64Field(tb.ID).Bytes()
 	})
 
 	const (
-		TokenBalanceMainIndexID           = bond.PrimaryIndexID
+		TokenBalanceMainIndexID           = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAddressIndexID,
-			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
+	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
