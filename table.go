@@ -13,6 +13,8 @@ const PrimaryKeyBufferSize = 10240
 const IndexKeyBufferSize = 10240
 const DataKeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize + 6
 
+const ReindexBatchSize = 10000
+
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
@@ -40,7 +42,11 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T]) *Table[T]
 	}
 }
 
-func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
+func (t *Table[T]) PrimaryIndex() *Index[T] {
+	return t.primaryIndex
+}
+
+func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) {
 	t.mutex.Lock()
 	for _, idx := range idxs {
 		t.secondaryIndexes[idx.IndexID] = idx
@@ -48,12 +54,72 @@ func (t *Table[T]) AddIndexes(idxs []*Index[T], reIndex ...bool) {
 	t.mutex.Unlock()
 
 	if len(reIndex) > 0 && reIndex[0] {
-		// todo: build index
+		t.reindex(idxs)
 	}
 }
 
-func (t *Table[T]) PrimaryIndex() *Index[T] {
-	return t.primaryIndex
+func (t *Table[T]) reindex(idxs []*Index[T]) {
+	idxsMap := make(map[IndexID]*Index[T])
+	for _, idx := range idxs {
+		idxsMap[idx.IndexID] = idx
+		err := t.db.DeleteRange(
+			[]byte{byte(t.TableID), byte(idx.IndexID)},
+			[]byte{byte(t.TableID), byte(idx.IndexID + 1)}, pebble.Sync)
+		if err != nil {
+			panic("failed to delete index")
+		}
+	}
+
+	snap := t.db.NewSnapshot()
+
+	var prefixBuffer [DataKeyBufferSize]byte
+	prefix := t.keyPrefix(t.primaryIndex, make([]T, 1)[0], prefixBuffer[:0])
+
+	iter := snap.NewIter(&pebble.IterOptions{
+		LowerBound: prefix,
+	})
+
+	batch := t.db.NewBatch()
+
+	counter := 0
+	indexKeysBuffer := make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(idxs))
+	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
+	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
+		var tr T
+
+		err := t.db.Serializer().Deserialize(iter.Value(), &tr)
+		if err != nil {
+			panic("failed to deserialize during reindexing")
+		}
+
+		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
+
+		for _, indexKey := range indexKeys {
+			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			if err != nil {
+				panic("failed to set index key during reindexing")
+			}
+		}
+
+		counter++
+		if counter >= ReindexBatchSize {
+			counter = 0
+
+			err = batch.Commit(pebble.Sync)
+			if err != nil {
+				panic("failed to commit reindex batch")
+			}
+
+			batch = t.db.NewBatch()
+		}
+	}
+
+	err := batch.Commit(pebble.Sync)
+	if err != nil {
+		panic("failed to commit reindex batch")
+	}
+
+	_ = iter.Close()
 }
 
 func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
@@ -312,9 +378,7 @@ func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) (bool, T) {
 	var keyBuffer [DataKeyBufferSize]byte
 
 	key := t.key(tr, keyBuffer[:0])
-
 	exist, retTr := t.exist(key, batch)
-
 	return exist, retTr
 }
 

@@ -85,7 +85,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndexes(TokenBalanceIndexes, false)
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -189,7 +189,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndexes(TokenBalanceIndexes, false)
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -306,7 +306,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndexes(TokenBalanceIndexes, false)
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -358,4 +358,130 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+}
+
+func TestBond_Table_Reindex(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	const (
+		TokenBalanceDefaultIndexID        = bond.PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+		)
+		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
+			TokenBalanceAccountAndContractAddressIndexID,
+			func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
+			},
+			func(tb *TokenBalance) bool {
+				return tb.ContractAddress == "0xtestContract"
+			},
+		)
+	)
+
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{TokenBalanceAccountAddressIndex}, false)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         15,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              3,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+
+	it := db.NewIter(nil)
+
+	var keys [][]byte
+	for it.First(); it.Valid(); it.Next() {
+		buff := make([]byte, len(it.Key()))
+		copy(buff, it.Key())
+		keys = append(keys, buff)
+	}
+
+	require.Equal(t, 8, len(keys))
+	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1"))
+	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount1"))
+	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount2"))
+	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
+	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[7]), "0xtestContract"))
+
+	_ = it.Close()
+
+	TokenBalanceAccountAndContractAddressIndex.IndexFilterFunction = func(tr *TokenBalance) bool { return tr.ContractAddress == "0xtestContract2" }
+
+	tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+
+	it = db.NewIter(nil)
+
+	keys = [][]byte{}
+	for it.First(); it.Valid(); it.Next() {
+		buff := make([]byte, len(it.Key()))
+		copy(buff, it.Key())
+		keys = append(keys, buff)
+	}
+
+	require.Equal(t, 7, len(keys))
+	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1"))
+	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount1"))
+	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount2"))
+	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
+
+	_ = it.Close()
+
+	it = db.NewIter(nil)
+
+	fmt.Printf("----------------- Database Contents ----------------- \n")
+
+	for it.First(); it.Valid(); it.Next() {
+		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
+	}
+
+	_ = it.Close()
 }
