@@ -120,7 +120,7 @@ func TestBond_NewIndex(t *testing.T) {
 	assert.Equal(t, false, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 }
 
-func TestIndex_indexKey(t *testing.T) {
+func TestIndex_IndexKeyFunction(t *testing.T) {
 	NameIndexID := IndexID(1)
 	NameIndex := NewIndex[*TestStructure](
 		NameIndexID,
@@ -133,16 +133,17 @@ func TestIndex_indexKey(t *testing.T) {
 	testStructure := &TestStructure{1, "test", "test desc"}
 
 	assert.Equal(t, NameIndexID, NameIndex.IndexID)
-	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.indexKey(NewKeyBuilder(nil), testStructure))
+	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.IndexKeyFunction(NewKeyBuilder([]byte{}), testStructure))
+	assert.Equal(t, []byte{}, NameIndex.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{})}, testStructure).Bytes())
 }
 
 func TestBond_NewIndex_Ordered(t *testing.T) {
 	const (
-		TokenBalanceAccountIDIndexID = IndexID(1)
+		AccountIDOrderDESCBalanceIndexID = IndexID(1)
 	)
 
-	TokenBalanceAccountIDIndexOrderDESCBalance := NewIndex[*TokenBalance](
-		TokenBalanceAccountIDIndexID,
+	AccountIDIndexOrderDESCBalance := NewIndex[*TokenBalance](
+		AccountIDOrderDESCBalanceIndexID,
 		func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
@@ -151,7 +152,21 @@ func TestBond_NewIndex_Ordered(t *testing.T) {
 		},
 	)
 
-	_ = TokenBalanceAccountIDIndexOrderDESCBalance
+	testStructure := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "test",
+		AccountAddress:  "test",
+		TokenID:         0,
+		Balance:         15,
+	}
+
+	_ = AccountIDIndexOrderDESCBalance
+	assert.Equal(t, AccountIDOrderDESCBalanceIndexID, AccountIDIndexOrderDESCBalance.IndexID)
+	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x01},
+		AccountIDIndexOrderDESCBalance.IndexKeyFunction(NewKeyBuilder([]byte{}), testStructure))
+	assert.Equal(t, []byte{0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0},
+		AccountIDIndexOrderDESCBalance.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{})}, testStructure).Bytes())
 }
 
 func TestBond_Table_Index_Insert(t *testing.T) {
@@ -247,6 +262,116 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	require.Equal(t, 8, len(keys))
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1"))
 	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount1"))
+	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount2"))
+	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
+	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
+
+	it = db.NewIter(nil)
+
+	fmt.Printf("----------------- Database Contents ----------------- \n")
+
+	for it.First(); it.Valid(); it.Next() {
+		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
+	}
+}
+
+func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	const (
+		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+			},
+		)
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
+			TokenBalanceAccountAndContractAddressIndexID,
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
+			},
+			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+			},
+			func(tb *TokenBalance) bool {
+				return tb.ContractAddress == "0xtestContract"
+			},
+		)
+	)
+
+	var TokenBalanceIndexes = []*Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAndContractAddressIndex,
+	}
+
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         15,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              3,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance1Account2,
+			tokenBalance2Account1,
+		},
+	)
+	require.NoError(t, err)
+
+	it := db.NewIter(nil)
+
+	var keys [][]byte
+	for it.First(); it.Valid(); it.Next() {
+		buff := make([]byte, len(it.Key()))
+		copy(buff, it.Key())
+		keys = append(keys, buff)
+	}
+
+	require.Equal(t, 8, len(keys))
+	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1") && bytes.Contains(keys[3], []byte{0xF0}))
+	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount1") && bytes.Contains(keys[4], []byte{0xFA}))
 	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount2"))
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
@@ -367,6 +492,129 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount3"))
 	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount3"))
 	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount3"))
+	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
+	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
+
+	it = db.NewIter(nil)
+
+	fmt.Printf("----------------- Database Contents ----------------- \n")
+
+	for it.First(); it.Valid(); it.Next() {
+		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
+	}
+}
+
+func TestBond_Table_Index_Update_Ordered(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	const (
+		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
+			TokenBalanceAccountAddressIndexID,
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+			},
+		)
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
+			TokenBalanceAccountAndContractAddressIndexID,
+			func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
+			},
+			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+			},
+			func(tb *TokenBalance) bool {
+				return tb.ContractAddress == "0xtestContract"
+			},
+		)
+	)
+
+	var TokenBalanceIndexes = []*Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAndContractAddressIndex,
+	}
+
+	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount1",
+		Balance:         15,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              3,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	tokenBalanceAccount1.AccountAddress = "0xtestAccount3"
+	tokenBalance2Account1.AccountAddress = "0xtestAccount3"
+	tokenBalance1Account2.AccountAddress = "0xtestAccount3"
+
+	err = tokenBalanceTable.Update(
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	it := db.NewIter(nil)
+
+	var keys [][]byte
+	for it.First(); it.Valid(); it.Next() {
+		buff := make([]byte, len(it.Key()))
+		copy(buff, it.Key())
+		keys = append(keys, buff)
+	}
+
+	require.Equal(t, 8, len(keys))
+	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount3") && bytes.Contains(keys[3], []byte{0xF0}))
+	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount3") && bytes.Contains(keys[4], []byte{0xF8}))
+	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount3") && bytes.Contains(keys[5], []byte{0xFA}))
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 

@@ -503,31 +503,36 @@ func (t *Table[T]) key(tr T, buff []byte) []byte {
 		TableID:    t.TableID,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
+		IndexOrder: []byte{},
 		PrimaryKey: primaryKey,
 	}, buff[len(primaryKey):len(primaryKey)])
 }
 
 func (t *Table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
-	indexKey := idx.indexKey(NewKeyBuilder(buff[:0]), s)
+	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
 	return _KeyEncode(_Key{
 		TableID:    t.TableID,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKey,
+		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}, indexKey[len(indexKey):])
 }
 
 func (t *Table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
-	indexKeyPart := idx.indexKey(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
+	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
+	orderKeyPart := idx.IndexOrderFunction(
+		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr).Bytes()
 
 	return _KeyEncode(_Key{
 		TableID:    t.TableID,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKeyPart,
+		IndexOrder: orderKeyPart,
 		PrimaryKey: primaryKey,
-	}, indexKeyPart[len(indexKeyPart):])
+	}, orderKeyPart[len(orderKeyPart):])
 }
 
 func (t *Table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {

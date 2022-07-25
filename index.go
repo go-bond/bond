@@ -95,7 +95,3 @@ func NewIndex[T any](idxID IndexID, idxFn IndexKeyFunction[T], idxOrderFn IndexO
 
 	return idx
 }
-
-func (i *Index[T]) indexKey(builder KeyBuilder, t T) []byte {
-	return i.IndexKeyFunction(builder, t)
-}
