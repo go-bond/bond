@@ -1,7 +1,9 @@
 package bond
 
 import (
+	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -15,6 +17,76 @@ type TestStructure struct {
 	Description string
 }
 
+func TestIndexOrder_Single(t *testing.T) {
+	indexOrderKey1 := IndexOrder{}.OrderUint64(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{}.OrderUint64(1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{}.OrderUint64(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{}.OrderUint64(10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{}.OrderUint64(2, IndexOrderTypeDESC).Bytes()
+
+	keyList := [][]byte{
+		indexOrderKey1,
+		indexOrderKey2,
+		indexOrderKey3,
+		indexOrderKey4,
+		indexOrderKey5,
+	}
+
+	expectedKeyList := [][]byte{
+		indexOrderKey4,
+		indexOrderKey3,
+		indexOrderKey1,
+		indexOrderKey5,
+		indexOrderKey2,
+	}
+
+	sort.Slice(keyList, func(i, j int) bool {
+		return bytes.Compare(keyList[i], keyList[j]) == -1
+	})
+
+	assert.Equal(t, expectedKeyList, keyList)
+}
+
+func TestIndexOrder_Multi(t *testing.T) {
+	indexOrderKey1 := IndexOrder{}.
+		OrderUint64(2, IndexOrderTypeASC).
+		OrderUint64(50, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{}.
+		OrderUint64(1, IndexOrderTypeASC).
+		OrderUint64(100, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{}.
+		OrderUint64(2, IndexOrderTypeASC).
+		OrderUint64(100, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{}.
+		OrderUint64(2, IndexOrderTypeASC).
+		OrderUint64(90, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{}.
+		OrderUint64(1, IndexOrderTypeASC).
+		OrderUint64(100000000, IndexOrderTypeDESC).Bytes()
+
+	keyList := [][]byte{
+		indexOrderKey1,
+		indexOrderKey2,
+		indexOrderKey3,
+		indexOrderKey4,
+		indexOrderKey5,
+	}
+
+	expectedKeyList := [][]byte{
+		indexOrderKey5,
+		indexOrderKey2,
+		indexOrderKey3,
+		indexOrderKey4,
+		indexOrderKey1,
+	}
+
+	sort.Slice(keyList, func(i, j int) bool {
+		return bytes.Compare(keyList[i], keyList[j]) == -1
+	})
+
+	assert.Equal(t, expectedKeyList, keyList)
+}
+
 func TestBond_NewIndex(t *testing.T) {
 	const (
 		TokenBalanceAccountIDIndexID = IndexID(1)
@@ -25,6 +97,7 @@ func TestBond_NewIndex(t *testing.T) {
 		func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
+		DefaultOrder[*TokenBalance],
 	)
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
@@ -36,6 +109,7 @@ func TestBond_NewIndex(t *testing.T) {
 		func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
+		DefaultOrder[*TokenBalance],
 		func(tb *TokenBalance) bool {
 			return tb.AccountID == 1
 		},
@@ -44,6 +118,40 @@ func TestBond_NewIndex(t *testing.T) {
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIndexSelective.IndexID)
 	assert.Equal(t, true, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, false, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 2}))
+}
+
+func TestIndex_indexKey(t *testing.T) {
+	NameIndexID := IndexID(1)
+	NameIndex := NewIndex[*TestStructure](
+		NameIndexID,
+		func(builder KeyBuilder, ts *TestStructure) []byte {
+			return builder.AddStringField(ts.Name).Bytes()
+		},
+		DefaultOrder[*TestStructure],
+	)
+
+	testStructure := &TestStructure{1, "test", "test desc"}
+
+	assert.Equal(t, NameIndexID, NameIndex.IndexID)
+	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.indexKey(NewKeyBuilder(nil), testStructure))
+}
+
+func TestBond_NewIndex_Ordered(t *testing.T) {
+	const (
+		TokenBalanceAccountIDIndexID = IndexID(1)
+	)
+
+	TokenBalanceAccountIDIndexOrderDESCBalance := NewIndex[*TokenBalance](
+		TokenBalanceAccountIDIndexID,
+		func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint32Field(tb.AccountID).Bytes()
+		},
+		func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+		},
+	)
+
+	_ = TokenBalanceAccountIDIndexOrderDESCBalance
 }
 
 func TestBond_Table_Index_Insert(t *testing.T) {
@@ -70,6 +178,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -79,6 +188,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -174,6 +284,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -183,6 +294,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -291,6 +403,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -300,6 +413,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -389,6 +503,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -398,6 +513,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
+			DefaultOrder[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -489,19 +605,4 @@ func TestBond_Table_Reindex(t *testing.T) {
 	}
 
 	_ = it.Close()
-}
-
-func TestIndex_indexKey(t *testing.T) {
-	NameIndexID := IndexID(1)
-	NameIndex := NewIndex[*TestStructure](
-		NameIndexID,
-		func(builder KeyBuilder, ts *TestStructure) []byte {
-			return builder.AddStringField(ts.Name).Bytes()
-		},
-	)
-
-	testStructure := &TestStructure{1, "test", "test desc"}
-
-	assert.Equal(t, NameIndexID, NameIndex.IndexID)
-	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.indexKey(NewKeyBuilder(nil), testStructure))
 }

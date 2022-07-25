@@ -18,6 +18,8 @@ const ReindexBatchSize = 10000
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
+func primaryIndexKey[T any](builder KeyBuilder, t T) []byte { return []byte{} }
+
 type Table[T any] struct {
 	TableID TableID
 
@@ -36,7 +38,7 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T]) *Table[T]
 		TableID:          id,
 		db:               db,
 		primaryKeyFunc:   trkFn,
-		primaryIndex:     NewIndex[T](PrimaryIndexID, func(builder KeyBuilder, t T) []byte { return []byte{} }),
+		primaryIndex:     NewIndex[T](PrimaryIndexID, primaryIndexKey[T], DefaultOrder[T]),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		mutex:            sync.RWMutex{},
 	}
