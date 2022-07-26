@@ -97,7 +97,7 @@ func TestBond_NewIndex(t *testing.T) {
 		func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
-		DefaultOrder[*TokenBalance],
+		IndexOrderFunctionDefault[*TokenBalance],
 	)
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
@@ -109,7 +109,7 @@ func TestBond_NewIndex(t *testing.T) {
 		func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
-		DefaultOrder[*TokenBalance],
+		IndexOrderFunctionDefault[*TokenBalance],
 		func(tb *TokenBalance) bool {
 			return tb.AccountID == 1
 		},
@@ -127,7 +127,7 @@ func TestIndex_IndexKeyFunction(t *testing.T) {
 		func(builder KeyBuilder, ts *TestStructure) []byte {
 			return builder.AddStringField(ts.Name).Bytes()
 		},
-		DefaultOrder[*TestStructure],
+		IndexOrderFunctionDefault[*TestStructure],
 	)
 
 	testStructure := &TestStructure{1, "test", "test desc"}
@@ -193,7 +193,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -203,7 +203,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -409,7 +409,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -419,7 +419,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -651,7 +651,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -661,7 +661,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
@@ -751,7 +751,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -761,7 +761,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 			func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},

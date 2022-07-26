@@ -32,7 +32,7 @@ func setupDatabaseForQuery() (*DB, *Table[*TokenBalance], *Index[*TokenBalance],
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
 			TokenBalanceAccountAndContractAddressIndexID,
@@ -42,7 +42,7 @@ func setupDatabaseForQuery() (*DB, *Table[*TokenBalance], *Index[*TokenBalance],
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -706,7 +706,7 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -772,7 +772,7 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -838,7 +838,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -907,7 +907,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -976,7 +976,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1045,7 +1045,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1111,7 +1111,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_200(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1174,7 +1174,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_500(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1237,7 +1237,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_200_Limit_500(b *testin
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1301,7 +1301,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_500(b *testin
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1365,7 +1365,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_200(b *testin
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1432,7 +1432,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_200(b *testing.B
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1498,7 +1498,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_500(b *testing.B
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1564,7 +1564,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_200_Limit_500(b
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1631,7 +1631,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_500(b
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1698,7 +1698,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200(b
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
@@ -1834,7 +1834,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200_O
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			DefaultOrder[*TokenBalance],
+			IndexOrderFunctionDefault[*TokenBalance],
 		)
 	)
 
