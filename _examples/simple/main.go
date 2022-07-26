@@ -155,7 +155,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("==> Query ordered by balance DESC")
+	fmt.Println("==> Query ordered by balance DESC using ordered index")
 	spew.Dump(exampleStructsFromQuery)
 	fmt.Println("")
 
