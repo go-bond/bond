@@ -130,6 +130,47 @@ if err != nil {
 }
 ```
 
+Query using index with filter:
+```go
+err := ExampleStructTable.Query().
+    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    Filter(func(es *ExampleStruct) bool {
+        return es.Amount > 5
+    }).
+    Execute(&exampleStructsFromQuery)
+if err != nil {
+    panic(err)
+}
+```
+
+Query using index with filter and order:
+```go
+err := ExampleStructTable.Query().
+    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    Filter(func(es *ExampleStruct) bool {
+        return es.Amount > 5
+    }).
+    Order(func(es *ExampleStruct, es2 *ExampleStruct) bool {
+        return es.Amount < es2.Amount
+    }).
+    Execute(&exampleStructsFromQuery)
+if err != nil {
+    panic(err)
+}
+```
+
+Query using index with offset and limit:
+```go
+err := ExampleStructTable.Query().
+    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    Offset(1).
+    Limit(2).
+    Execute(&exampleStructsFromQuery)
+if err != nil {
+    panic(err)
+}
+```
+
 Please see working example: [here](https://github.com/go-bond/bond/blob/master/_examples/simple/main.go) 
 
 ### Advanced:
