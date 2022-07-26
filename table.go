@@ -38,7 +38,7 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T]) *Table[T]
 		TableID:          id,
 		db:               db,
 		primaryKeyFunc:   trkFn,
-		primaryIndex:     NewIndex[T](PrimaryIndexID, primaryIndexKey[T], IndexOrderFunctionDefault[T]),
+		primaryIndex:     NewIndex[T](PrimaryIndexID, primaryIndexKey[T], IndexOrderDefault[T]),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		mutex:            sync.RWMutex{},
 	}

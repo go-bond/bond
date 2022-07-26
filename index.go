@@ -66,7 +66,7 @@ func (o IndexOrder) Bytes() []byte {
 	return o.keyBuilder.Bytes()
 }
 
-func IndexOrderFunctionDefault[T any](o IndexOrder, t T) IndexOrder {
+func IndexOrderDefault[T any](o IndexOrder, t T) IndexOrder {
 	return o
 }
 
