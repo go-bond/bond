@@ -10,6 +10,7 @@ Bond features:
 - Indexes
 - Ordered Indexes
 - Partial Indexes
+- Queries
 - Custom Serialization / Deserialization
 
 ### Basics:
