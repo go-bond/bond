@@ -400,6 +400,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 
@@ -835,6 +836,7 @@ func BenchmarkBondTableScanIndex_1000(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 
@@ -896,6 +898,7 @@ func BenchmarkBondTableScanIndex_1000000(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 
@@ -1040,6 +1043,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 
@@ -1104,6 +1108,7 @@ func BenchmarkBondTableScanIndex_MsgPack_1000000(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 
@@ -1165,6 +1170,7 @@ func BenchmarkBondTableScanIndex_1000000_Skip_Through(b *testing.B) {
 			func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
+			IndexOrderDefault[*TokenBalance],
 		)
 	)
 

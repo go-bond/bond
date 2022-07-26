@@ -9,6 +9,7 @@ type _Key struct {
 	TableID    TableID
 	IndexID    IndexID
 	IndexKey   []byte
+	IndexOrder []byte
 	PrimaryKey []byte
 }
 
@@ -17,6 +18,7 @@ func (k _Key) ToDataKey() _Key {
 		TableID:    k.TableID,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
+		IndexOrder: []byte{},
 		PrimaryKey: k.PrimaryKey,
 	}
 }
@@ -26,6 +28,7 @@ func (k _Key) ToKeyPrefix() _Key {
 		TableID:    k.TableID,
 		IndexID:    k.IndexID,
 		IndexKey:   k.IndexKey,
+		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}
 }
@@ -57,7 +60,13 @@ func _KeyEncode(key _Key, rawBuffs ...[]byte) []byte {
 	buff.Write(indexLenBuff[:4])
 	buff.Write(key.IndexKey)
 
-	buff.Write(key.PrimaryKey)
+	if !key.IsKeyPrefix() {
+		binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexOrder)))
+		buff.Write(indexLenBuff[:4])
+		buff.Write(key.IndexOrder)
+
+		buff.Write(key.PrimaryKey)
+	}
 
 	return buff.Bytes()
 }
@@ -75,7 +84,14 @@ func _KeyDecode(keyBytes []byte) _Key {
 	indexKey := make([]byte, indexLen)
 	_, _ = buff.Read(indexKey)
 
-	primaryKeyLen := len(keyBytes) - 6 - int(indexLen)
+	indexOrderLenBuff := make([]byte, 4)
+	_, _ = buff.Read(indexOrderLenBuff)
+	indexOrderLen := binary.BigEndian.Uint32(indexOrderLenBuff)
+
+	indexOrder := make([]byte, indexOrderLen)
+	_, _ = buff.Read(indexOrder)
+
+	primaryKeyLen := len(keyBytes) - int(indexLen) - int(indexOrderLen) - 10
 	primaryKey := make([]byte, primaryKeyLen)
 	_, _ = buff.Read(primaryKey)
 
@@ -83,6 +99,7 @@ func _KeyDecode(keyBytes []byte) _Key {
 		TableID:    TableID(tableID),
 		IndexID:    IndexID(indexID),
 		IndexKey:   indexKey,
+		IndexOrder: indexOrder,
 		PrimaryKey: primaryKey,
 	}
 }
@@ -99,9 +116,12 @@ func _KeyBytesToDataKeyBytes(key []byte, rawBuffs ...[]byte) []byte {
 	buff.WriteByte(0)
 
 	buff.Write([]byte{0, 0, 0, 0})
+	buff.Write([]byte{0, 0, 0, 0})
 
 	indexKeyLen := int(binary.BigEndian.Uint32(key[2:6]))
-	buff.Write(key[6+indexKeyLen:])
+	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexKeyLen : 10+indexKeyLen]))
+
+	buff.Write(key[10+indexKeyLen+indexOrderLen:])
 
 	return buff.Bytes()
 }

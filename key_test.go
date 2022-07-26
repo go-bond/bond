@@ -11,6 +11,7 @@ func TestKey_Encode_Decode(t *testing.T) {
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
+		IndexOrder: []byte{},
 		PrimaryKey: []byte("recordKey"),
 	}
 
@@ -25,6 +26,7 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
+		IndexOrder: []byte("orderKey"),
 		PrimaryKey: []byte("recordKey"),
 	}
 
@@ -32,6 +34,7 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
+		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}
 
@@ -51,6 +54,7 @@ func TestKey_ToDataKey(t *testing.T) {
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
+		IndexOrder: []byte("orderKey"),
 		PrimaryKey: []byte("recordKey"),
 	}
 
@@ -58,10 +62,11 @@ func TestKey_ToDataKey(t *testing.T) {
 		TableID:    1,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
+		IndexOrder: []byte{},
 		PrimaryKey: []byte("recordKey"),
 	}
 
-	expectedTableKeyRaw := append([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00}, []byte("recordKey")...)
+	expectedTableKeyRaw := append([]byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, []byte("recordKey")...)
 
 	tableKey := key.ToDataKey()
 
