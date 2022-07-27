@@ -310,16 +310,14 @@ func TestBondTable_Exist(t *testing.T) {
 		Balance:         5,
 	}
 
-	ifExist, record := tokenBalanceTable.Exist(&TokenBalance{ID: 1})
+	ifExist := tokenBalanceTable.Exist(&TokenBalance{ID: 1})
 	assert.False(t, ifExist)
-	assert.Nil(t, record)
 
 	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	ifExist, record = tokenBalanceTable.Exist(&TokenBalance{ID: 1})
+	ifExist = tokenBalanceTable.Exist(&TokenBalance{ID: 1})
 	assert.True(t, ifExist)
-	assert.NotNil(t, record)
 }
 
 func TestBondTable_Scan(t *testing.T) {
@@ -513,8 +511,11 @@ func TestBond_Batch(t *testing.T) {
 
 	batch := db.NewIndexedBatch()
 
-	exist, tokenBalance := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
+	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)
+
+	tokenBalance, err := tokenBalanceTable.Get(&TokenBalance{ID: 1}, batch)
+	require.NoError(t, err)
 	require.NotNil(t, tokenBalance)
 
 	tokenBalance.Balance += 20

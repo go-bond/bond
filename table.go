@@ -154,7 +154,7 @@ func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
 		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if ok, _ := t.exist(key, batch); ok {
+		if t.exist(key, batch) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -341,7 +341,7 @@ func (t *Table[T]) Upsert(trs []T, batches ...*pebble.Batch) error {
 	var toUpdate []T
 
 	for _, tr := range trs {
-		if exist, _ := t.Exist(tr, batch); exist {
+		if t.Exist(tr, batch) {
 			toUpdate = append(toUpdate, tr)
 		} else {
 			toInsert = append(toInsert, tr)
@@ -373,7 +373,7 @@ func (t *Table[T]) Upsert(trs []T, batches ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) (bool, T) {
+func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) bool {
 	var batch *pebble.Batch
 	if len(batches) > 0 && batches[0] != nil {
 		batch = batches[0]
@@ -382,16 +382,37 @@ func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) (bool, T) {
 	}
 
 	var keyBuffer [DataKeyBufferSize]byte
-
 	key := t.key(tr, keyBuffer[:0])
-	exist, retTr := t.exist(key, batch)
-	return exist, retTr
+	return t.exist(key, batch)
 }
 
-func (t *Table[T]) exist(key []byte, batch *pebble.Batch) (bool, T) {
+func (t *Table[T]) exist(key []byte, batch *pebble.Batch) bool {
+	_, closer, err := t.db.getBatchOrDB(key, batch)
+	if err != nil {
+		return false
+	}
+
+	_ = closer.Close()
+	return true
+}
+
+func (t *Table[T]) Get(tr T, batches ...*pebble.Batch) (T, error) {
+	var batch *pebble.Batch
+	if len(batches) > 0 && batches[0] != nil {
+		batch = batches[0]
+	} else {
+		batch = nil
+	}
+
+	var keyBuffer [DataKeyBufferSize]byte
+	key := t.key(tr, keyBuffer[:0])
+	return t.get(key, batch)
+}
+
+func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	data, closer, err := t.db.getBatchOrDB(key, batch)
 	if err != nil {
-		return false, make([]T, 1)[0]
+		return make([]T, 1)[0], fmt.Errorf("get failed: %w", err)
 	}
 
 	defer func() { _ = closer.Close() }()
@@ -399,10 +420,10 @@ func (t *Table[T]) exist(key []byte, batch *pebble.Batch) (bool, T) {
 	var tr T
 	err = t.db.Serializer().Deserialize(data, &tr)
 	if err != nil {
-		return false, make([]T, 1)[0]
+		return make([]T, 1)[0], fmt.Errorf("get failed to deserialize: %w", err)
 	}
 
-	return true, tr
+	return tr, nil
 }
 
 func (t *Table[T]) Query() Query[T] {
