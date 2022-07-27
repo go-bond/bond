@@ -48,7 +48,7 @@ func (t *Table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
 }
 
-func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) {
+func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	t.mutex.Lock()
 	for _, idx := range idxs {
 		t.secondaryIndexes[idx.IndexID] = idx
@@ -56,11 +56,13 @@ func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) {
 	t.mutex.Unlock()
 
 	if len(reIndex) > 0 && reIndex[0] {
-		t.reindex(idxs)
+		return t.reindex(idxs)
 	}
+
+	return nil
 }
 
-func (t *Table[T]) reindex(idxs []*Index[T]) {
+func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	idxsMap := make(map[IndexID]*Index[T])
 	for _, idx := range idxs {
 		idxsMap[idx.IndexID] = idx
@@ -68,7 +70,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) {
 			[]byte{byte(t.TableID), byte(idx.IndexID)},
 			[]byte{byte(t.TableID), byte(idx.IndexID + 1)}, pebble.Sync)
 		if err != nil {
-			panic("failed to delete index")
+			return fmt.Errorf("failed to delete index: %w", err)
 		}
 	}
 
@@ -91,7 +93,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) {
 
 		err := t.db.Serializer().Deserialize(iter.Value(), &tr)
 		if err != nil {
-			panic("failed to deserialize during reindexing")
+			return fmt.Errorf("failed to deserialize during reindexing: %w", err)
 		}
 
 		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
@@ -99,7 +101,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) {
 		for _, indexKey := range indexKeys {
 			err = batch.Set(indexKey, []byte{}, pebble.Sync)
 			if err != nil {
-				panic("failed to set index key during reindexing")
+				return fmt.Errorf("failed to set index key during reindexing: %w", err)
 			}
 		}
 
@@ -109,7 +111,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) {
 
 			err = batch.Commit(pebble.Sync)
 			if err != nil {
-				panic("failed to commit reindex batch")
+				return fmt.Errorf("failed to commit reindex batch: %w", err)
 			}
 
 			batch = t.db.NewBatch()
@@ -118,10 +120,12 @@ func (t *Table[T]) reindex(idxs []*Index[T]) {
 
 	err := batch.Commit(pebble.Sync)
 	if err != nil {
-		panic("failed to commit reindex batch")
+		return fmt.Errorf("failed to commit reindex batch: %w", err)
 	}
 
 	_ = iter.Close()
+
+	return nil
 }
 
 func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {

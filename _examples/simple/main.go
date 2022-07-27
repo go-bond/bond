@@ -66,11 +66,14 @@ func main() {
 		)
 	)
 
-	ExampleStructTable.AddIndex([]*bond.Index[*ExampleStruct]{
+	err = ExampleStructTable.AddIndex([]*bond.Index[*ExampleStruct]{
 		ExampleStructTypeIndex,
 		ExampleStructOrderAmountDESCIndex,
 		ExampleStructIsActivePartialIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	exapleStructs := []*ExampleStruct{
 		{

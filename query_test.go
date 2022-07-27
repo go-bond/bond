@@ -51,7 +51,10 @@ func setupDatabaseForQuery() (*DB, *Table[*TokenBalance], *Index[*TokenBalance],
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	if err != nil {
+		panic(err)
+	}
 
 	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
 }
@@ -696,7 +699,7 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -710,9 +713,12 @@ func BenchmarkBondTableQuery_1000000_Account_200_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -762,7 +768,7 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -776,9 +782,12 @@ func BenchmarkBondTableQuery_1000000_Account_500_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -828,7 +837,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -842,9 +851,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Order_Balance(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -897,7 +909,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -911,9 +923,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_200_Order_Balance(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -966,7 +981,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -980,9 +995,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_500_Order_Balance(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1035,7 +1053,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1049,9 +1067,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Order_Balance(b *testi
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1101,7 +1122,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_200(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1115,9 +1136,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_200(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1164,7 +1188,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_500(b *testing.B) {
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1178,9 +1202,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Limit_500(b *testing.B) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1227,7 +1254,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_200_Limit_500(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1241,9 +1268,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_200_Limit_500(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1291,7 +1321,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_500(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1305,9 +1335,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_500(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1355,7 +1388,7 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_200(b *testin
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1369,9 +1402,12 @@ func BenchmarkBondTableQuery_1000000_Account_1000_Offset_500_Limit_200(b *testin
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1422,7 +1458,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_200(b *testing.B
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1436,9 +1472,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_200(b *testing.B
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1488,7 +1527,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_500(b *testing.B
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1502,9 +1541,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Limit_500(b *testing.B
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1554,7 +1596,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_200_Limit_500(b
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1568,9 +1610,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_200_Limit_500(b
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1621,7 +1666,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_500(b
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1635,9 +1680,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_500(b
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1688,7 +1736,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200(b
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1702,9 +1750,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200(b
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1755,7 +1806,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_OrderedIndex_Account_1000_Offset_50
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1771,9 +1822,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_OrderedIndex_Account_1000_Offset_50
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1824,7 +1878,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200_O
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1838,9 +1892,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200_O
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
@@ -1894,7 +1951,7 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200_O
 	})
 
 	const (
-		TokenBalanceMainIndexID           = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 	)
 
@@ -1910,9 +1967,12 @@ func BenchmarkBondTableQuery_MsgPack_1000000_Account_1000_Offset_500_Limit_200_O
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	var tokenBalancesForInsert []*TokenBalance
 	for i := 0; i < 1000000; i++ {
