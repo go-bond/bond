@@ -182,7 +182,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -215,7 +215,8 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -241,7 +242,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -288,7 +289,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -325,7 +326,8 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -351,7 +353,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance1Account2,
@@ -398,7 +400,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -431,7 +433,8 @@ func TestBond_Table_Index_Update(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -457,7 +460,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -517,7 +520,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -554,7 +557,8 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -580,7 +584,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -640,7 +644,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -673,7 +677,8 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
-	tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -699,7 +704,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -740,7 +745,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -768,7 +773,8 @@ func TestBond_Table_Reindex(t *testing.T) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAddressIndex}, false)
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAddressIndex}, false)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -794,7 +800,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert(
+	err = tokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -803,7 +809,8 @@ func TestBond_Table_Reindex(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	require.NoError(t, err)
 
 	it := db.NewIter(nil)
 
@@ -825,7 +832,8 @@ func TestBond_Table_Reindex(t *testing.T) {
 
 	TokenBalanceAccountAndContractAddressIndex.IndexFilterFunction = func(tr *TokenBalance) bool { return tr.ContractAddress == "0xtestContract2" }
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	require.NoError(t, err)
 
 	it = db.NewIter(nil)
 
