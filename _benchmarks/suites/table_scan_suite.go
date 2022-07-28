@@ -9,8 +9,14 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-func BenchmarkTableScanSuite() []bench.BenchmarkResult {
-	const BenchmarkSuiteName = "BenchmarkTableScanSuite"
+func init() {
+	bench.RegisterBenchmarkSuite(
+		bench.NewBenchmarkSuite("BenchmarkTableScanSuite", "skip-table-scan",
+			BenchmarkTableScanSuite),
+	)
+}
+
+func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
@@ -88,16 +94,16 @@ func BenchmarkTableScanSuite() []bench.BenchmarkResult {
 
 		for _, v := range scanSizes {
 			results = append(results, bench.BenchmarkResult{
-				Name:       fmt.Sprintf("%s/%s/Scan_%d", BenchmarkSuiteName, serializer.Name, v.scanSize),
-				Normalizer: v.scanSize,
-				Result:     testing.Benchmark(ScanElements(tokenBalanceTable, tokenBalances, v.scanSize)),
+				Name:               fmt.Sprintf("%s/%s/Scan_%d", bs.Name, serializer.Name, v.scanSize),
+				NumberOfOperations: v.scanSize,
+				Result:             testing.Benchmark(ScanElements(tokenBalanceTable, tokenBalances, v.scanSize)),
 			})
 		}
 
 		for _, v := range scanSizes {
 			results = append(results, bench.BenchmarkResult{
-				Name:       fmt.Sprintf("%s/%s/ScanIndex_%d", BenchmarkSuiteName, serializer.Name, v.scanSize),
-				Normalizer: v.scanSize,
+				Name:               fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
+				NumberOfOperations: v.scanSize,
 				Result: testing.Benchmark(ScanIndexElements(tokenBalanceTable, TokenBalanceAccountAddressIndex,
 					&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.scanSize)),
 			})
@@ -126,9 +132,9 @@ func BenchmarkTableScanSuite() []bench.BenchmarkResult {
 
 		for _, v := range skipReadSizes {
 			results = append(results, bench.BenchmarkResult{
-				Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", BenchmarkSuiteName, serializer.Name,
+				Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", bs.Name, serializer.Name,
 					v.skipNumber, v.readNumber),
-				Normalizer: v.readNumber,
+				NumberOfOperations: v.readNumber,
 				Result: testing.Benchmark(ScanSkipThrough(tokenBalanceTable, v.skipNumber,
 					v.readNumber)),
 			})
@@ -146,9 +152,9 @@ func BenchmarkTableScanSuite() []bench.BenchmarkResult {
 
 		for _, v := range skipReadSizes {
 			results = append(results, bench.BenchmarkResult{
-				Name: fmt.Sprintf("%s/%s/ScanIndex_Skip_%d_Read_%d", BenchmarkSuiteName, serializer.Name,
+				Name: fmt.Sprintf("%s/%s/ScanIndex_Skip_%d_Read_%d", bs.Name, serializer.Name,
 					v.skipNumber, v.readNumber),
-				Normalizer: v.readNumber,
+				NumberOfOperations: v.readNumber,
 				Result: testing.Benchmark(ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
 					&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber)),
 			})

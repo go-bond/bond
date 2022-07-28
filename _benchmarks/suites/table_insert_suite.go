@@ -9,9 +9,14 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-func BenchmarkTableInsertSuite() []bench.BenchmarkResult {
-	const BenchmarkSuiteName = "BenchmarkTableInsertSuite"
+func init() {
+	bench.RegisterBenchmarkSuite(
+		bench.NewBenchmarkSuite("BenchmarkTableInsertSuite", "skip-table-insert",
+			BenchmarkTableInsertSuite),
+	)
+}
 
+func BenchmarkTableInsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
@@ -82,9 +87,9 @@ func BenchmarkTableInsertSuite() []bench.BenchmarkResult {
 
 		for _, v := range insertBatches {
 			results = append(results, bench.BenchmarkResult{
-				Name:       fmt.Sprintf("%s/%s/Insert_%d", BenchmarkSuiteName, serializer.Name, v.batchSize),
-				Normalizer: v.batchSize,
-				Result:     testing.Benchmark(InsertInBatchSize(tokenBalanceTable, tokenBalances, v.batchSize)),
+				Name:               fmt.Sprintf("%s/%s/Insert_%d", bs.Name, serializer.Name, v.batchSize),
+				NumberOfOperations: v.batchSize,
+				Result:             testing.Benchmark(InsertInBatchSize(tokenBalanceTable, tokenBalances, v.batchSize)),
 			})
 		}
 

@@ -9,9 +9,14 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-func BenchmarkTableQuerySuite() []bench.BenchmarkResult {
-	const BenchmarkSuiteName = "BenchmarkTableQuerySuite"
+func init() {
+	bench.RegisterBenchmarkSuite(
+		bench.NewBenchmarkSuite("BenchmarkTableQuerySuite", "skip-table-query",
+			BenchmarkTableQuerySuite),
+	)
+}
 
+func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
@@ -145,9 +150,9 @@ func BenchmarkTableQuerySuite() []bench.BenchmarkResult {
 		for _, v := range queryInputs {
 			results = append(results, bench.BenchmarkResult{
 				Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
-					BenchmarkSuiteName, serializer.Name, v.indexName, v.offset, v.limit),
-				Normalizer: v.limit,
-				Result:     testing.Benchmark(QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit)),
+					bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
+				NumberOfOperations: v.limit,
+				Result:             testing.Benchmark(QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit)),
 			})
 		}
 
