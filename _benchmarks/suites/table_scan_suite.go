@@ -129,7 +129,7 @@ func BenchmarkTableScanSuite() []bench.BenchmarkResult {
 				Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", BenchmarkSuiteName, serializer.Name,
 					v.skipNumber, v.readNumber),
 				Normalizer: v.readNumber,
-				Result: testing.Benchmark(ScanSkipThrough(tokenBalanceTable, tokenBalances, v.skipNumber,
+				Result: testing.Benchmark(ScanSkipThrough(tokenBalanceTable, v.skipNumber,
 					v.readNumber)),
 			})
 		}
@@ -150,7 +150,7 @@ func BenchmarkTableScanSuite() []bench.BenchmarkResult {
 					v.skipNumber, v.readNumber),
 				Normalizer: v.readNumber,
 				Result: testing.Benchmark(ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
-					&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.skipNumber, v.readNumber)),
+					&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber)),
 			})
 		}
 
@@ -218,7 +218,7 @@ func ScanIndexElements(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBal
 	}
 }
 
-func ScanSkipThrough(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
+func ScanSkipThrough(tbt *bond.Table[*TokenBalance], numberToSkip int, numberToRead int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -231,7 +231,7 @@ func ScanSkipThrough(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, number
 					return true, nil
 				}
 
-				if counter == numberToSkip+numberToRead {
+				if counter >= numberToSkip+numberToRead {
 					return false, nil
 				}
 
@@ -250,7 +250,7 @@ func ScanSkipThrough(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, number
 	}
 }
 
-func ScanIndexSkipThrough(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, tbs []*TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
+func ScanIndexSkipThrough(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -263,7 +263,7 @@ func ScanIndexSkipThrough(tbt *bond.Table[*TokenBalance], idx *bond.Index[*Token
 					return true, nil
 				}
 
-				if counter == numberToSkip+numberToRead {
+				if counter >= numberToSkip+numberToRead {
 					return false, nil
 				}
 

@@ -504,6 +504,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 			break
 		} else {
 			if err != nil {
+				_ = iter.Close()
 				return err
 			}
 
