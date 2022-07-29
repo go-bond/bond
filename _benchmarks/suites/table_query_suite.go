@@ -148,12 +148,15 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 		}
 
 		for _, v := range queryInputs {
-			results = append(results, bench.BenchmarkResult{
-				Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
-					bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
-				NumberOfOperations: v.limit,
-				Result:             testing.Benchmark(QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit)),
-			})
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
+						bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
+					Inputs:             v,
+					NumberOfOperations: v.limit,
+					BenchmarkFunc:      QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit),
+				}),
+			)
 		}
 
 		tearDownDatabase(db)

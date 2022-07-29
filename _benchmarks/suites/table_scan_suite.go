@@ -93,20 +93,26 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		}
 
 		for _, v := range scanSizes {
-			results = append(results, bench.BenchmarkResult{
-				Name:               fmt.Sprintf("%s/%s/Scan_%d", bs.Name, serializer.Name, v.scanSize),
-				NumberOfOperations: v.scanSize,
-				Result:             testing.Benchmark(ScanElements(tokenBalanceTable, tokenBalances, v.scanSize)),
-			})
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name:               fmt.Sprintf("%s/%s/Scan_%d", bs.Name, serializer.Name, v.scanSize),
+					Inputs:             v,
+					NumberOfOperations: v.scanSize,
+					BenchmarkFunc:      ScanElements(tokenBalanceTable, tokenBalances, v.scanSize),
+				}),
+			)
 		}
 
 		for _, v := range scanSizes {
-			results = append(results, bench.BenchmarkResult{
-				Name:               fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
-				NumberOfOperations: v.scanSize,
-				Result: testing.Benchmark(ScanIndexElements(tokenBalanceTable, TokenBalanceAccountAddressIndex,
-					&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.scanSize)),
-			})
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name:               fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
+					Inputs:             v,
+					NumberOfOperations: v.scanSize,
+					BenchmarkFunc: ScanIndexElements(tokenBalanceTable, TokenBalanceAccountAddressIndex,
+						&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.scanSize),
+				}),
+			)
 		}
 
 		var skipReadSizes = []struct {
@@ -131,13 +137,16 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		}
 
 		for _, v := range skipReadSizes {
-			results = append(results, bench.BenchmarkResult{
-				Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", bs.Name, serializer.Name,
-					v.skipNumber, v.readNumber),
-				NumberOfOperations: v.readNumber,
-				Result: testing.Benchmark(ScanSkipThrough(tokenBalanceTable, v.skipNumber,
-					v.readNumber)),
-			})
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", bs.Name, serializer.Name,
+						v.skipNumber, v.readNumber),
+					Inputs:             v,
+					NumberOfOperations: v.readNumber,
+					BenchmarkFunc: ScanSkipThrough(tokenBalanceTable, v.skipNumber,
+						v.readNumber),
+				}),
+			)
 		}
 
 		err = tokenBalanceTable.Delete(tokenBalances)
@@ -151,13 +160,16 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		}
 
 		for _, v := range skipReadSizes {
-			results = append(results, bench.BenchmarkResult{
-				Name: fmt.Sprintf("%s/%s/ScanIndex_Skip_%d_Read_%d", bs.Name, serializer.Name,
-					v.skipNumber, v.readNumber),
-				NumberOfOperations: v.readNumber,
-				Result: testing.Benchmark(ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
-					&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber)),
-			})
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name: fmt.Sprintf("%s/%s/ScanIndex_Skip_%d_Read_%d", bs.Name, serializer.Name,
+						v.skipNumber, v.readNumber),
+					Inputs:             v,
+					NumberOfOperations: v.readNumber,
+					BenchmarkFunc: ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
+						&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber),
+				}),
+			)
 		}
 
 		err = tokenBalanceTable.Delete(tokenBalancesAccount0)
