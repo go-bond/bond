@@ -17,7 +17,6 @@ func init() {
 }
 
 func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
-
 	msgpack.GetEncoder().SetCustomStructTag("json")
 	msgpack.GetDecoder().SetCustomStructTag("json")
 
