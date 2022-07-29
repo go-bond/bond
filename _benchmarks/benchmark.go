@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-bond/bond/_benchmarks/bench"
 	"github.com/go-bond/bond/_benchmarks/reporters"
@@ -33,18 +34,30 @@ func main() {
 	flag.Parse()
 
 	fmt.Println("=> Bond Benchmarks")
-
 	allResults := RunBenchmarks(nil)
 
 	var err error
 	switch *report {
 	case "stdout":
 		err = reporters.NewIOReporter(os.Stdout).Report(allResults)
+	case "csv":
+		var file *os.File
+		file, err = os.Create(fmt.Sprintf("benchmark_%s.csv", time.Now().Format("2006_01_02_15_04")))
+		if err != nil {
+			break
+		}
+
+		err = reporters.NewCSVReporter(file).Report(allResults)
+		if err != nil {
+			break
+		}
+
+		err = file.Close()
 	default:
 		err = reporters.NewIOReporter(os.Stdout).Report(allResults)
 	}
 
 	if err != nil {
-		fmt.Printf("=> Failed to generate report\n")
+		fmt.Printf("=> Failed to generate report: %s\n", err.Error())
 	}
 }

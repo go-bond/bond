@@ -25,11 +25,11 @@ type Benchmark struct {
 }
 
 type BenchmarkResult struct {
-	Benchmark
 	testing.BenchmarkResult
+	Benchmark
 }
 
-func (br *BenchmarkResult) OpsPerSec() float64 {
+func (br BenchmarkResult) OpsPerSec() float64 {
 	return br.Extra["ops/s"]
 }
 
