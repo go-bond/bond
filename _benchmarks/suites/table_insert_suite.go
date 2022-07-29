@@ -88,10 +88,9 @@ func BenchmarkTableInsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 		for _, v := range insertBatches {
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name:               fmt.Sprintf("%s/%s/Insert_%d", bs.Name, serializer.Name, v.batchSize),
-					Inputs:             v,
-					NumberOfOperations: 1,
-					BenchmarkFunc:      InsertInBatchSize(tokenBalanceTable, tokenBalances, v.batchSize),
+					Name:          fmt.Sprintf("%s/%s/Insert_%d", bs.Name, serializer.Name, v.batchSize),
+					Inputs:        v,
+					BenchmarkFunc: InsertInBatchSize(tokenBalanceTable, tokenBalances, v.batchSize),
 				}),
 			)
 		}

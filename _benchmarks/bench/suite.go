@@ -18,10 +18,9 @@ func RegisterBenchmarkSuite(bs *BenchmarkSuite) {
 }
 
 type Benchmark struct {
-	Name               string
-	Inputs             any
-	NumberOfOperations int
-	BenchmarkFunc      func(b *testing.B)
+	Name          string
+	Inputs        any
+	BenchmarkFunc func(*testing.B)
 }
 
 type BenchmarkResult struct {
@@ -60,9 +59,7 @@ func (bs *BenchmarkSuite) Benchmark(benchmark Benchmark) BenchmarkResult {
 			BenchmarkResult: testing.Benchmark(benchmark.BenchmarkFunc),
 		}
 
-		if result.NumberOfOperations != 0 {
-			result.Extra["ops/s"] = float64(time.Second) / float64(result.NsPerOp()/int64(result.NumberOfOperations))
-		}
+		result.Extra["ops/s"] = float64(time.Second) / float64(result.NsPerOp())
 
 		return result
 	}

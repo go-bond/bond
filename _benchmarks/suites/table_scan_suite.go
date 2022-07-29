@@ -94,10 +94,9 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		for _, v := range scanSizes {
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name:               fmt.Sprintf("%s/%s/Scan_%d", bs.Name, serializer.Name, v.scanSize),
-					Inputs:             v,
-					NumberOfOperations: v.scanSize,
-					BenchmarkFunc:      ScanElements(tokenBalanceTable, tokenBalances, v.scanSize),
+					Name:          fmt.Sprintf("%s/%s/Scan_%d", bs.Name, serializer.Name, v.scanSize),
+					Inputs:        v,
+					BenchmarkFunc: ScanElements(tokenBalanceTable, tokenBalances, v.scanSize),
 				}),
 			)
 		}
@@ -105,9 +104,8 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		for _, v := range scanSizes {
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name:               fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
-					Inputs:             v,
-					NumberOfOperations: v.scanSize,
+					Name:   fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
+					Inputs: v,
 					BenchmarkFunc: ScanIndexElements(tokenBalanceTable, TokenBalanceAccountAddressIndex,
 						&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.scanSize),
 				}),
@@ -140,8 +138,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				bs.Benchmark(bench.Benchmark{
 					Name: fmt.Sprintf("%s/%s/Scan_Skip_%d_Read_%d", bs.Name, serializer.Name,
 						v.skipNumber, v.readNumber),
-					Inputs:             v,
-					NumberOfOperations: v.readNumber,
+					Inputs: v,
 					BenchmarkFunc: ScanSkipThrough(tokenBalanceTable, v.skipNumber,
 						v.readNumber),
 				}),
@@ -163,8 +160,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				bs.Benchmark(bench.Benchmark{
 					Name: fmt.Sprintf("%s/%s/ScanIndex_Skip_%d_Read_%d", bs.Name, serializer.Name,
 						v.skipNumber, v.readNumber),
-					Inputs:             v,
-					NumberOfOperations: v.readNumber,
+					Inputs: v,
 					BenchmarkFunc: ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
 						&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber),
 				}),

@@ -167,9 +167,8 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 				bs.Benchmark(bench.Benchmark{
 					Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
 						bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
-					Inputs:             v,
-					NumberOfOperations: 1,
-					BenchmarkFunc:      QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit),
+					Inputs:        v,
+					BenchmarkFunc: QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit),
 				}),
 			)
 		}
