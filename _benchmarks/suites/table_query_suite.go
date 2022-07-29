@@ -24,7 +24,7 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 		Name       string
 		Serializer bond.Serializer
 	}{
-		{"JSONSerializer", &bond.JsonSerializer{}},
+		//{"JSONSerializer", &bond.JsonSerializer{}},
 		{"MsgPackSerializer", &bond.MsgPackSerializer{}},
 	}
 
@@ -153,7 +153,7 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 					Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
 						bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
 					Inputs:             v,
-					NumberOfOperations: v.limit,
+					NumberOfOperations: 1,
 					BenchmarkFunc:      QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit),
 				}),
 			)

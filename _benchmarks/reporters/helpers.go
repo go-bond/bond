@@ -9,12 +9,12 @@ func findMaxLength(results []bench.BenchmarkResult) (nameLen int, opTimeLen int,
 			nameLen = cNameLen
 		}
 
-		cOpTimeLen := len(result.Result.String())
+		cOpTimeLen := len(result.String())
 		if opTimeLen < cOpTimeLen {
 			opTimeLen = cOpTimeLen
 		}
 
-		cMemLen := len(result.Result.MemString())
+		cMemLen := len(result.MemString())
 		if memLen < cMemLen {
 			memLen = cMemLen
 		}

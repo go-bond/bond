@@ -20,7 +20,7 @@ func (r *IOReporter) Report(results []bench.BenchmarkResult) error {
 	format := fmt.Sprintf("%%-%ds %%-%ds %%-%ds\n", nameLen, opTimeLen, memLen)
 
 	for _, result := range results {
-		_, err := fmt.Fprintf(r.w, format, result.Name, result.Result.String(), result.Result.MemString())
+		_, err := fmt.Fprintf(r.w, format, result.Name, result.String(), result.MemString())
 		if err != nil {
 			return err
 		}

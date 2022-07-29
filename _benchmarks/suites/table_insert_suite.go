@@ -24,7 +24,7 @@ func BenchmarkTableInsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 		Name       string
 		Serializer bond.Serializer
 	}{
-		{"JSONSerializer", &bond.JsonSerializer{}},
+		//{"JSONSerializer", &bond.JsonSerializer{}},
 		{"MsgPackSerializer", &bond.MsgPackSerializer{}},
 	}
 
@@ -90,7 +90,7 @@ func BenchmarkTableInsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 				bs.Benchmark(bench.Benchmark{
 					Name:               fmt.Sprintf("%s/%s/Insert_%d", bs.Name, serializer.Name, v.batchSize),
 					Inputs:             v,
-					NumberOfOperations: v.batchSize,
+					NumberOfOperations: 1,
 					BenchmarkFunc:      InsertInBatchSize(tokenBalanceTable, tokenBalances, v.batchSize),
 				}),
 			)

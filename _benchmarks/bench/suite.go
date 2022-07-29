@@ -2,7 +2,9 @@ package bench
 
 import (
 	"flag"
+	"fmt"
 	"testing"
+	"time"
 )
 
 var registeredSuites []*BenchmarkSuite
@@ -24,7 +26,11 @@ type Benchmark struct {
 
 type BenchmarkResult struct {
 	Benchmark
-	Result testing.BenchmarkResult
+	testing.BenchmarkResult
+}
+
+func (br *BenchmarkResult) OpsPerSec() float64 {
+	return br.Extra["ops/s"]
 }
 
 type BenchmarkSuite struct {
@@ -47,9 +53,17 @@ func (bs *BenchmarkSuite) Benchmark(benchmark Benchmark) BenchmarkResult {
 		bs.Runner.Run(benchmark.Name, benchmark.BenchmarkFunc)
 		return BenchmarkResult{}
 	} else {
-		return BenchmarkResult{
-			Benchmark: benchmark,
-			Result:    testing.Benchmark(benchmark.BenchmarkFunc),
+		fmt.Printf("===> %s\n", benchmark.Name)
+
+		result := BenchmarkResult{
+			Benchmark:       benchmark,
+			BenchmarkResult: testing.Benchmark(benchmark.BenchmarkFunc),
 		}
+
+		if result.NumberOfOperations != 0 {
+			result.Extra["ops/s"] = float64(time.Second) / float64(result.NsPerOp()/int64(result.NumberOfOperations))
+		}
+
+		return result
 	}
 }

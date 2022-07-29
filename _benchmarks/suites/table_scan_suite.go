@@ -25,7 +25,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		Name       string
 		Serializer bond.Serializer
 	}{
-		{"JSONSerializer", &bond.JsonSerializer{}},
+		//{"JSONSerializer", &bond.JsonSerializer{}},
 		{"MsgPackSerializer", &bond.MsgPackSerializer{}},
 	}
 
