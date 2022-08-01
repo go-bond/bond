@@ -29,7 +29,7 @@ type BenchmarkResult struct {
 }
 
 func (br BenchmarkResult) OpsPerSec() float64 {
-	return br.Extra["ops/s"]
+	return br.Extra["op/s"]
 }
 
 type BenchmarkSuite struct {
@@ -59,7 +59,7 @@ func (bs *BenchmarkSuite) Benchmark(benchmark Benchmark) BenchmarkResult {
 			BenchmarkResult: testing.Benchmark(benchmark.BenchmarkFunc),
 		}
 
-		result.Extra["ops/s"] = float64(time.Second) / float64(result.NsPerOp())
+		result.Extra["op/s"] = float64(time.Second) / float64(result.NsPerOp())
 
 		return result
 	}
