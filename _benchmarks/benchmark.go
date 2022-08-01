@@ -12,12 +12,18 @@ import (
 	_ "github.com/go-bond/bond/_benchmarks/suites"
 )
 
-func RunBenchmarks(b *testing.B) []bench.BenchmarkResult {
+const AllTestSuites = ""
+
+func RunBenchmarks(b *testing.B, testSuiteName string) []bench.BenchmarkResult {
 	var allResults []bench.BenchmarkResult
 
 	for _, suite := range bench.BenchmarkSuites() {
 		if b != nil {
 			suite.Runner = b
+		}
+
+		if testSuiteName != AllTestSuites && suite.Name != testSuiteName {
+			continue
 		}
 
 		if !*suite.SkipFlag {
@@ -31,10 +37,11 @@ func RunBenchmarks(b *testing.B) []bench.BenchmarkResult {
 
 func main() {
 	report := flag.String("report", "stdout", "--report=stdout")
+	testSuite := flag.String("test-suite", "", "--test-suite=name")
 	flag.Parse()
 
 	fmt.Println("=> Bond Benchmarks")
-	allResults := RunBenchmarks(nil)
+	allResults := RunBenchmarks(nil, *testSuite)
 
 	var err error
 	switch *report {
