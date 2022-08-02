@@ -6,9 +6,21 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type Serializer interface {
-	Serialize(i interface{}) ([]byte, error)
-	Deserialize(b []byte, i interface{}) error
+type Serializer[T any] interface {
+	Serialize(t T) ([]byte, error)
+	Deserialize(b []byte, t T) error
+}
+
+type SerializerAnyWrapper[T any] struct {
+	Serializer Serializer[any]
+}
+
+func (s *SerializerAnyWrapper[T]) Serialize(t T) ([]byte, error) {
+	return s.Serializer.Serialize(t)
+}
+
+func (s *SerializerAnyWrapper[T]) Deserialize(b []byte, t T) error {
+	return s.Serializer.Deserialize(b, t)
 }
 
 type JsonSerializer struct {

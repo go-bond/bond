@@ -18,7 +18,7 @@ const ReindexBatchSize = 10000
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
-func primaryIndexKey[T any](builder KeyBuilder, t T) []byte { return []byte{} }
+func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
 
 type Table[T any] struct {
 	TableID TableID
@@ -30,16 +30,24 @@ type Table[T any] struct {
 	primaryIndex     *Index[T]
 	secondaryIndexes map[IndexID]*Index[T]
 
+	serializer Serializer[*T]
+
 	mutex sync.RWMutex
 }
 
-func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T]) *Table[T] {
+func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T], trkSer ...Serializer[*T]) *Table[T] {
+	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: db.Serializer()}
+	if len(trkSer) > 0 {
+		serializer = trkSer[0]
+	}
+
 	return &Table[T]{
 		TableID:          id,
 		db:               db,
 		primaryKeyFunc:   trkFn,
 		primaryIndex:     NewIndex[T](PrimaryIndexID, primaryIndexKey[T], IndexOrderDefault[T]),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
+		serializer:       serializer,
 		mutex:            sync.RWMutex{},
 	}
 }
@@ -91,7 +99,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
-		err := t.db.Serializer().Deserialize(iter.Value(), &tr)
+		err := t.serializer.Deserialize(iter.Value(), &tr)
 		if err != nil {
 			return fmt.Errorf("failed to deserialize during reindexing: %w", err)
 		}
@@ -159,7 +167,7 @@ func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
 		}
 
 		// serialize
-		data, err := t.db.Serializer().Serialize(tr)
+		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
 			return err
 		}
@@ -225,7 +233,7 @@ func (t *Table[T]) Update(trs []T, batches ...*pebble.Batch) error {
 		}
 
 		var oldTr T
-		err = t.db.Serializer().Deserialize(oldTrData, &oldTr)
+		err = t.serializer.Deserialize(oldTrData, &oldTr)
 		if err != nil {
 			_ = batch.Close()
 			return err
@@ -234,7 +242,7 @@ func (t *Table[T]) Update(trs []T, batches ...*pebble.Batch) error {
 		_ = closer.Close()
 
 		// serialize
-		data, err := t.db.Serializer().Serialize(tr)
+		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
 			return err
 		}
@@ -418,7 +426,7 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	defer func() { _ = closer.Close() }()
 
 	var tr T
-	err = t.db.Serializer().Deserialize(data, &tr)
+	err = t.serializer.Deserialize(data, &tr)
 	if err != nil {
 		return make([]T, 1)[0], fmt.Errorf("get failed to deserialize: %w", err)
 	}
@@ -470,7 +478,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 	if idx.IndexID == PrimaryIndexID {
 		getValue = func() (T, error) {
 			var record T
-			if err := t.db.Serializer().Deserialize(iter.Value(), &record); err == nil {
+			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
 				return record, nil
 			} else {
 				return make([]T, 1)[0], err
@@ -491,7 +499,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 			defer func() { _ = closer.Close() }()
 
 			var record T
-			if err = t.db.Serializer().Deserialize(valueData, &record); err == nil {
+			if err = t.serializer.Deserialize(valueData, &record); err == nil {
 				return record, nil
 			} else {
 				return make([]T, 1)[0], err

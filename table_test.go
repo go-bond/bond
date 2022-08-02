@@ -507,7 +507,7 @@ func BenchmarkTableSuite(b *testing.B) {
 
 	var serializers = []struct {
 		Name       string
-		Serializer Serializer
+		Serializer Serializer[any]
 	}{
 		{"JSONSerializer", &JsonSerializer{}},
 		{"MsgPackSerializer", &MsgPackSerializer{}},
