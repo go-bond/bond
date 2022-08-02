@@ -17,7 +17,7 @@ type TokenBalance struct {
 
 const dbName = "bench_db"
 
-func setupDatabase(serializer ...bond.Serializer) *bond.DB {
+func setupDatabase(serializer ...bond.Serializer[any]) *bond.DB {
 	options := &bond.Options{}
 	if len(serializer) > 0 && serializer[0] != nil {
 		options.Serializer = serializer[0]

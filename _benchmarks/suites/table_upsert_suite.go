@@ -22,7 +22,7 @@ func BenchmarkTableUpsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 
 	var serializers = []struct {
 		Name       string
-		Serializer bond.Serializer
+		Serializer bond.Serializer[any]
 	}{
 		//{"JSONSerializer", &bond.JsonSerializer{}},
 		{"MsgPackSerializer", &bond.MsgPackSerializer{}},

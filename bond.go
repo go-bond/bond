@@ -9,13 +9,13 @@ import (
 type Options struct {
 	pebble.Options
 
-	Serializer Serializer
+	Serializer Serializer[any]
 }
 
 type DB struct {
 	*pebble.DB
 
-	serializer Serializer
+	serializer Serializer[any]
 }
 
 func Open(dirname string, opts *Options) (*DB, error) {
@@ -29,7 +29,7 @@ func Open(dirname string, opts *Options) (*DB, error) {
 		return nil, err
 	}
 
-	var serializer Serializer
+	var serializer Serializer[any]
 	if opts.Serializer != nil {
 		serializer = opts.Serializer
 	} else {
@@ -39,7 +39,7 @@ func Open(dirname string, opts *Options) (*DB, error) {
 	return &DB{DB: pdb, serializer: serializer}, nil
 }
 
-func (db *DB) Serializer() Serializer {
+func (db *DB) Serializer() Serializer[any] {
 	return db.serializer
 }
 
