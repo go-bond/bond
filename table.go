@@ -20,6 +20,29 @@ type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
 func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
 
+type TableR[T any] interface {
+	Get(tr T, batches ...*pebble.Batch) (T, error)
+	Exist(tr T, batches ...*pebble.Batch) bool
+	Query() Query[T]
+
+	Scan(tr *[]T, batches ...*pebble.Batch) error
+	ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch) error
+	ScanForEach(f func(l Lazy[T]) (bool, error), batches ...*pebble.Batch) error
+	ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), batches ...*pebble.Batch) error
+}
+
+type TableW[T any] interface {
+	Insert(trs []T, batches ...*pebble.Batch) error
+	Update(trs []T, batches ...*pebble.Batch) error
+	Upsert(trs []T, batches ...*pebble.Batch) error
+	Delete(trs []T, batches ...*pebble.Batch) error
+}
+
+type TableRW[T any] interface {
+	TableR[T]
+	TableW[T]
+}
+
 type Table[T any] struct {
 	TableID TableID
 
