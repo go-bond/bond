@@ -29,6 +29,33 @@ func TestBond_NewTable(t *testing.T) {
 	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.TableID)
 }
 
+func TestBondTable_Interfaces(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](
+		db,
+		TokenBalanceTableID,
+		func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	)
+	require.NotNil(t, tokenBalanceTable)
+
+	tableReadInterface := TableR[*TokenBalance](tokenBalanceTable)
+	require.NotNil(t, tableReadInterface)
+
+	tableWriteInterface := TableW[*TokenBalance](tokenBalanceTable)
+	require.NotNil(t, tableWriteInterface)
+
+	tableReadWriteInterface := TableRW[*TokenBalance](tokenBalanceTable)
+	require.NotNil(t, tableReadWriteInterface)
+}
+
 func TestBondTable_Insert(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
