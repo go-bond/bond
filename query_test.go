@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -117,7 +118,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
+		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
 
 	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)

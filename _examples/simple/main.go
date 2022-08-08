@@ -158,7 +158,18 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("==> Query ordered by balance DESC using ordered index")
+	fmt.Println("==> Query ordered by amount DESC using ordered index")
+	spew.Dump(exampleStructsFromQuery)
+	fmt.Println("")
+
+	err = ExampleStructTable.Query().
+		With(ExampleStructOrderAmountDESCIndex, &ExampleStruct{Amount: 3}).
+		Execute(&exampleStructsFromQuery)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("==> Query ordered by amount DESC using ordered index and selector")
 	spew.Dump(exampleStructsFromQuery)
 	fmt.Println("")
 

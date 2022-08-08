@@ -44,6 +44,7 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 	return Query[R]{
 		table:         t,
 		index:         i,
+		indexSelector: makeNew[R](),
 		queries:       []FilterAndIndex[R]{},
 		orderLessFunc: nil,
 		offset:        0,
