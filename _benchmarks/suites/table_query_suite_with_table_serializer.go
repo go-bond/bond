@@ -129,6 +129,13 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			{index: nil, indexName: "Default", selector: nil, offset: 100000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 1000000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 10000000, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[500], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[1000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[5000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[10000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[100000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[1000000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances[10000000], offset: 0, limit: 1000},
 			// AccountAddress Index
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 500},
@@ -144,6 +151,13 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 100000, limit: 1000},
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 1000000, limit: 1000},
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 10000000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 501}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 5001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 100001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000001}, offset: 0, limit: 1000},
 			// AccountAddressOrderBalanceDESC
 			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
 			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 500},
@@ -159,13 +173,25 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 100000, limit: 1000},
 			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 1000000, limit: 1000},
 			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 10000000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 501}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 5001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 100001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000001}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000001}, offset: 0, limit: 1000},
 		}
 
 		for _, v := range queryInputs {
+			var selectorID = uint64(0)
+			if v.selector != nil {
+				selectorID = v.selector.ID
+			}
+
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name: fmt.Sprintf("%s/%s/Query_Index_%s_Offset_%d_Limit_%d",
-						bs.Name, serializer.Name, v.indexName, v.offset, v.limit),
+					Name: fmt.Sprintf("%s/%s/Query_Index_%s_Sel_%d_Offset_%d_Limit_%d",
+						bs.Name, serializer.Name, v.indexName, selectorID, v.offset, v.limit),
 					Inputs:        v,
 					BenchmarkFunc: QueryWithOpts(tokenBalanceTable, v.index, v.selector, v.offset, v.limit),
 				}),

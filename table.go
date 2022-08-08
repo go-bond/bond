@@ -108,7 +108,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	snap := t.db.NewSnapshot()
 
 	var prefixBuffer [DataKeyBufferSize]byte
-	prefix := t.keyPrefix(t.primaryIndex, make([]T, 1)[0], prefixBuffer[:0])
+	prefix := t.keyPrefix(t.primaryIndex, makeNew[T](), prefixBuffer[:0])
 
 	iter := snap.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
@@ -443,7 +443,7 @@ func (t *Table[T]) Get(tr T, batches ...*pebble.Batch) (T, error) {
 func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	data, closer, err := t.db.getBatchOrDB(key, batch)
 	if err != nil {
-		return make([]T, 1)[0], fmt.Errorf("get failed: %w", err)
+		return makeNew[T](), fmt.Errorf("get failed: %w", err)
 	}
 
 	defer func() { _ = closer.Close() }()
@@ -451,7 +451,7 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	var tr T
 	err = t.serializer.Deserialize(data, &tr)
 	if err != nil {
-		return make([]T, 1)[0], fmt.Errorf("get failed to deserialize: %w", err)
+		return makeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
 
 	return tr, nil
@@ -462,7 +462,7 @@ func (t *Table[T]) Query() Query[T] {
 }
 
 func (t *Table[T]) Scan(tr *[]T, batches ...*pebble.Batch) error {
-	return t.ScanIndex(t.primaryIndex, make([]T, 1)[0], tr, batches...)
+	return t.ScanIndex(t.primaryIndex, makeNew[T](), tr, batches...)
 }
 
 func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch) error {
@@ -477,22 +477,22 @@ func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch
 }
 
 func (t *Table[T]) ScanForEach(f func(l Lazy[T]) (bool, error), batches ...*pebble.Batch) error {
-	return t.ScanIndexForEach(t.primaryIndex, make([]T, 1)[0], f, batches...)
+	return t.ScanIndexForEach(t.primaryIndex, makeNew[T](), f, batches...)
 }
 
 func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), batches ...*pebble.Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
-	prefix := t.keyPrefix(idx, s, prefixBuffer[:0])
+	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
 	var iter *pebble.Iterator
 	if len(batches) > 0 && batches[0] != nil {
 		batches[0].NewIter(&pebble.IterOptions{
-			LowerBound: prefix,
+			LowerBound: selector,
 		})
 	} else {
 		iter = t.db.NewIter(&pebble.IterOptions{
-			LowerBound: prefix,
+			LowerBound: selector,
 		})
 	}
 
@@ -504,7 +504,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
 				return record, nil
 			} else {
-				return make([]T, 1)[0], err
+				return makeNew[T](), err
 			}
 		}
 	} else {
@@ -516,7 +516,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 
 			valueData, closer, err := t.db.Get(tableKey)
 			if err != nil {
-				return make([]T, 1)[0], err
+				return makeNew[T](), err
 			}
 
 			defer func() { _ = closer.Close() }()
@@ -525,12 +525,12 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 			if err = t.serializer.Deserialize(valueData, &record); err == nil {
 				return record, nil
 			} else {
-				return make([]T, 1)[0], err
+				return makeNew[T](), err
 			}
 		}
 	}
 
-	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
+	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
 			break
 		} else {

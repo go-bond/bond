@@ -44,6 +44,7 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 	return Query[R]{
 		table:         t,
 		index:         i,
+		indexSelector: makeNew[R](),
 		queries:       []FilterAndIndex[R]{},
 		orderLessFunc: nil,
 		offset:        0,
@@ -53,7 +54,10 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
-// indexed fields set.
+// indexed and order fields set. This is very important as selector also defines
+// the row at which we start the query. Please note: if we have DESC order on ID
+// field and we try to query with a selector that has ID set to 0 it will start
+// from the last row.
 func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
 	q.index = idx
 	q.indexSelector = selector
