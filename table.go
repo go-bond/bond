@@ -486,8 +486,10 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
 	var iter *pebble.Iterator
+	var batch *pebble.Batch
 	if len(batches) > 0 && batches[0] != nil {
-		batches[0].NewIter(&pebble.IterOptions{
+		batch = batches[0]
+		iter = batch.NewIter(&pebble.IterOptions{
 			LowerBound: selector,
 		})
 	} else {
@@ -514,7 +516,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 				keyBuffer[:0],
 			)
 
-			valueData, closer, err := t.db.Get(tableKey)
+			valueData, closer, err := t.db.getBatchOrDB(tableKey, batch)
 			if err != nil {
 				return makeNew[T](), err
 			}
