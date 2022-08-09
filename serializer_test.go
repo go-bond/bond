@@ -22,7 +22,7 @@ func TestMsgpackSerializer_SerializerWithClosable(t *testing.T) {
 				return msgpack.NewDecoder(nil)
 			}},
 		},
-		BufferPool: &SyncPoolWrapper[bytes.Buffer]{
+		Buffer: &SyncPoolWrapper[bytes.Buffer]{
 			Pool: sync.Pool{New: func() interface{} { return bytes.Buffer{} }},
 		},
 	}
@@ -52,7 +52,7 @@ func TestMsgpackSerializer_SerializerWithClosable(t *testing.T) {
 
 func TestMsgpackGenSerializer_SerializerWithClosable(t *testing.T) {
 	s := MsgpackGenSerializer{
-		BufferPool: &SyncPoolWrapper[bytes.Buffer]{
+		Buffer: &SyncPoolWrapper[bytes.Buffer]{
 			Pool: sync.Pool{New: func() interface{} { return bytes.Buffer{} }},
 		},
 	}
