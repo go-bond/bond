@@ -41,6 +41,14 @@ func (n *NumberSequence) Next() (uint64, error) {
 	return nextId, nil
 }
 
+func (n *NumberSequence) Timestamp(ns uint64) uint64 {
+	return ns >> NumberSequenceBitShift
+}
+
+func (n *NumberSequence) SequenceNumber(ns uint64) uint64 {
+	return ns & NumberSequenceSequenceNumberMask
+}
+
 type UUIDGenerator struct {
 }
 
