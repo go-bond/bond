@@ -1,5 +1,7 @@
 package bond
 
+//go:generate msgp
+
 type TokenBalance struct {
 	ID              uint64 `json:"id"`
 	AccountID       uint32 `json:"accountId"`

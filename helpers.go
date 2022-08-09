@@ -63,3 +63,20 @@ type Lazy[T any] struct {
 func (l Lazy[T]) Get() (T, error) {
 	return l.getFunc()
 }
+
+type SyncPool[T any] interface {
+	Get() T
+	Put(T)
+}
+
+type SyncPoolWrapper[T any] struct {
+	sync.Pool
+}
+
+func (s *SyncPoolWrapper[T]) Get() T {
+	return s.Pool.Get().(T)
+}
+
+func (s *SyncPoolWrapper[T]) Put(t T) {
+	s.Pool.Put(t)
+}
