@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"encoding/binary"
+	"math/big"
 )
 
 type KeyBuilder struct {
@@ -12,6 +13,57 @@ type KeyBuilder struct {
 
 func NewKeyBuilder(buff []byte) KeyBuilder {
 	return KeyBuilder{buff: buff}
+}
+
+func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
+	bt := b.putFieldID()
+
+	if i > 0 {
+		bt.buff = append(bt.buff, 0x02)
+	} else if i == 0 {
+		bt.buff = append(bt.buff, 0x01)
+	} else {
+		bt.buff = append(bt.buff, 0x00)
+		i = ^i + 1
+	}
+
+	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
+	binary.BigEndian.PutUint64(bt.buff[len(bt.buff)-8:], uint64(i))
+	return bt
+}
+
+func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
+	bt := b.putFieldID()
+
+	if i > 0 {
+		bt.buff = append(bt.buff, 0x02)
+	} else if i == 0 {
+		bt.buff = append(bt.buff, 0x01)
+	} else {
+		bt.buff = append(bt.buff, 0x00)
+		i = ^i + 1
+	}
+
+	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
+	binary.BigEndian.PutUint32(bt.buff[len(bt.buff)-4:], uint32(i))
+	return bt
+}
+
+func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
+	bt := b.putFieldID()
+
+	if i > 0 {
+		bt.buff = append(bt.buff, 0x02)
+	} else if i == 0 {
+		bt.buff = append(bt.buff, 0x01)
+	} else {
+		bt.buff = append(bt.buff, 0x00)
+		i = ^i + 1
+	}
+
+	bt.buff = append(bt.buff, []byte{0, 0}...)
+	binary.BigEndian.PutUint16(bt.buff[len(bt.buff)-2:], uint16(i))
+	return bt
 }
 
 func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
@@ -50,6 +102,19 @@ func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 	bt := b.putFieldID()
 	bt.buff = append(bt.buff, bs...)
+	return bt
+}
+
+func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
+	bt := b.putFieldID()
+	bt.buff = append(bt.buff, byte(bi.Sign()+1)) // 0 - negative, 1 - zero, 2 - positive
+
+	bytesLen := bits / 8
+	for i := 0; i < bytesLen; i++ {
+		bt.buff = append(bt.buff, 0x00)
+	}
+	bi.FillBytes(bt.buff[len(bt.buff)-bytesLen:])
+
 	return bt
 }
 
