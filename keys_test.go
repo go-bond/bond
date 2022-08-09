@@ -7,22 +7,61 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestKeyBuilder_AddByteField(t *testing.T) {
+func TestKeyBuilder_AddInt16Field(t *testing.T) {
 	var buffer [1024]byte
 
 	kb := NewKeyBuilder(buffer[:0])
-	kb = kb.AddByteField(0xF1)
+	kb = kb.AddInt16Field(10)
 
-	assert.Equal(t, []byte{0x01, 0xF1}, kb.Bytes())
+	assert.Equal(t, []byte{0x01, 0x02, 0x00, 0x0a}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt16Field(0)
+
+	assert.Equal(t, []byte{0x01, 0x01, 0x00, 0x00}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt16Field(-10)
+
+	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x0a}, kb.Bytes())
 }
 
-func TestKeyBuilder_AddBytesField(t *testing.T) {
+func TestKeyBuilder_AddInt32Field(t *testing.T) {
 	var buffer [1024]byte
 
 	kb := NewKeyBuilder(buffer[:0])
-	kb = kb.AddBytesField([]byte{0xF1, 0x1F})
+	kb = kb.AddInt32Field(10)
 
-	assert.Equal(t, []byte{0x01, 0xF1, 0x1F}, kb.Bytes())
+	assert.Equal(t, []byte{0x01, 0x02, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt32Field(0)
+
+	assert.Equal(t, []byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x00}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt32Field(-10)
+
+	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
+}
+
+func TestKeyBuilder_AddInt64Field(t *testing.T) {
+	var buffer [1024]byte
+
+	kb := NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt64Field(10)
+
+	assert.Equal(t, []byte{0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt64Field(0)
+
+	assert.Equal(t, []byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, kb.Bytes())
+
+	kb = NewKeyBuilder(buffer[:0])
+	kb = kb.AddInt64Field(-10)
+
+	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
 }
 
 func TestKeyBuilder_AddUint16Field(t *testing.T) {
@@ -59,6 +98,24 @@ func TestKeyBuilder_AddStringField(t *testing.T) {
 	kb = kb.AddStringField("abc")
 
 	assert.Equal(t, []byte{0x01, 'a', 'b', 'c'}, kb.Bytes())
+}
+
+func TestKeyBuilder_AddByteField(t *testing.T) {
+	var buffer [1024]byte
+
+	kb := NewKeyBuilder(buffer[:0])
+	kb = kb.AddByteField(0xF1)
+
+	assert.Equal(t, []byte{0x01, 0xF1}, kb.Bytes())
+}
+
+func TestKeyBuilder_AddBytesField(t *testing.T) {
+	var buffer [1024]byte
+
+	kb := NewKeyBuilder(buffer[:0])
+	kb = kb.AddBytesField([]byte{0xF1, 0x1F})
+
+	assert.Equal(t, []byte{0x01, 0xF1, 0x1F}, kb.Bytes())
 }
 
 func TestKeyBuilder_AddBigIntField(t *testing.T) {
