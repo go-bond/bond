@@ -43,15 +43,15 @@ func (s *JsonSerializer) Deserialize(b []byte, i interface{}) error {
 }
 
 type MsgpackSerializer struct {
-	EncoderFunc func() *msgpack.Encoder
-	DecoderFunc func() *msgpack.Decoder
-	BufferPool  *SyncPoolWrapper[bytes.Buffer]
+	Encoder    *SyncPoolWrapper[*msgpack.Encoder]
+	Decoder    *SyncPoolWrapper[*msgpack.Decoder]
+	BufferPool *SyncPoolWrapper[bytes.Buffer]
 }
 
 func (m *MsgpackSerializer) Serialize(i interface{}) ([]byte, error) {
-	if m.EncoderFunc != nil {
+	if m.Encoder != nil {
 		var (
-			enc  = m.EncoderFunc()
+			enc  = m.Encoder.Get()
 			buff = m.getBuffer()
 		)
 
@@ -62,15 +62,17 @@ func (m *MsgpackSerializer) Serialize(i interface{}) ([]byte, error) {
 			return nil, err
 		}
 
+		m.Encoder.Put(enc)
+
 		return buff.Bytes(), nil
 	}
 	return msgpack.Marshal(i)
 }
 
 func (m *MsgpackSerializer) SerializerWithCloseable(i interface{}) ([]byte, func(), error) {
-	if m.EncoderFunc != nil {
+	if m.Encoder != nil {
 		var (
-			enc  = m.EncoderFunc()
+			enc  = m.Encoder.Get()
 			buff = m.getBuffer()
 		)
 
@@ -80,6 +82,8 @@ func (m *MsgpackSerializer) SerializerWithCloseable(i interface{}) ([]byte, func
 		if err != nil {
 			return nil, nil, err
 		}
+
+		m.Encoder.Put(enc)
 
 		closeable := func() {
 			m.BufferPool.Put(buff)

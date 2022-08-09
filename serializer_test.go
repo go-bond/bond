@@ -12,8 +12,16 @@ import (
 
 func TestMsgpackSerializer_SerializerWithClosable(t *testing.T) {
 	s := MsgpackSerializer{
-		EncoderFunc: msgpack.GetEncoder,
-		DecoderFunc: msgpack.GetDecoder,
+		Encoder: &SyncPoolWrapper[*msgpack.Encoder]{
+			Pool: sync.Pool{New: func() interface{} {
+				return msgpack.NewEncoder(nil)
+			}},
+		},
+		Decoder: &SyncPoolWrapper[*msgpack.Decoder]{
+			Pool: sync.Pool{New: func() interface{} {
+				return msgpack.NewDecoder(nil)
+			}},
+		},
 		BufferPool: &SyncPoolWrapper[bytes.Buffer]{
 			Pool: sync.Pool{New: func() interface{} { return bytes.Buffer{} }},
 		},
