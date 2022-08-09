@@ -24,7 +24,7 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 		Serializer bond.Serializer[any]
 	}{
 		//{"JSONSerializer", &bond.JsonSerializer{}},
-		{"MsgPackSerializer", &bond.MsgPackSerializer{}},
+		{"MsgpackSerializer", &bond.MsgpackSerializer{}},
 	}
 
 	var results []bench.BenchmarkResult
