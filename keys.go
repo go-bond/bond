@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"encoding/binary"
+	"math/big"
 )
 
 type KeyBuilder struct {
@@ -50,6 +51,19 @@ func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 	bt := b.putFieldID()
 	bt.buff = append(bt.buff, bs...)
+	return bt
+}
+
+func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
+	bt := b.putFieldID()
+	bt.buff = append(bt.buff, byte(bi.Sign()+1)) // 0 - negative, 1 - zero, 2 - positive
+
+	bytesLen := bits / 8
+	for i := 0; i < bytesLen; i++ {
+		bt.buff = append(bt.buff, 0x00)
+	}
+	bi.FillBytes(bt.buff[len(bt.buff)-bytesLen:])
+
 	return bt
 }
 
