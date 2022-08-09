@@ -43,9 +43,9 @@ func (s *JsonSerializer) Deserialize(b []byte, i interface{}) error {
 }
 
 type MsgpackSerializer struct {
-	Encoder    *SyncPoolWrapper[*msgpack.Encoder]
-	Decoder    *SyncPoolWrapper[*msgpack.Decoder]
-	BufferPool *SyncPoolWrapper[bytes.Buffer]
+	Encoder SyncPool[*msgpack.Encoder]
+	Decoder SyncPool[*msgpack.Decoder]
+	Buffer  SyncPool[bytes.Buffer]
 }
 
 func (m *MsgpackSerializer) Serialize(i interface{}) ([]byte, error) {
@@ -86,7 +86,7 @@ func (m *MsgpackSerializer) SerializerWithCloseable(i interface{}) ([]byte, func
 		m.Encoder.Put(enc)
 
 		closeable := func() {
-			m.BufferPool.Put(buff)
+			m.freeBuffer(buff)
 		}
 
 		return buff.Bytes(), closeable, nil
@@ -101,21 +101,21 @@ func (m *MsgpackSerializer) Deserialize(b []byte, i interface{}) error {
 }
 
 func (m *MsgpackSerializer) getBuffer() bytes.Buffer {
-	if m.BufferPool != nil {
-		return m.BufferPool.Get()
+	if m.Buffer != nil {
+		return m.Buffer.Get()
 	} else {
 		return bytes.Buffer{}
 	}
 }
 
 func (m *MsgpackSerializer) freeBuffer(buffer bytes.Buffer) {
-	if m.BufferPool != nil {
-		m.BufferPool.Put(buffer)
+	if m.Buffer != nil {
+		m.Buffer.Put(buffer)
 	}
 }
 
 type MsgpackGenSerializer struct {
-	BufferPool *SyncPoolWrapper[bytes.Buffer]
+	Buffer SyncPool[bytes.Buffer]
 }
 
 func (m *MsgpackGenSerializer) Serialize(i interface{}) ([]byte, error) {
@@ -164,7 +164,7 @@ func (m *MsgpackGenSerializer) SerializerWithCloseable(i interface{}) ([]byte, f
 	}
 
 	closeable := func() {
-		m.BufferPool.Put(buff)
+		m.freeBuffer(buff)
 	}
 
 	return buff.Bytes(), closeable, nil
@@ -184,15 +184,15 @@ func (m *MsgpackGenSerializer) Deserialize(b []byte, i interface{}) error {
 }
 
 func (m *MsgpackGenSerializer) getBuffer() bytes.Buffer {
-	if m.BufferPool != nil {
-		return m.BufferPool.Get()
+	if m.Buffer != nil {
+		return m.Buffer.Get()
 	} else {
 		return bytes.Buffer{}
 	}
 }
 
 func (m *MsgpackGenSerializer) freeBuffer(buffer bytes.Buffer) {
-	if m.BufferPool != nil {
-		m.BufferPool.Put(buffer)
+	if m.Buffer != nil {
+		m.Buffer.Put(buffer)
 	}
 }
