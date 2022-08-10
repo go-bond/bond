@@ -1,5 +1,7 @@
 package bond
 
+import "math/big"
+
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
@@ -86,6 +88,15 @@ func (o IndexOrder) OrderBytes(b []byte, orderType IndexOrderType) IndexOrder {
 	}
 
 	o.keyBuilder = o.keyBuilder.AddBytesField(b)
+	return o
+}
+
+func (o IndexOrder) OrderBigInt(b *big.Int, bits int, orderType IndexOrderType) IndexOrder {
+	if orderType == IndexOrderTypeDESC {
+		b = big.NewInt(0).Neg(b)
+	}
+
+	o.keyBuilder = o.keyBuilder.AddBigIntField(b, bits)
 	return o
 }
 
