@@ -1,7 +1,5 @@
 package bond
 
-import "math"
-
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
@@ -19,11 +17,7 @@ type IndexOrder struct {
 
 func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
-		if i > 0 {
-			i = math.MinInt64 + i
-		} else if i < 0 {
-			i = i - math.MaxInt64
-		}
+		i = -i
 	}
 
 	o.keyBuilder = o.keyBuilder.AddInt64Field(i)
@@ -32,11 +26,7 @@ func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
 
 func (o IndexOrder) OrderInt32(i int32, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
-		if i > 0 {
-			i = math.MinInt32 + i
-		} else if i < 0 {
-			i = i - math.MaxInt32
-		}
+		i = -i
 	}
 
 	o.keyBuilder = o.keyBuilder.AddInt32Field(i)
@@ -45,11 +35,7 @@ func (o IndexOrder) OrderInt32(i int32, orderType IndexOrderType) IndexOrder {
 
 func (o IndexOrder) OrderInt16(i int16, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
-		if i > 0 {
-			i = math.MinInt16 + i
-		} else if i < 0 {
-			i = i - math.MaxInt16
-		}
+		i = -i
 	}
 
 	o.keyBuilder = o.keyBuilder.AddInt16Field(i)
