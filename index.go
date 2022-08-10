@@ -1,5 +1,7 @@
 package bond
 
+import "math/big"
+
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
@@ -13,6 +15,33 @@ const (
 
 type IndexOrder struct {
 	keyBuilder KeyBuilder
+}
+
+func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
+	if orderType == IndexOrderTypeDESC {
+		i = -i
+	}
+
+	o.keyBuilder = o.keyBuilder.AddInt64Field(i)
+	return o
+}
+
+func (o IndexOrder) OrderInt32(i int32, orderType IndexOrderType) IndexOrder {
+	if orderType == IndexOrderTypeDESC {
+		i = -i
+	}
+
+	o.keyBuilder = o.keyBuilder.AddInt32Field(i)
+	return o
+}
+
+func (o IndexOrder) OrderInt16(i int16, orderType IndexOrderType) IndexOrder {
+	if orderType == IndexOrderTypeDESC {
+		i = -i
+	}
+
+	o.keyBuilder = o.keyBuilder.AddInt16Field(i)
+	return o
 }
 
 func (o IndexOrder) OrderUint64(i uint64, orderType IndexOrderType) IndexOrder {
@@ -59,6 +88,15 @@ func (o IndexOrder) OrderBytes(b []byte, orderType IndexOrderType) IndexOrder {
 	}
 
 	o.keyBuilder = o.keyBuilder.AddBytesField(b)
+	return o
+}
+
+func (o IndexOrder) OrderBigInt(b *big.Int, bits int, orderType IndexOrderType) IndexOrder {
+	if orderType == IndexOrderTypeDESC {
+		b = big.NewInt(0).Neg(b)
+	}
+
+	o.keyBuilder = o.keyBuilder.AddBigIntField(b, bits)
 	return o
 }
 

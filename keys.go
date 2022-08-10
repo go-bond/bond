@@ -24,7 +24,7 @@ func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
@@ -41,7 +41,7 @@ func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
@@ -58,7 +58,7 @@ func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0}...)
@@ -107,13 +107,26 @@ func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 
 func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 	bt := b.putFieldID()
-	bt.buff = append(bt.buff, byte(bi.Sign()+1)) // 0 - negative, 1 - zero, 2 - positive
+
+	sign := bi.Sign() + 1
+	bt.buff = append(bt.buff, byte(sign)) // 0 - negative, 1 - zero, 2 - positive
+
+	if sign == 0 {
+		bi = big.NewInt(0).Sub(big.NewInt(0), bi)
+	}
 
 	bytesLen := bits / 8
 	for i := 0; i < bytesLen; i++ {
 		bt.buff = append(bt.buff, 0x00)
 	}
 	bi.FillBytes(bt.buff[len(bt.buff)-bytesLen:])
+
+	if sign == 0 {
+		index := len(bt.buff)
+		for i := 0; i < bytesLen; i++ {
+			bt.buff[index-i-1] = 0xFF - bt.buff[index-i-1]
+		}
+	}
 
 	return bt
 }
