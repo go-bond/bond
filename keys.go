@@ -112,7 +112,7 @@ func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 	bt.buff = append(bt.buff, byte(sign)) // 0 - negative, 1 - zero, 2 - positive
 
 	if sign == 0 {
-		bi = bi.Sub(big.NewInt(0), bi)
+		bi = big.NewInt(0).Sub(big.NewInt(0), bi)
 	}
 
 	bytesLen := bits / 8
