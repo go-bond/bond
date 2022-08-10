@@ -23,7 +23,7 @@ func TestKeyBuilder_AddInt16Field(t *testing.T) {
 	kb = NewKeyBuilder(buffer[:0])
 	kb = kb.AddInt16Field(-10)
 
-	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x0a}, kb.Bytes())
+	assert.Equal(t, []byte{0x01, 0x00, 0xFF, 0xFF - 0x0a}, kb.Bytes())
 }
 
 func TestKeyBuilder_AddInt32Field(t *testing.T) {
@@ -42,7 +42,7 @@ func TestKeyBuilder_AddInt32Field(t *testing.T) {
 	kb = NewKeyBuilder(buffer[:0])
 	kb = kb.AddInt32Field(-10)
 
-	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
+	assert.Equal(t, []byte{0x01, 0x00, 0xFF, 0xFF, 0xFF, 0xFF - 0x0a}, kb.Bytes())
 }
 
 func TestKeyBuilder_AddInt64Field(t *testing.T) {
@@ -61,7 +61,7 @@ func TestKeyBuilder_AddInt64Field(t *testing.T) {
 	kb = NewKeyBuilder(buffer[:0])
 	kb = kb.AddInt64Field(-10)
 
-	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a}, kb.Bytes())
+	assert.Equal(t, []byte{0x01, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF - 0x0a}, kb.Bytes())
 }
 
 func TestKeyBuilder_AddUint16Field(t *testing.T) {

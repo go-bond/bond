@@ -24,7 +24,7 @@ func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
@@ -41,7 +41,7 @@ func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
@@ -58,7 +58,7 @@ func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 		bt.buff = append(bt.buff, 0x01)
 	} else {
 		bt.buff = append(bt.buff, 0x00)
-		i = ^i + 1
+		i = ^-i
 	}
 
 	bt.buff = append(bt.buff, []byte{0, 0}...)
