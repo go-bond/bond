@@ -186,6 +186,43 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
+		With(ExampleStructTable.PrimaryIndex(), &ExampleStruct{}).
+		Limit(2).
+		Execute(&exampleStructsFromQuery)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("==> Query using index with cursor")
+
+	fmt.Println("===> Page 1")
+	spew.Dump(exampleStructsFromQuery)
+
+	err = ExampleStructTable.Query().
+		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
+		Limit(2).
+		Execute(&exampleStructsFromQuery)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("===> Page 2")
+	spew.Dump(exampleStructsFromQuery)
+
+	err = ExampleStructTable.Query().
+		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
+		Limit(2).
+		Execute(&exampleStructsFromQuery)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("===> Page 3")
+	spew.Dump(exampleStructsFromQuery)
+
+	fmt.Println("")
+
+	err = ExampleStructTable.Query().
 		Filter(func(es *ExampleStruct) bool {
 			return es.Amount > 5
 		}).
