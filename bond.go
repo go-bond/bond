@@ -47,7 +47,7 @@ func (db *DB) Close() error {
 	return db.DB.Close()
 }
 
-func (db *DB) getBatchOrDB(key []byte, batch *pebble.Batch) (data []byte, closer io.Closer, err error) {
+func (db *DB) getKV(key []byte, batch *pebble.Batch) (data []byte, closer io.Closer, err error) {
 	if batch != nil {
 		data, closer, err = batch.Get(key)
 	} else {
