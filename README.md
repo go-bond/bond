@@ -172,6 +172,29 @@ if err != nil {
 }
 ```
 
+Query using index with cursor:
+```go
+var exampleStructsFromQuery []*ExampleStruct
+
+// page 1, page size 10
+err := ExampleStructTable.Query().
+    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    Limit(10).
+    Execute(&exampleStructsFromQuery)
+if err != nil {
+    panic(err)
+}
+
+// page 2, page size 10
+err := ExampleStructTable.Query().
+    With(ExampleStructTypeIndex, exampleStructsFromQuery[9]).
+    Limit(10).
+    Execute(&exampleStructsFromQuery)
+if err != nil {
+    panic(err)
+}
+```
+
 Please see working example: [here](https://github.com/go-bond/bond/blob/master/_examples/simple/main.go) 
 
 ### Advanced:
