@@ -22,7 +22,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 // Query is the structure that is used to build record query.
 //
 // Example:
-//	bond.Query[*Contract]{}.
+//	t.Query().
 //		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
 //		Filter(func(c *Contract) bool {
 //			return c.Balance > 25
@@ -83,12 +83,21 @@ func (q Query[R]) Order(less OrderLessFunc[R]) Query[R] {
 }
 
 // Offset sets offset of the records.
+//
+// WARNING: Using Offset requires traversing through all the rows
+// that are skipped. This may take a long time. Bond allows to use
+// more efficient way to do that by passing last received row to
+// With method as a selector. This will jump to that row instantly
+// and start iterating from that point.
 func (q Query[R]) Offset(offset uint64) Query[R] {
 	q.offset = offset
 	return q
 }
 
 // Limit sets the maximal number of records returned.
+//
+// WARNING: If not defined it will return all rows. Please be
+// mindful of your memory constrains.
 func (q Query[R]) Limit(limit uint64) Query[R] {
 	q.limit = limit
 	return q
