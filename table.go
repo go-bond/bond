@@ -533,6 +533,12 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 	}
 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+		if bytes.Compare(selector, iter.Key()) == 0 {
+			// We skip first element if it's equal to selector
+			// as we need greater not greater equal keys returned.
+			continue
+		}
+
 		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
 			break
 		} else {

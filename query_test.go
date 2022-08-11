@@ -142,7 +142,9 @@ func TestBond_Query_OnOrderedIndex_Selector_Paging(t *testing.T) {
 			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 		},
 	)
-	TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -176,7 +178,7 @@ func TestBond_Query_OnOrderedIndex_Selector_Paging(t *testing.T) {
 		Balance:         4,
 	}
 
-	err := TokenBalanceTable.Insert(
+	err = TokenBalanceTable.Insert(
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -204,19 +206,16 @@ func TestBond_Query_OnOrderedIndex_Selector_Paging(t *testing.T) {
 
 	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
-	require.Equal(t, 2, len(tokenBalances))
-
-	assert.Equal(t, tokenBalance3Account1, tokenBalances[0])
-	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
-
-	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, tokenBalances[1])
-
-	err = query.Execute(&tokenBalances)
-	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, tokenBalances[0])
+
+	err = query.Execute(&tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 0, len(tokenBalances))
 }
 
 func TestBond_Query_Where(t *testing.T) {
