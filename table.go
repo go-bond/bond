@@ -418,7 +418,7 @@ func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) bool {
 }
 
 func (t *Table[T]) exist(key []byte, batch *pebble.Batch) bool {
-	_, closer, err := t.db.getBatchOrDB(key, batch)
+	_, closer, err := t.db.getKV(key, batch)
 	if err != nil {
 		return false
 	}
@@ -441,7 +441,7 @@ func (t *Table[T]) Get(tr T, batches ...*pebble.Batch) (T, error) {
 }
 
 func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
-	data, closer, err := t.db.getBatchOrDB(key, batch)
+	data, closer, err := t.db.getKV(key, batch)
 	if err != nil {
 		return makeNew[T](), fmt.Errorf("get failed: %w", err)
 	}
@@ -516,7 +516,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 				keyBuffer[:0],
 			)
 
-			valueData, closer, err := t.db.getBatchOrDB(tableKey, batch)
+			valueData, closer, err := t.db.getKV(tableKey, batch)
 			if err != nil {
 				return makeNew[T](), err
 			}
