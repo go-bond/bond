@@ -21,6 +21,9 @@ type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
 
 type TableR[T any] interface {
+	PrimaryIndex() *Index[T]
+	Serializer() Serializer[*T]
+
 	Get(tr T, batches ...*pebble.Batch) (T, error)
 	Exist(tr T, batches ...*pebble.Batch) bool
 	Query() Query[T]
@@ -77,6 +80,10 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T], trkSer ..
 
 func (t *Table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
+}
+
+func (t *Table[T]) Serializer() Serializer[*T] {
+	return t.serializer
 }
 
 func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {

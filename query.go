@@ -55,6 +55,11 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 	}
 }
 
+// Table returns table that is used by this query.
+func (q Query[R]) Table() *Table[R] {
+	return q.table
+}
+
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
 // indexed and order fields set. This is very important as selector also defines
