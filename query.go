@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/cockroachdb/pebble"
@@ -38,6 +39,7 @@ type Query[R any] struct {
 	orderLessFunc OrderLessFunc[R]
 	offset        uint64
 	limit         uint64
+	isAfter       bool
 }
 
 func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
@@ -49,15 +51,17 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 		orderLessFunc: nil,
 		offset:        0,
 		limit:         0,
+		isAfter:       false,
 	}
 }
 
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
 // indexed and order fields set. This is very important as selector also defines
-// the row at which we start the query. Please note: if we have DESC order on ID
-// field and we try to query with a selector that has ID set to 0 it will start
-// from the last row.
+// the row at which we start the query.
+//
+// WARNING: if we have DESC order on ID field, and we try to query with a selector
+// that has ID set to 0 it will start from the last row.
 func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
 	q.index = idx
 	q.indexSelector = selector
@@ -103,8 +107,19 @@ func (q Query[R]) Limit(limit uint64) Query[R] {
 	return q
 }
 
+// After sets the query to start after the row provided in argument.
+func (q Query[R]) After(sel R) Query[R] {
+	q.indexSelector = sel
+	q.isAfter = true
+	return q
+}
+
 // Execute the built query.
 func (q Query[R]) Execute(r *[]R, batches ...*pebble.Batch) error {
+	if q.isAfter && q.orderLessFunc != nil {
+		return fmt.Errorf("after can not be used with order")
+	}
+
 	if len(q.queries) == 0 {
 		q.queries = append([]FilterAndIndex[R]{
 			{
