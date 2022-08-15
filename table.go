@@ -18,6 +18,10 @@ const ReindexBatchSize = 10000
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
+func TableUpsertOnConflictReplace[T any](_, new T) T {
+	return new
+}
+
 func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
 
 type TableR[T any] interface {
@@ -37,7 +41,7 @@ type TableR[T any] interface {
 type TableW[T any] interface {
 	Insert(trs []T, batches ...*pebble.Batch) error
 	Update(trs []T, batches ...*pebble.Batch) error
-	Upsert(trs []T, batches ...*pebble.Batch) error
+	Upsert(trs []T, onConflict func(old, new T) T, batches ...*pebble.Batch) error
 	Delete(trs []T, batches ...*pebble.Batch) error
 }
 
@@ -366,7 +370,7 @@ func (t *Table[T]) Delete(trs []T, batches ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Upsert(trs []T, batches ...*pebble.Batch) error {
+func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, batches ...*pebble.Batch) error {
 	var batch *pebble.Batch
 	var externalBatch = len(batches) > 0 && batches[0] != nil
 	if externalBatch {
@@ -378,11 +382,11 @@ func (t *Table[T]) Upsert(trs []T, batches ...*pebble.Batch) error {
 	var toInsert []T
 	var toUpdate []T
 
-	for _, tr := range trs {
-		if t.Exist(tr, batch) {
-			toUpdate = append(toUpdate, tr)
+	for _, newTr := range trs {
+		if currentTr, err := t.Get(newTr, batch); err == nil {
+			toUpdate = append(toUpdate, onConflict(currentTr, newTr))
 		} else {
-			toInsert = append(toInsert, tr)
+			toInsert = append(toInsert, newTr)
 		}
 	}
 

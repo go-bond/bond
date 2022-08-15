@@ -240,7 +240,9 @@ func TestBondTable_Upsert(t *testing.T) {
 
 	_ = it.Close()
 
-	err = tokenBalanceTable.Upsert([]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2})
+	err = tokenBalanceTable.Upsert(
+		[]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2},
+		TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
 	it = db.NewIter(nil)
@@ -258,6 +260,99 @@ func TestBondTable_Upsert(t *testing.T) {
 
 	require.Equal(t, 2, len(tokenBalances))
 	assert.Equal(t, tokenBalanceAccountUpdated, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
+}
+
+func TestBondTable_Upsert_OnConflict(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalanceAccount2 := &TokenBalance{
+		ID:              2,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         15,
+	}
+
+	tokenBalanceAccountUpdate := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	expectedTokenBalanceAccountUpdated := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         12,
+	}
+
+	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	it := db.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+
+	onConflictAddBalance := func(oldTb, newTb *TokenBalance) *TokenBalance {
+		return &TokenBalance{
+			ID:              oldTb.ID,
+			AccountID:       oldTb.AccountID,
+			ContractAddress: oldTb.ContractAddress,
+			AccountAddress:  oldTb.AccountAddress,
+			TokenID:         oldTb.TokenID,
+			Balance:         oldTb.Balance + newTb.Balance,
+		}
+	}
+
+	err = tokenBalanceTable.Upsert(
+		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
+	require.NoError(t, err)
+
+	it = db.NewIter(nil)
+
+	var tokenBalances []*TokenBalance
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccountFromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
+	}
+
+	_ = it.Close()
+
+	require.Equal(t, 2, len(tokenBalances))
+	assert.Equal(t, expectedTokenBalanceAccountUpdated, tokenBalances[0])
 	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
 }
 
