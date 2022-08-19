@@ -38,6 +38,7 @@ func Open(dirname string, opts *Options) (*DB, error) {
 	}
 
 	db := &DB{DB: pdb, serializer: serializer}
+
 	if db.Version() == 0 {
 		if err := db.initVersion(); err != nil {
 			return nil, err
