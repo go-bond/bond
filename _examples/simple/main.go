@@ -27,12 +27,12 @@ func main() {
 	defer func() { _ = os.RemoveAll("example") }()
 
 	const (
-		ExampleStructTableId bond.TableID = 1
+		ExampleStructTableID bond.TableID = 1
 	)
 
 	ExampleStructTable := bond.NewTable[*ExampleStruct](
 		db,
-		ExampleStructTableId,
+		ExampleStructTableID,
 		func(b bond.KeyBuilder, es *ExampleStruct) []byte {
 			return b.AddUint64Field(es.Id).Bytes()
 		})
