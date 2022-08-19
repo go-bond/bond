@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/_benchmarks/bench"
 	"github.com/vmihailenco/msgpack/v5"
@@ -95,6 +96,16 @@ func BenchmarkTableUpsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 			)
 		}
 
+		for _, v := range upsertBatches {
+			results = append(results,
+				bs.Benchmark(bench.Benchmark{
+					Name:          fmt.Sprintf("%s/%s/UpsertWithBatch_%d", bs.Name, serializer.Name, v.batchSize),
+					Inputs:        v,
+					BenchmarkFunc: UpsertInBatchSizeWithBatch(db, tokenBalanceTable, tokenBalances, v.batchSize),
+				}),
+			)
+		}
+
 		tearDownDatabase(db)
 	}
 
@@ -105,10 +116,25 @@ func UpsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, inse
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			err := tbt.Upsert(tbs[:insertBatchSize])
+			err := tbt.Upsert(tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance])
 			if err != nil {
 				panic(err)
 			}
 		}
+	}
+}
+
+func UpsertInBatchSizeWithBatch(db *bond.DB, tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
+	return func(b *testing.B) {
+		b.ReportAllocs()
+
+		batch := db.NewIndexedBatch()
+		for i := 0; i < b.N; i++ {
+			err := tbt.Upsert(tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance], batch)
+			if err != nil {
+				panic(err)
+			}
+		}
+		_ = batch.Commit(pebble.Sync)
 	}
 }

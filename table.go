@@ -370,6 +370,11 @@ func (t *Table[T]) Delete(trs []T, optBatch ...*pebble.Batch) error {
 }
 
 func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
+	t.mutex.RLock()
+	indexes := make(map[IndexID]*Index[T])
+	maps.Copy(indexes, t.secondaryIndexes)
+	t.mutex.RUnlock()
+
 	var batch *pebble.Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
@@ -378,28 +383,76 @@ func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*p
 		batch = t.db.NewIndexedBatch()
 	}
 
-	var toInsert []T
-	var toUpdate []T
+	var (
+		keyBuffer      [DataKeyBufferSize]byte
+		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
 
-	for _, newTr := range trs {
-		if currentTr, err := t.Get(newTr, batch); err == nil {
-			toUpdate = append(toUpdate, onConflict(currentTr, newTr))
+		indexKeys = make([][]byte, 0, len(t.secondaryIndexes))
+	)
+
+	for _, tr := range trs {
+		// update key
+		key := t.key(tr, keyBuffer[:0])
+
+		// old record
+		var oldTr T
+		oldTrData, closer, err := batch.Get(key)
+		if err == nil {
+			err = t.serializer.Deserialize(oldTrData, &oldTr)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
+
+			_ = closer.Close()
+		}
+
+		// handle upsert
+		isUpdate := oldTrData != nil && len(oldTrData) > 0
+		if isUpdate {
+			tr = onConflict(oldTr, tr)
+		}
+
+		// serialize
+		data, err := t.serializer.Serialize(&tr)
+		if err != nil {
+			return err
+		}
+
+		// update entry
+		err = batch.Set(key, data, pebble.Sync)
+		if err != nil {
+			_ = batch.Close()
+			return err
+		}
+
+		// indexKeys to add and remove
+		var (
+			toAddIndexKeys    [][]byte
+			toRemoveIndexKeys [][]byte
+		)
+
+		if isUpdate {
+			toAddIndexKeys, toRemoveIndexKeys = t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0])
 		} else {
-			toInsert = append(toInsert, newTr)
+			toAddIndexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 		}
-	}
 
-	if len(toInsert) > 0 {
-		err := t.Insert(toInsert, batch)
-		if err != nil {
-			return err
+		// update indexes
+		for _, indexKey := range toAddIndexKeys {
+			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
 		}
-	}
 
-	if len(toUpdate) > 0 {
-		err := t.Update(toUpdate, batch)
-		if err != nil {
-			return err
+		for _, indexKey := range toRemoveIndexKeys {
+			err = batch.Delete(indexKey, pebble.Sync)
+			if err != nil {
+				_ = batch.Close()
+				return err
+			}
 		}
 	}
 
