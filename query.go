@@ -23,13 +23,13 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 // Query is the structure that is used to build record query.
 //
 // Example:
+//
 //	t.Query().
 //		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
 //		Filter(func(c *Contract) bool {
 //			return c.Balance > 25
 //		}).
 //		Limit(50)
-//
 type Query[R any] struct {
 	table         *Table[R]
 	index         *Index[R]
@@ -120,7 +120,7 @@ func (q Query[R]) After(sel R) Query[R] {
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(r *[]R, batches ...*pebble.Batch) error {
+func (q Query[R]) Execute(r *[]R, optBatch ...*pebble.Batch) error {
 	if q.isAfter && q.orderLessFunc != nil {
 		return fmt.Errorf("after can not be used with order")
 	}
@@ -169,7 +169,7 @@ func (q Query[R]) Execute(r *[]R, batches ...*pebble.Batch) error {
 			}
 
 			return next, nil
-		}, batches...)
+		}, optBatch...)
 		if err != nil {
 			return err
 		}

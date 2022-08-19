@@ -28,21 +28,21 @@ type TableR[T any] interface {
 	PrimaryIndex() *Index[T]
 	Serializer() Serializer[*T]
 
-	Get(tr T, batches ...*pebble.Batch) (T, error)
-	Exist(tr T, batches ...*pebble.Batch) bool
+	Get(tr T, optBatch ...*pebble.Batch) (T, error)
+	Exist(tr T, optBatch ...*pebble.Batch) bool
 	Query() Query[T]
 
-	Scan(tr *[]T, batches ...*pebble.Batch) error
-	ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch) error
-	ScanForEach(f func(l Lazy[T]) (bool, error), batches ...*pebble.Batch) error
-	ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), batches ...*pebble.Batch) error
+	Scan(tr *[]T, optBatch ...*pebble.Batch) error
+	ScanIndex(i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
+	ScanForEach(f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
 }
 
 type TableW[T any] interface {
-	Insert(trs []T, batches ...*pebble.Batch) error
-	Update(trs []T, batches ...*pebble.Batch) error
-	Upsert(trs []T, onConflict func(old, new T) T, batches ...*pebble.Batch) error
-	Delete(trs []T, batches ...*pebble.Batch) error
+	Insert(trs []T, optBatch ...*pebble.Batch) error
+	Update(trs []T, optBatch ...*pebble.Batch) error
+	Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
+	Delete(trs []T, optBatch ...*pebble.Batch) error
 }
 
 type TableRW[T any] interface {
@@ -75,7 +75,7 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T], trkSer ..
 		TableID:          id,
 		db:               db,
 		primaryKeyFunc:   trkFn,
-		primaryIndex:     NewIndex[T](PrimaryIndexID, primaryIndexKey[T], IndexOrderDefault[T]),
+		primaryIndex:     NewIndex(PrimaryIndexID, primaryIndexKey[T], IndexOrderDefault[T]),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		serializer:       serializer,
 		mutex:            sync.RWMutex{},
@@ -100,7 +100,6 @@ func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	if len(reIndex) > 0 && reIndex[0] {
 		return t.reindex(idxs)
 	}
-
 	return nil
 }
 
@@ -130,6 +129,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	counter := 0
 	indexKeysBuffer := make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(idxs))
 	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
+
 	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
@@ -170,16 +170,16 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
+func (t *Table[T]) Insert(trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
 	var batch *pebble.Batch
-	var externalBatch = len(batches) > 0 && batches[0] != nil
+	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
-		batch = batches[0]
+		batch = optBatch[0]
 	} else {
 		batch = t.db.NewIndexedBatch()
 	}
@@ -187,8 +187,7 @@ func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
 	var (
 		keyBuffer       [DataKeyBufferSize]byte
 		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
-
-		indexKeys = make([][]byte, 0, len(t.secondaryIndexes))
+		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
 
 	for _, tr := range trs {
@@ -236,16 +235,16 @@ func (t *Table[T]) Insert(trs []T, batches ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Update(trs []T, batches ...*pebble.Batch) error {
+func (t *Table[T]) Update(trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
 	var batch *pebble.Batch
-	var externalBatch = len(batches) > 0 && batches[0] != nil
+	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
-		batch = batches[0]
+		batch = optBatch[0]
 	} else {
 		batch = t.db.NewIndexedBatch()
 	}
@@ -320,16 +319,16 @@ func (t *Table[T]) Update(trs []T, batches ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Delete(trs []T, batches ...*pebble.Batch) error {
+func (t *Table[T]) Delete(trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
 	var batch *pebble.Batch
-	var externalBatch = len(batches) > 0 && batches[0] != nil
+	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
-		batch = batches[0]
+		batch = optBatch[0]
 	} else {
 		batch = t.db.NewIndexedBatch()
 	}
@@ -370,11 +369,11 @@ func (t *Table[T]) Delete(trs []T, batches ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, batches ...*pebble.Batch) error {
+func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
 	var batch *pebble.Batch
-	var externalBatch = len(batches) > 0 && batches[0] != nil
+	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
-		batch = batches[0]
+		batch = optBatch[0]
 	} else {
 		batch = t.db.NewIndexedBatch()
 	}
@@ -415,10 +414,10 @@ func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, batches ...*pe
 	return nil
 }
 
-func (t *Table[T]) Exist(tr T, batches ...*pebble.Batch) bool {
+func (t *Table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
 	var batch *pebble.Batch
-	if len(batches) > 0 && batches[0] != nil {
-		batch = batches[0]
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch = optBatch[0]
 	} else {
 		batch = nil
 	}
@@ -438,10 +437,10 @@ func (t *Table[T]) exist(key []byte, batch *pebble.Batch) bool {
 	return true
 }
 
-func (t *Table[T]) Get(tr T, batches ...*pebble.Batch) (T, error) {
+func (t *Table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 	var batch *pebble.Batch
-	if len(batches) > 0 && batches[0] != nil {
-		batch = batches[0]
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch = optBatch[0]
 	} else {
 		batch = nil
 	}
@@ -469,14 +468,14 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 }
 
 func (t *Table[T]) Query() Query[T] {
-	return newQuery[T](t, t.primaryIndex)
+	return newQuery(t, t.primaryIndex)
 }
 
-func (t *Table[T]) Scan(tr *[]T, batches ...*pebble.Batch) error {
-	return t.ScanIndex(t.primaryIndex, makeNew[T](), tr, batches...)
+func (t *Table[T]) Scan(tr *[]T, optBatch ...*pebble.Batch) error {
+	return t.ScanIndex(t.primaryIndex, makeNew[T](), tr, optBatch...)
 }
 
-func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch) error {
+func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
 	return t.ScanIndexForEach(i, s, func(lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
@@ -484,22 +483,22 @@ func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, batches ...*pebble.Batch
 		} else {
 			return false, err
 		}
-	}, batches...)
+	}, optBatch...)
 }
 
-func (t *Table[T]) ScanForEach(f func(l Lazy[T]) (bool, error), batches ...*pebble.Batch) error {
-	return t.ScanIndexForEach(t.primaryIndex, makeNew[T](), f, batches...)
+func (t *Table[T]) ScanForEach(f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+	return t.ScanIndexForEach(t.primaryIndex, makeNew[T](), f, optBatch...)
 }
 
-func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), batches ...*pebble.Batch) error {
+func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
 	var iter *pebble.Iterator
 	var batch *pebble.Batch
-	if len(batches) > 0 && batches[0] != nil {
-		batch = batches[0]
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch = optBatch[0]
 		iter = batch.NewIter(&pebble.IterOptions{
 			LowerBound: selector,
 		})
@@ -544,7 +543,7 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 	}
 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
-		if bytes.Compare(selector, iter.Key()) == 0 {
+		if bytes.Equal(selector, iter.Key()) {
 			// We skip first element if it's equal to selector
 			// as we need greater not greater equal keys returned.
 			continue
@@ -636,7 +635,7 @@ func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], b
 	for _, newKey := range newTrKeys {
 		found := false
 		for _, oldKey := range oldTrKeys {
-			if bytes.Compare(newKey, oldKey) == 0 {
+			if bytes.Equal(newKey, oldKey) {
 				found = true
 			}
 		}
@@ -649,7 +648,7 @@ func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], b
 	for _, oldKey := range oldTrKeys {
 		found := false
 		for _, newKey := range newTrKeys {
-			if bytes.Compare(oldKey, newKey) == 0 {
+			if bytes.Equal(oldKey, newKey) {
 				found = true
 			}
 		}
