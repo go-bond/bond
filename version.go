@@ -15,7 +15,7 @@ const (
 	BOND_DB_DATA_TABLE_ID = 0x0
 
 	// BOND_DB_DATA_VERSION_KEY ..
-	BOND_DB_DATA_VERSION_KEY = "__bond_db_version__"
+	BOND_DB_DATA_VERSION_KEY = "__bond_db_data_version__"
 )
 
 func (db *DB) Version() int {
