@@ -71,6 +71,8 @@ func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T], trkSer ..
 		serializer = trkSer[0]
 	}
 
+	// TODO: check if id == 0, and if so, return error that its reserved for bond
+
 	return &Table[T]{
 		TableID:          id,
 		db:               db,
@@ -520,6 +522,22 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	return tr, nil
 }
 
+func (t *Table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator {
+	if options == nil {
+		options = &pebble.IterOptions{}
+	}
+
+	selector := _KeyEncode(_Key{TableID: t.TableID}, nil)
+	options.LowerBound = selector
+
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch := optBatch[0]
+		return batch.NewIter(options)
+	} else {
+		return t.db.NewIter(options)
+	}
+}
+
 func (t *Table[T]) Query() Query[T] {
 	return newQuery(t, t.primaryIndex)
 }
@@ -652,7 +670,8 @@ func (t *Table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
 	orderKeyPart := idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr).Bytes()
+		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
+	).Bytes()
 
 	return _KeyEncode(_Key{
 		TableID:    t.TableID,
