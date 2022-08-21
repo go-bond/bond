@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/cockroachdb/pebble"
@@ -36,7 +37,17 @@ func Open(dirname string, opts *Options) (*DB, error) {
 		serializer = &JsonSerializer{}
 	}
 
-	return &DB{DB: pdb, serializer: serializer}, nil
+	db := &DB{DB: pdb, serializer: serializer}
+
+	if db.Version() == 0 {
+		if err := db.initVersion(); err != nil {
+			return nil, err
+		}
+	} else if db.Version() != BOND_DB_DATA_VERSION {
+		return nil, fmt.Errorf("bond db version is %d but expecting %d", db.Version(), BOND_DB_DATA_VERSION)
+	}
+
+	return db, nil
 }
 
 func (db *DB) Serializer() Serializer[any] {
