@@ -138,7 +138,13 @@ func (q Query[R]) Execute(r *[]R, optBatch ...*pebble.Batch) error {
 	var records []R
 	for _, query := range q.queries {
 		count := uint64(0)
+		skippedFirstRow := false
 		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
+			if q.isAfter && !skippedFirstRow {
+				skippedFirstRow = true
+				return true, nil
+			}
+
 			// check if can apply offset in here
 			if q.shouldApplyOffsetEarly() && q.offset > count {
 				count++
