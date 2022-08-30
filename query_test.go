@@ -206,16 +206,16 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 
 	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
-	require.Equal(t, 1, len(tokenBalances))
+	require.Equal(t, 2, len(tokenBalances))
 
-	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, tokenBalances[0])
+		With(TokenBalanceOrderedIndex, tokenBalances[1])
 
 	err = query.Execute(&tokenBalances)
 	require.Nil(t, err)
-	require.Equal(t, 0, len(tokenBalances))
+	require.Equal(t, 1, len(tokenBalances))
 }
 
 func TestBond_Query_After(t *testing.T) {
