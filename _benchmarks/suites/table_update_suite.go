@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -73,7 +74,7 @@ func BenchmarkTableUpdateSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 			})
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances)
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances)
 		if err != nil {
 			panic(err)
 		}
@@ -110,7 +111,7 @@ func UpdateInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, upda
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			err := tbt.Update(tbs[:updateBatchSize])
+			err := tbt.Update(context.Background(), tbs[:updateBatchSize])
 			if err != nil {
 				panic(err)
 			}

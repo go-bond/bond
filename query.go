@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -120,7 +121,7 @@ func (q Query[R]) After(sel R) Query[R] {
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(r *[]R, optBatch ...*pebble.Batch) error {
+func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...*pebble.Batch) error {
 	if q.isAfter && q.orderLessFunc != nil {
 		return fmt.Errorf("after can not be used with order")
 	}
@@ -139,7 +140,7 @@ func (q Query[R]) Execute(r *[]R, optBatch ...*pebble.Batch) error {
 	for _, query := range q.queries {
 		count := uint64(0)
 		skippedFirstRow := false
-		err := q.table.ScanIndexForEach(query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
+		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
 			if q.isAfter && !skippedFirstRow {
 				skippedFirstRow = true
 				return true, nil

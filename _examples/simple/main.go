@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -114,13 +115,13 @@ func main() {
 	}
 
 	fmt.Println("==> Insert")
-	err = ExampleStructTable.Insert(exapleStructs)
+	err = ExampleStructTable.Insert(context.Background(), exapleStructs)
 	if err != nil {
 		panic(err)
 	}
 
 	var exampleStructsFromQuery []*ExampleStruct
-	err = ExampleStructTable.Query().Execute(&exampleStructsFromQuery)
+	err = ExampleStructTable.Query().Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -131,7 +132,7 @@ func main() {
 
 	err = ExampleStructTable.Query().
 		With(ExampleStructIsActivePartialIndex, &ExampleStruct{IsActive: true}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -142,7 +143,7 @@ func main() {
 
 	err = ExampleStructTable.Query().
 		With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -153,7 +154,7 @@ func main() {
 
 	err = ExampleStructTable.Query().
 		With(ExampleStructOrderAmountDESCIndex, &ExampleStruct{}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -164,7 +165,7 @@ func main() {
 
 	err = ExampleStructTable.Query().
 		With(ExampleStructOrderAmountDESCIndex, &ExampleStruct{Amount: 3}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -176,7 +177,7 @@ func main() {
 	err = ExampleStructTable.Query().
 		Offset(1).
 		Limit(2).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -188,7 +189,7 @@ func main() {
 	err = ExampleStructTable.Query().
 		With(ExampleStructTable.PrimaryIndex(), &ExampleStruct{}).
 		Limit(2).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -201,7 +202,7 @@ func main() {
 	err = ExampleStructTable.Query().
 		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
 		Limit(2).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -212,7 +213,7 @@ func main() {
 	err = ExampleStructTable.Query().
 		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
 		Limit(2).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -226,7 +227,7 @@ func main() {
 		Filter(func(es *ExampleStruct) bool {
 			return es.Amount > 5
 		}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}
@@ -239,7 +240,7 @@ func main() {
 		Order(func(es *ExampleStruct, es2 *ExampleStruct) bool {
 			return es.Amount < es2.Amount
 		}).
-		Execute(&exampleStructsFromQuery)
+		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
 	}

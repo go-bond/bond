@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -105,13 +106,13 @@ func InsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, inse
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			err := tbt.Insert(tbs[:insertBatchSize])
+			err := tbt.Insert(context.Background(), tbs[:insertBatchSize])
 			if err != nil {
 				panic(err)
 			}
 
 			b.StopTimer()
-			err = tbt.Delete(tbs[:insertBatchSize])
+			err = tbt.Delete(context.Background(), tbs[:insertBatchSize])
 			b.StartTimer()
 		}
 	}

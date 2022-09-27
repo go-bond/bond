@@ -2,6 +2,7 @@ package bond
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/big"
 	"sort"
@@ -634,6 +635,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -745,6 +747,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance1Account2,
@@ -852,6 +855,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -865,6 +869,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	tokenBalance1Account2.AccountAddress = "0xtestAccount3"
 
 	err = tokenBalanceTable.Update(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -976,6 +981,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -989,6 +995,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	tokenBalance1Account2.AccountAddress = "0xtestAccount3"
 
 	err = tokenBalanceTable.Update(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -1096,6 +1103,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -1105,6 +1113,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	require.NoError(t, err)
 
 	err = tokenBalanceTable.Delete(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -1192,6 +1201,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,

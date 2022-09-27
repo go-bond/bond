@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -128,7 +129,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 			{skipNumber: 1000000, readNumber: 1000},
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances)
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances)
 		if err != nil {
 			panic(err)
 		}
@@ -145,12 +146,12 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 			)
 		}
 
-		err = tokenBalanceTable.Delete(tokenBalances)
+		err = tokenBalanceTable.Delete(context.Background(), tokenBalances)
 		if err != nil {
 			panic(err)
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalancesAccount0)
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalancesAccount0)
 		if err != nil {
 			panic(err)
 		}
@@ -167,7 +168,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 			)
 		}
 
-		err = tokenBalanceTable.Delete(tokenBalancesAccount0)
+		err = tokenBalanceTable.Delete(context.Background(), tokenBalancesAccount0)
 		if err != nil {
 			panic(err)
 		}
@@ -183,7 +184,7 @@ func ScanElements(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, numberToS
 		b.ReportAllocs()
 
 		b.StopTimer()
-		err := tbt.Insert(tbs[:numberToScan])
+		err := tbt.Insert(context.Background(), tbs[:numberToScan])
 		if err != nil {
 			panic(err)
 		}
@@ -191,14 +192,14 @@ func ScanElements(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, numberToS
 
 		for i := 0; i < b.N; i++ {
 			var tokenBalances []*TokenBalance
-			err = tbt.Scan(&tokenBalances)
+			err = tbt.Scan(context.Background(), &tokenBalances)
 			if err != nil {
 				panic(err)
 			}
 		}
 
 		b.StopTimer()
-		err = tbt.Delete(tbs[:numberToScan])
+		err = tbt.Delete(context.Background(), tbs[:numberToScan])
 		if err != nil {
 			panic(err)
 		}
@@ -211,7 +212,7 @@ func ScanIndexElements(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBal
 		b.ReportAllocs()
 
 		b.StopTimer()
-		err := tbt.Insert(tbs[:numberToScan])
+		err := tbt.Insert(context.Background(), tbs[:numberToScan])
 		if err != nil {
 			panic(err)
 		}
@@ -219,11 +220,11 @@ func ScanIndexElements(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBal
 
 		for i := 0; i < b.N; i++ {
 			var tokenBalances []*TokenBalance
-			err = tbt.ScanIndex(idx, sel, &tokenBalances)
+			err = tbt.ScanIndex(context.Background(), idx, sel, &tokenBalances)
 		}
 
 		b.StopTimer()
-		err = tbt.Delete(tbs[:numberToScan])
+		err = tbt.Delete(context.Background(), tbs[:numberToScan])
 		if err != nil {
 			panic(err)
 		}
@@ -238,7 +239,7 @@ func ScanSkipThrough(tbt *bond.Table[*TokenBalance], numberToSkip int, numberToR
 		for i := 0; i < b.N; i++ {
 			var counter = 0
 			var tokenBalances []*TokenBalance
-			err := tbt.ScanForEach(func(l bond.Lazy[*TokenBalance]) (bool, error) {
+			err := tbt.ScanForEach(context.Background(), func(l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {
 					return true, nil
@@ -270,7 +271,7 @@ func ScanIndexSkipThrough(tbt *bond.Table[*TokenBalance], idx *bond.Index[*Token
 		for i := 0; i < b.N; i++ {
 			var counter = 1
 			var tokenBalances []*TokenBalance
-			err := tbt.ScanIndexForEach(idx, sel, func(l bond.Lazy[*TokenBalance]) (bool, error) {
+			err := tbt.ScanIndexForEach(context.Background(), idx, sel, func(l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {
 					return true, nil
