@@ -90,6 +90,33 @@ func TestBondTable_Insert(t *testing.T) {
 	}
 }
 
+func TestBondTable_Insert_Context_Canceled(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := tokenBalanceTable.Insert(ctx, []*TokenBalance{tokenBalanceAccount1})
+	require.Error(t, err)
+}
+
 func TestBondTable_Insert_When_Exist(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
@@ -189,6 +216,70 @@ func TestBondTable_Update(t *testing.T) {
 	_ = it.Close()
 }
 
+func TestBondTable_Update_Context_Canceled(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalanceAccountUpdated := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	it := tokenBalanceTable.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = tokenBalanceTable.Update(ctx, []*TokenBalance{tokenBalanceAccountUpdated})
+	require.Error(t, err)
+
+	it = tokenBalanceTable.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+}
+
 func TestBondTable_Upsert(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
@@ -263,6 +354,84 @@ func TestBondTable_Upsert(t *testing.T) {
 	require.Equal(t, 2, len(tokenBalances))
 	assert.Equal(t, tokenBalanceAccountUpdated, tokenBalances[0])
 	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
+}
+
+func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalanceAccount2 := &TokenBalance{
+		ID:              2,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         15,
+	}
+
+	tokenBalanceAccountUpdated := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	it := tokenBalanceTable.NewIter(nil)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = tokenBalanceTable.Upsert(
+		ctx,
+		[]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2},
+		TableUpsertOnConflictReplace[*TokenBalance])
+	require.Error(t, err)
+
+	it = tokenBalanceTable.NewIter(nil)
+
+	var tokenBalances []*TokenBalance
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccountFromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
+	}
+
+	_ = it.Close()
+
+	require.Equal(t, 1, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccount, tokenBalances[0])
 }
 
 func TestBondTable_Upsert_OnConflict(t *testing.T) {
@@ -591,6 +760,60 @@ func TestBondTable_Scan(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
+}
+
+func TestBondTable_Scan_Context_Canceled(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
+		return builder.AddUint64Field(tb.ID).Bytes()
+	})
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              3,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         7,
+	}
+
+	err := tokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var tokenBalances []*TokenBalance
+	err = tokenBalanceTable.Scan(ctx, &tokenBalances)
+	require.Error(t, err)
 }
 
 func TestBondTable_ScanIndex(t *testing.T) {

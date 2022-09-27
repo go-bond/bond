@@ -21,7 +21,7 @@ func setupDatabaseForQuery() (*DB, *Table[*TokenBalance], *Index[*TokenBalance],
 	})
 
 	const (
-		TokenBalanceDefaultIndexID        = PrimaryIndexID
+		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
 		TokenBalanceAccountAndContractAddressIndexID
 	)
@@ -72,7 +72,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 		},
 	)
-	TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	_ = TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -129,6 +129,76 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
+}
+
+func TestBond_Query_Context_Canceled(t *testing.T) {
+	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](
+		lastIndex.IndexID+1,
+		func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddStringField(tb.AccountAddress).Bytes()
+		},
+		func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
+		},
+	)
+	_ = TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var tokenBalances []*TokenBalance
+
+	query := TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
+
+	err = query.Execute(ctx, &tokenBalances)
+	require.Error(t, err)
 }
 
 func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
