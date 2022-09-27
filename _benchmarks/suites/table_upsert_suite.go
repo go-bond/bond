@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -116,7 +117,7 @@ func UpsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, inse
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			err := tbt.Upsert(tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance])
+			err := tbt.Upsert(context.Background(), tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance])
 			if err != nil {
 				panic(err)
 			}
@@ -130,7 +131,7 @@ func UpsertInBatchSizeWithBatch(db *bond.DB, tbt *bond.Table[*TokenBalance], tbs
 
 		batch := db.NewIndexedBatch()
 		for i := 0; i < b.N; i++ {
-			err := tbt.Upsert(tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance], batch)
+			err := tbt.Upsert(context.Background(), tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance], batch)
 			if err != nil {
 				panic(err)
 			}

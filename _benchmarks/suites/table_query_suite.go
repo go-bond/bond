@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -96,12 +97,12 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 			})
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances[0:10000000])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:10000000])
 		if err != nil {
 			panic(err)
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances[10000000:20000000])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[10000000:20000000])
 		if err != nil {
 			panic(err)
 		}
@@ -225,7 +226,7 @@ func QueryWithOpts(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance
 				q = q.Limit(uint64(limit))
 			}
 
-			err := q.Execute(&tokenBalances)
+			err := q.Execute(context.Background(), &tokenBalances)
 			if err != nil {
 				panic(err)
 			}

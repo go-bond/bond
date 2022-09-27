@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-bond/bond"
@@ -95,12 +96,12 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			})
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances[0:10000000])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:10000000])
 		if err != nil {
 			panic(err)
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances[10000000:20000000])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[10000000:20000000])
 		if err != nil {
 			panic(err)
 		}

@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -73,7 +74,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 			})
 		}
 
-		err = tokenBalanceTable.Insert(tokenBalances[:1])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[:1])
 		if err != nil {
 			panic(err)
 		}

@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -106,13 +107,13 @@ func DeleteInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, upda
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			b.StopTimer()
-			err := tbt.Insert(tbs[:updateBatchSize])
+			err := tbt.Insert(context.Background(), tbs[:updateBatchSize])
 			if err != nil {
 				panic(err)
 			}
 			b.StartTimer()
 
-			err = tbt.Delete(tbs[:updateBatchSize])
+			err = tbt.Delete(context.Background(), tbs[:updateBatchSize])
 			if err != nil {
 				panic(err)
 			}

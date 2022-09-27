@@ -2,6 +2,7 @@ package bond
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 
@@ -32,17 +33,17 @@ type TableR[T any] interface {
 	Exist(tr T, optBatch ...*pebble.Batch) bool
 	Query() Query[T]
 
-	Scan(tr *[]T, optBatch ...*pebble.Batch) error
-	ScanIndex(i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
-	ScanForEach(f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
-	ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error
+	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
+	ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
 }
 
 type TableW[T any] interface {
-	Insert(trs []T, optBatch ...*pebble.Batch) error
-	Update(trs []T, optBatch ...*pebble.Batch) error
-	Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
-	Delete(trs []T, optBatch ...*pebble.Batch) error
+	Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
+	Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
+	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
+	Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 }
 
 type TableRW[T any] interface {
@@ -172,7 +173,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *Table[T]) Insert(trs []T, optBatch ...*pebble.Batch) error {
+func (t *Table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -193,6 +194,12 @@ func (t *Table[T]) Insert(trs []T, optBatch ...*pebble.Batch) error {
 	)
 
 	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
 
@@ -237,7 +244,7 @@ func (t *Table[T]) Insert(trs []T, optBatch ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Update(trs []T, optBatch ...*pebble.Batch) error {
+func (t *Table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -257,6 +264,12 @@ func (t *Table[T]) Update(trs []T, optBatch ...*pebble.Batch) error {
 	)
 
 	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
 		// update key
 		key := t.key(tr, keyBuffer[:0])
 
@@ -321,7 +334,7 @@ func (t *Table[T]) Update(trs []T, optBatch ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Delete(trs []T, optBatch ...*pebble.Batch) error {
+func (t *Table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -342,6 +355,12 @@ func (t *Table[T]) Delete(trs []T, optBatch ...*pebble.Batch) error {
 	)
 
 	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
 		var key = t.key(tr, keyBuffer[:0])
 		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
@@ -371,7 +390,7 @@ func (t *Table[T]) Delete(trs []T, optBatch ...*pebble.Batch) error {
 	return nil
 }
 
-func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
+func (t *Table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -393,6 +412,12 @@ func (t *Table[T]) Upsert(trs []T, onConflict func(old, new T) T, optBatch ...*p
 	)
 
 	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
 		// update key
 		key := t.key(tr, keyBuffer[:0])
 
@@ -542,12 +567,12 @@ func (t *Table[T]) Query() Query[T] {
 	return newQuery(t, t.primaryIndex)
 }
 
-func (t *Table[T]) Scan(tr *[]T, optBatch ...*pebble.Batch) error {
-	return t.ScanIndex(t.primaryIndex, makeNew[T](), tr, optBatch...)
+func (t *Table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error {
+	return t.ScanIndex(ctx, t.primaryIndex, makeNew[T](), tr, optBatch...)
 }
 
-func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
-	return t.ScanIndexForEach(i, s, func(lazy Lazy[T]) (bool, error) {
+func (t *Table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
+	return t.ScanIndexForEach(ctx, i, s, func(lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
 			return true, nil
@@ -557,11 +582,11 @@ func (t *Table[T]) ScanIndex(i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batc
 	}, optBatch...)
 }
 
-func (t *Table[T]) ScanForEach(f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
-	return t.ScanIndexForEach(t.primaryIndex, makeNew[T](), f, optBatch...)
+func (t *Table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+	return t.ScanIndexForEach(ctx, t.primaryIndex, makeNew[T](), f, optBatch...)
 }
 
-func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
@@ -614,6 +639,12 @@ func (t *Table[T]) ScanIndexForEach(idx *Index[T], s T, f func(t Lazy[T]) (bool,
 	}
 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
 		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
 			break
 		} else {

@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -106,6 +107,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -120,7 +122,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	query := TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -179,6 +181,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	}
 
 	err = TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -193,7 +196,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	query := TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -204,7 +207,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, tokenBalances[1])
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -213,7 +216,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, tokenBalances[1])
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 }
@@ -268,6 +271,7 @@ func TestBond_Query_After(t *testing.T) {
 	}
 
 	err = TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -282,7 +286,7 @@ func TestBond_Query_After(t *testing.T) {
 	query := TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -294,7 +298,7 @@ func TestBond_Query_After(t *testing.T) {
 		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
 		After(tokenBalances[1])
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -304,7 +308,7 @@ func TestBond_Query_After(t *testing.T) {
 		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
 		After(tokenBalances[0])
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 0, len(tokenBalances))
 }
@@ -359,6 +363,7 @@ func TestBond_Query_After_With_Order_Error(t *testing.T) {
 	}
 
 	err = TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -377,7 +382,7 @@ func TestBond_Query_After_With_Order_Error(t *testing.T) {
 			return tb.ID < tb2.ID
 		})
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Error(t, err)
 }
 
@@ -418,6 +423,7 @@ func TestBond_Query_Where(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -435,7 +441,7 @@ func TestBond_Query_Where(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -447,7 +453,7 @@ func TestBond_Query_Where(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -493,6 +499,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -507,7 +514,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	query := TokenBalanceTable.Query().
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -518,7 +525,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 		Offset(1).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -529,7 +536,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 		Offset(3).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -539,7 +546,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 		Offset(4).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 0, len(tokenBalances))
 }
@@ -581,6 +588,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -598,7 +606,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 		}).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -612,7 +620,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 		Offset(1).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -626,7 +634,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 		Offset(3).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 0, len(tokenBalances))
 }
@@ -668,6 +676,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -685,7 +694,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 		}).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -699,7 +708,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 		Offset(1).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -713,7 +722,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 		Offset(3).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -726,7 +735,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 		Offset(4).
 		Limit(2)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 0, len(tokenBalances))
 }
@@ -768,6 +777,7 @@ func TestBond_Query_Order(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -785,7 +795,7 @@ func TestBond_Query_Order(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -802,7 +812,7 @@ func TestBond_Query_Order(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -819,7 +829,7 @@ func TestBond_Query_Order(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(tokenBalances))
 
@@ -865,6 +875,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	}
 
 	err := TokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -882,7 +893,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -895,7 +906,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -912,7 +923,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -929,7 +940,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 		}).
 		Limit(50)
 
-	err = query.Execute(&tokenBalances)
+	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 
 	require.Equal(t, 1, len(tokenBalances))

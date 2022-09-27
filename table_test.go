@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cockroachdb/pebble"
@@ -74,7 +75,7 @@ func TestBondTable_Insert(t *testing.T) {
 		Balance:         5,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -109,10 +110,10 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 		Balance:         5,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	err = tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.Error(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -155,7 +156,7 @@ func TestBondTable_Update(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -171,7 +172,7 @@ func TestBondTable_Update(t *testing.T) {
 
 	_ = it.Close()
 
-	err = tokenBalanceTable.Update([]*TokenBalance{tokenBalanceAccountUpdated})
+	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.NoError(t, err)
 
 	it = tokenBalanceTable.NewIter(nil)
@@ -224,7 +225,7 @@ func TestBondTable_Upsert(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -241,6 +242,7 @@ func TestBondTable_Upsert(t *testing.T) {
 	_ = it.Close()
 
 	err = tokenBalanceTable.Upsert(
+		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2},
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
@@ -307,7 +309,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		Balance:         12,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -335,6 +337,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Upsert(
+		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
@@ -400,7 +403,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		Balance:         19,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
 	it := tokenBalanceTable.NewIter(nil)
@@ -428,6 +431,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	}
 
 	err = tokenBalanceTable.Upsert(
+		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
@@ -469,7 +473,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 		Balance:         7,
 	}
 
-	err := tokenBalanceTable.Update([]*TokenBalance{tokenBalanceAccountUpdated})
+	err := tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.Error(t, err)
 	assert.False(t, tokenBalanceTable.NewIter(nil).First())
 }
@@ -494,10 +498,10 @@ func TestBondTable_Delete(t *testing.T) {
 		Balance:         5,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	err = tokenBalanceTable.Delete([]*TokenBalance{tokenBalanceAccount1})
+	err = tokenBalanceTable.Delete(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
 	assert.False(t, tokenBalanceTable.NewIter(nil).First())
@@ -526,7 +530,7 @@ func TestBondTable_Exist(t *testing.T) {
 	ifExist := tokenBalanceTable.Exist(&TokenBalance{ID: 1})
 	assert.False(t, ifExist)
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
 	ifExist = tokenBalanceTable.Exist(&TokenBalance{ID: 1})
@@ -570,6 +574,7 @@ func TestBondTable_Scan(t *testing.T) {
 	}
 
 	err := tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -579,7 +584,7 @@ func TestBondTable_Scan(t *testing.T) {
 	require.NoError(t, err)
 
 	var tokenBalances []*TokenBalance
-	err = tokenBalanceTable.Scan(&tokenBalances)
+	err = tokenBalanceTable.Scan(context.Background(), &tokenBalances)
 	require.NoError(t, err)
 	require.Equal(t, len(tokenBalances), 3)
 
@@ -615,7 +620,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 		)
 	)
 
-	tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+	_ = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
 	})
 
@@ -644,6 +649,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 	}
 
 	err := tokenBalanceTable.Insert(
+		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
 			tokenBalance2Account1,
@@ -653,7 +659,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	var tokenBalances []*TokenBalance
-	err = tokenBalanceTable.ScanIndex(TokenBalanceAccountAddressIndex,
+	err = tokenBalanceTable.ScanIndex(context.Background(), TokenBalanceAccountAddressIndex,
 		&TokenBalance{AccountAddress: "0xtestAccount"}, &tokenBalances)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(tokenBalances))
@@ -682,7 +688,7 @@ func TestBond_Batch(t *testing.T) {
 		Balance:         5,
 	}
 
-	err := tokenBalanceTable.Insert([]*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
 	batch := db.NewIndexedBatch()
@@ -696,7 +702,7 @@ func TestBond_Batch(t *testing.T) {
 
 	tokenBalance.Balance += 20
 
-	err = tokenBalanceTable.Update([]*TokenBalance{tokenBalance}, batch)
+	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance}, batch)
 	require.NoError(t, err)
 
 	err = batch.Commit(pebble.Sync)
