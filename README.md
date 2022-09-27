@@ -80,7 +80,7 @@ exapleStructs := []*ExampleStruct{
     },
 }
 
-err := ExampleStructTable.Insert(exapleStructs)
+err := ExampleStructTable.Insert(context.Background(), exapleStructs)
 if err != nil {
     panic(err)
 }
@@ -98,7 +98,7 @@ exapleStructs := []*ExampleStruct{
     },
 }
 
-err := ExampleStructTable.Update(exapleStructs)
+err := ExampleStructTable.Update(context.Background(), exapleStructs)
 if err != nil {
     panic(err)
 }
@@ -106,7 +106,7 @@ if err != nil {
 
 Delete:
 ```go
-err := ExampleStructTable.Delete(&ExampleStruct{Id: 1})
+err := ExampleStructTable.Delete(context.Background(), &ExampleStruct{Id: 1})
 if err != nil {
     panic(err)
 }
@@ -115,7 +115,7 @@ if err != nil {
 Query:
 ```go
 var exampleStructsFromQuery []*ExampleStruct
-err := ExampleStructTable.Query().Execute(&exampleStructsFromQuery)
+err := ExampleStructTable.Query().Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -125,7 +125,7 @@ Query using index:
 ```go
 err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -138,7 +138,7 @@ err := ExampleStructTable.Query().
     Filter(func(es *ExampleStruct) bool {
         return es.Amount > 5
     }).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -154,7 +154,7 @@ err := ExampleStructTable.Query().
     Order(func(es *ExampleStruct, es2 *ExampleStruct) bool {
         return es.Amount < es2.Amount
     }).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -166,7 +166,7 @@ err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
     Offset(1).
     Limit(2).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -180,7 +180,7 @@ var exampleStructsFromQuery []*ExampleStruct
 err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
     Limit(10).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
@@ -189,7 +189,7 @@ if err != nil {
 err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, exampleStructsFromQuery[9]).
     Limit(10).
-    Execute(&exampleStructsFromQuery)
+    Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
 }
