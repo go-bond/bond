@@ -119,6 +119,18 @@ func (t *Table[T]) Name() string {
 	return t.name
 }
 
+func (t *Table[T]) Indexes() []IndexInfo {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
+	indexInfos := []IndexInfo{t.primaryIndex}
+	for _, idx := range t.secondaryIndexes {
+		indexInfos = append(indexInfos, idx)
+	}
+
+	return indexInfos
+}
+
 func (t *Table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
 }

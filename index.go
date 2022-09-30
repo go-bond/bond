@@ -142,6 +142,10 @@ func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
 		IndexFilterFunction: opt.IndexFilterFunc,
 	}
 
+	if idx.IndexOrderFunction == nil {
+		idx.IndexOrderFunction = IndexOrderDefault[T]
+	}
+
 	if idx.IndexFilterFunction == nil {
 		idx.IndexFilterFunction = func(t T) bool {
 			return true
