@@ -31,40 +31,45 @@ func main() {
 		ExampleStructTableID bond.TableID = 1
 	)
 
-	ExampleStructTable := bond.NewTable[*ExampleStruct](
-		db,
-		ExampleStructTableID,
-		func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+	ExampleStructTable := bond.NewTable[*ExampleStruct](bond.TableOptions[*ExampleStruct]{
+		DB:        db,
+		TableID:   ExampleStructTableID,
+		TableName: "example_stuct_table",
+		TablePrimaryKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
 			return b.AddUint64Field(es.Id).Bytes()
-		})
+		},
+	})
 
 	var (
-		ExampleStructTypeIndex = bond.NewIndex[*ExampleStruct](
-			bond.PrimaryIndexID+1,
-			func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+		ExampleStructTypeIndex = bond.NewIndex[*ExampleStruct](bond.IndexOptions[*ExampleStruct]{
+			IndexID:   bond.PrimaryIndexID + 1,
+			IndexName: "type_idx",
+			IndexKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
 				return b.AddBytesField([]byte(es.Type)).Bytes()
 			},
-			bond.IndexOrderDefault[*ExampleStruct],
-		)
-		ExampleStructOrderAmountDESCIndex = bond.NewIndex[*ExampleStruct](
-			bond.PrimaryIndexID+2,
-			func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+			IndexOrderFunc: bond.IndexOrderDefault[*ExampleStruct],
+		})
+		ExampleStructOrderAmountDESCIndex = bond.NewIndex[*ExampleStruct](bond.IndexOptions[*ExampleStruct]{
+			IndexID:   bond.PrimaryIndexID + 2,
+			IndexName: "main_ord_amount_desc_idx",
+			IndexKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
 				return b.Bytes()
 			},
-			func(o bond.IndexOrder, es *ExampleStruct) bond.IndexOrder {
+			IndexOrderFunc: func(o bond.IndexOrder, es *ExampleStruct) bond.IndexOrder {
 				return o.OrderUint64(es.Amount, bond.IndexOrderTypeDESC)
 			},
-		)
-		ExampleStructIsActivePartialIndex = bond.NewIndex[*ExampleStruct](
-			bond.PrimaryIndexID+3,
-			func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+		})
+		ExampleStructIsActivePartialIndex = bond.NewIndex[*ExampleStruct](bond.IndexOptions[*ExampleStruct]{
+			IndexID:   bond.PrimaryIndexID + 3,
+			IndexName: "main_isactive_true_idx",
+			IndexKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
 				return b.Bytes()
 			},
-			bond.IndexOrderDefault[*ExampleStruct],
-			func(es *ExampleStruct) bool {
+			IndexOrderFunc: bond.IndexOrderDefault[*ExampleStruct],
+			IndexFilterFunc: func(es *ExampleStruct) bool {
 				return es.IsActive
 			},
-		)
+		})
 	)
 
 	err = ExampleStructTable.AddIndex([]*bond.Index[*ExampleStruct]{
