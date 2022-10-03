@@ -39,9 +39,14 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			TokenBalanceTableID = bond.TableID(1)
 		)
 
-		tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddUint64Field(tb.ID).Bytes()
-		}, &TokenBalanceSerializer{})
+		tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
+			DB:        db,
+			TableName: "token_balance",
+			TableID:   TokenBalanceTableID,
+			TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddUint64Field(tb.ID).Bytes()
+			},
+		})
 
 		const (
 			_                                                 = bond.PrimaryIndexID
@@ -51,32 +56,35 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 		)
 
 		var (
-			TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
-				TokenBalanceAccountAddressIndexID,
-				func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+				IndexID:   TokenBalanceAccountAddressIndexID,
+				IndexName: "account_address_idx",
+				IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 					return builder.AddStringField(tb.AccountAddress).Bytes()
 				},
-				bond.IndexOrderDefault[*TokenBalance],
-			)
-			TokenBalanceAccountAddressOrderBalanceDESCIndex = bond.NewIndex[*TokenBalance](
-				TokenBalanceAccountAddressOrderBalanceDESCIndexID,
-				func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+			})
+			TokenBalanceAccountAddressOrderBalanceDESCIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+				IndexID:   TokenBalanceAccountAddressOrderBalanceDESCIndexID,
+				IndexName: "account_address_ord_balance_desc_idx",
+				IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 					return builder.AddStringField(tb.AccountAddress).Bytes()
 				},
-				func(o bond.IndexOrder, tb *TokenBalance) bond.IndexOrder {
+				IndexOrderFunc: func(o bond.IndexOrder, tb *TokenBalance) bond.IndexOrder {
 					return o.OrderUint64(tb.Balance, bond.IndexOrderTypeDESC)
 				},
-			)
-			TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](
-				TokenBalanceAccountAndContractAddressIndexID,
-				func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			})
+			TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+				IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+				IndexName: "account_address_contract_address_idx",
+				IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 					return builder.
 						AddStringField(tb.AccountAddress).
 						AddStringField(tb.ContractAddress).
 						Bytes()
 				},
-				bond.IndexOrderDefault[*TokenBalance],
-			)
+				IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+			})
 		)
 
 		err := tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{
