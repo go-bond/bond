@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -30,6 +31,7 @@ type TableInfo interface {
 	ID() TableID
 	Name() string
 	Indexes() []IndexInfo
+	Type() reflect.Type
 }
 
 type TableR[T any] interface {
@@ -129,6 +131,10 @@ func (t *Table[T]) Indexes() []IndexInfo {
 	}
 
 	return indexInfos
+}
+
+func (t *Table[T]) Type() reflect.Type {
+	return reflect.TypeOf(makeNew[T]())
 }
 
 func (t *Table[T]) PrimaryIndex() *Index[T] {
