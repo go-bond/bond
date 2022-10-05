@@ -38,6 +38,25 @@ func TestInspect_Indexes(t *testing.T) {
 	require.Equal(t, expectedIndexes, insp.Indexes("token_balance"))
 }
 
+func TestInspect_EntryFields(t *testing.T) {
+	db, table, _, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	insp, err := NewInspect([]TableInfo{table})
+	require.NoError(t, err)
+
+	expectedIndexes := map[string]string{
+		"ID":              "uint64",
+		"AccountID":       "uint32",
+		"AccountAddress":  "string",
+		"ContractAddress": "string",
+		"TokenID":         "uint32",
+		"Balance":         "uint64",
+	}
+
+	require.Equal(t, expectedIndexes, insp.EntryFields("token_balance"))
+}
+
 func TestInspect_Query(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
@@ -64,7 +83,7 @@ func TestInspect_Query(t *testing.T) {
 	err := table.Insert(context.Background(), insertTokenBalance)
 	require.NoError(t, err)
 
-	t.Run("Single", func(t *testing.T) {
+	t.Run("Simple", func(t *testing.T) {
 		expectedTokenBalance := []map[string]interface{}{
 			{
 				"ID":              uint64(1),
@@ -95,7 +114,7 @@ func TestInspect_Query(t *testing.T) {
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
 
-	t.Run("SingleWithLimit", func(t *testing.T) {
+	t.Run("SimpleWithLimit", func(t *testing.T) {
 		expectedTokenBalance := []map[string]interface{}{
 			{
 				"ID":              uint64(1),
@@ -118,7 +137,7 @@ func TestInspect_Query(t *testing.T) {
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
 
-	t.Run("SingleWithFilter", func(t *testing.T) {
+	t.Run("SimpleWithFilter", func(t *testing.T) {
 		expectedTokenBalance := []map[string]interface{}{
 			{
 				"ID":              uint64(1),
@@ -177,7 +196,7 @@ func TestInspect_Query(t *testing.T) {
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
 
-	t.Run("SingleWithSecondaryIndex", func(t *testing.T) {
+	t.Run("SimpleWithSecondaryIndex", func(t *testing.T) {
 		expectedTokenBalance := []map[string]interface{}{
 			{
 				"ID":              uint64(1),

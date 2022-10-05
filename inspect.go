@@ -11,6 +11,8 @@ import (
 type Inspect interface {
 	Tables() []string
 	Indexes(table string) []string
+	EntryFields(table string) map[string]string
+
 	Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after *string) ([]map[string]interface{}, error)
 }
 
@@ -20,6 +22,24 @@ type inspect struct {
 
 func NewInspect(ti []TableInfo) (Inspect, error) {
 	return &inspect{tableInfos: ti}, nil
+}
+
+func (in *inspect) EntryFields(table string) map[string]string {
+	for _, ti := range in.tableInfos {
+		if table == ti.Name() {
+			emptyEntry := makeValue(ti.Type())
+			if emptyEntry.Kind() == reflect.Ptr {
+				emptyEntry = emptyEntry.Elem()
+			}
+
+			fieldsAndTypes := make(map[string]string)
+			for fieldName, value := range structs.Map(emptyEntry.Interface()) {
+				fieldsAndTypes[fieldName] = reflect.ValueOf(value).Kind().String()
+			}
+			return fieldsAndTypes
+		}
+	}
+	return nil
 }
 
 func (in *inspect) Tables() []string {
