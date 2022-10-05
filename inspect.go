@@ -24,24 +24,6 @@ func NewInspect(ti []TableInfo) (Inspect, error) {
 	return &inspect{tableInfos: ti}, nil
 }
 
-func (in *inspect) EntryFields(table string) map[string]string {
-	for _, ti := range in.tableInfos {
-		if table == ti.Name() {
-			emptyEntry := makeValue(ti.Type())
-			if emptyEntry.Kind() == reflect.Ptr {
-				emptyEntry = emptyEntry.Elem()
-			}
-
-			fieldsAndTypes := make(map[string]string)
-			for fieldName, value := range structs.Map(emptyEntry.Interface()) {
-				fieldsAndTypes[fieldName] = reflect.ValueOf(value).Kind().String()
-			}
-			return fieldsAndTypes
-		}
-	}
-	return nil
-}
-
 func (in *inspect) Tables() []string {
 	var tables []string
 
@@ -62,6 +44,24 @@ func (in *inspect) Indexes(table string) []string {
 		}
 	}
 	return indexes
+}
+
+func (in *inspect) EntryFields(table string) map[string]string {
+	for _, ti := range in.tableInfos {
+		if table == ti.Name() {
+			emptyEntry := makeValue(ti.Type())
+			if emptyEntry.Kind() == reflect.Ptr {
+				emptyEntry = emptyEntry.Elem()
+			}
+
+			fieldsAndTypes := make(map[string]string)
+			for fieldName, value := range structs.Map(emptyEntry.Interface()) {
+				fieldsAndTypes[fieldName] = reflect.ValueOf(value).Kind().String()
+			}
+			return fieldsAndTypes
+		}
+	}
+	return nil
 }
 
 func (in *inspect) Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after *string) ([]map[string]interface{}, error) {
