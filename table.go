@@ -31,7 +31,7 @@ type TableInfo interface {
 	ID() TableID
 	Name() string
 	Indexes() []IndexInfo
-	Type() reflect.Type
+	EntryType() reflect.Type
 }
 
 type TableR[T any] interface {
@@ -133,7 +133,7 @@ func (t *Table[T]) Indexes() []IndexInfo {
 	return indexInfos
 }
 
-func (t *Table[T]) Type() reflect.Type {
+func (t *Table[T]) EntryType() reflect.Type {
 	return reflect.TypeOf(makeNew[T]())
 }
 

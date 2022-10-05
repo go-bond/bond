@@ -49,7 +49,7 @@ func (in *inspect) Indexes(table string) []string {
 func (in *inspect) EntryFields(table string) map[string]string {
 	for _, ti := range in.tableInfos {
 		if table == ti.Name() {
-			emptyEntry := makeValue(ti.Type())
+			emptyEntry := makeValue(ti.EntryType())
 			if emptyEntry.Kind() == reflect.Ptr {
 				emptyEntry = emptyEntry.Elem()
 			}
@@ -74,14 +74,14 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 		return nil, err
 	}
 
-	result := reflect.New(reflect.SliceOf(tableInfo.Type()))
+	result := reflect.New(reflect.SliceOf(tableInfo.EntryType()))
 
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
 
 	if indexInfo.Name() != PrimaryIndexName {
 		indexValue := reflect.ValueOf(indexInfo)
-		indexSelectorValue := makeValue(tableInfo.Type())
+		indexSelectorValue := makeValue(tableInfo.EntryType())
 		err = setFields(indexSelectorValue, indexSelector)
 		if err != nil {
 			return nil, err
@@ -91,7 +91,7 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 	}
 
 	if filter != nil {
-		filterFuncType := reflect.FuncOf([]reflect.Type{tableInfo.Type()}, []reflect.Type{reflect.TypeOf(false)}, false)
+		filterFuncType := reflect.FuncOf([]reflect.Type{tableInfo.EntryType()}, []reflect.Type{reflect.TypeOf(false)}, false)
 		filterFunc := reflect.MakeFunc(filterFuncType, func(args []reflect.Value) (results []reflect.Value) {
 			ret := true
 			row := structs.Map(args[0].Interface())
