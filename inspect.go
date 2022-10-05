@@ -49,7 +49,7 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 		return nil, fmt.Errorf("table can not be empty")
 	}
 
-	tableInfo, _, err := in.findTableAndIndex(table, index)
+	tableInfo, indexInfo, err := in.findTableAndIndexInfo(table, index)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +58,17 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
+
+	if indexInfo.Name() != PrimaryIndexName {
+		indexValue := reflect.ValueOf(indexInfo)
+		indexSelectorValue := makeValue(tableInfo.Type())
+		err = setFields(indexSelectorValue, indexSelector)
+		if err != nil {
+			return nil, err
+		}
+
+		queryValue = queryValue.MethodByName("With").Call([]reflect.Value{indexValue, indexSelectorValue})[0]
+	}
 
 	if filter != nil {
 		filterFuncType := reflect.FuncOf([]reflect.Type{tableInfo.Type()}, []reflect.Type{reflect.TypeOf(false)}, false)
@@ -115,7 +126,7 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 	return resultMapArray, nil
 }
 
-func (in *inspect) findTableAndIndex(table string, index string) (TableInfo, IndexInfo, error) {
+func (in *inspect) findTableAndIndexInfo(table string, index string) (TableInfo, IndexInfo, error) {
 	if index == "" {
 		index = PrimaryIndexName
 	}
@@ -145,4 +156,32 @@ func (in *inspect) findTableAndIndex(table string, index string) (TableInfo, Ind
 	}
 
 	return tableInfo, indexInfo, nil
+}
+
+func setFields(val reflect.Value, toSet map[string]interface{}) error {
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	for fieldNameToSet, valueToSetInterface := range toSet {
+		fields := structs.Map(val.Interface())
+		if _, ok := fields[fieldNameToSet]; ok {
+			vt := reflect.ValueOf(valueToSetInterface)
+			vv := val.FieldByName(fieldNameToSet)
+
+			if vt.Kind() != vv.Kind() {
+				if vt.CanConvert(vv.Type()) {
+					vt = vt.Convert(vv.Type())
+				} else {
+					return fmt.Errorf("field type mismatch %s != %s", vt.Kind().String(), vv.Kind().String())
+				}
+			}
+
+			vv.Set(vt)
+		} else {
+			return fmt.Errorf("field '%s' not found", fieldNameToSet)
+		}
+	}
+
+	return nil
 }

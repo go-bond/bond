@@ -176,4 +176,47 @@ func TestInspect_Query(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
+
+	t.Run("SingleWithSecondaryIndex", func(t *testing.T) {
+		expectedTokenBalance := []map[string]interface{}{
+			{
+				"ID":              uint64(1),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(10),
+				"Balance":         uint64(501),
+			},
+			{
+				"ID":              uint64(2),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(5),
+				"Balance":         uint64(1),
+			},
+		}
+
+		insp, err := NewInspect([]TableInfo{table})
+		require.NoError(t, err)
+
+		tables := insp.Tables()
+		require.Equal(t, 1, len(tables))
+
+		selector := map[string]interface{}{
+			"AccountAddress": "0xa",
+		}
+
+		resp, err := insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+
+		selector = map[string]interface{}{
+			"AccountAddress": "0xb",
+		}
+
+		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, []map[string]interface{}{})
+	})
 }
