@@ -59,6 +59,30 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
 
+	if filter != nil {
+		filterFuncType := reflect.FuncOf([]reflect.Type{tableInfo.Type()}, []reflect.Type{reflect.TypeOf(false)}, false)
+		filterFunc := reflect.MakeFunc(filterFuncType, func(args []reflect.Value) (results []reflect.Value) {
+			ret := true
+			row := structs.Map(args[0].Interface())
+
+			for filterField, filterValue := range filter {
+				if rowValue, ok := row[filterField]; ok {
+					if !reflect.DeepEqual(filterValue, rowValue) {
+						ret = false
+						break
+					}
+				} else {
+					ret = false
+					break
+				}
+			}
+
+			return []reflect.Value{reflect.ValueOf(ret)}
+		})
+
+		queryValue = queryValue.MethodByName("Filter").Call([]reflect.Value{filterFunc})[0]
+	}
+
 	if limit > 0 {
 		queryValue = queryValue.MethodByName("Limit").Call([]reflect.Value{reflect.ValueOf(limit)})[0]
 	}
