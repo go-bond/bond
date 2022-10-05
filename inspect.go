@@ -65,9 +65,20 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 			ret := true
 			row := structs.Map(args[0].Interface())
 
-			for filterField, filterValue := range filter {
-				if rowValue, ok := row[filterField]; ok {
-					if !reflect.DeepEqual(filterValue, rowValue) {
+			for filterField, filterInterface := range filter {
+				fv := reflect.ValueOf(filterInterface)
+				if rowInterface, ok := row[filterField]; ok {
+					rv := reflect.ValueOf(rowInterface)
+					if fv.Kind() != rv.Kind() {
+						if fv.CanConvert(rv.Type()) {
+							filterInterface = fv.Convert(rv.Type()).Interface()
+						} else {
+							ret = false
+							break
+						}
+					}
+
+					if !reflect.DeepEqual(filterInterface, rowInterface) {
 						ret = false
 						break
 					}

@@ -143,5 +143,37 @@ func TestInspect_Query(t *testing.T) {
 		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
+
+		filter = map[string]interface{}{
+			"ID": uint32(1),
+		}
+
+		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+
+		filter = map[string]interface{}{
+			"ID": uint16(1),
+		}
+
+		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+
+		filter = map[string]interface{}{
+			"ID": 1,
+		}
+
+		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+
+		filter = map[string]interface{}{
+			"ID": 1.0,
+		}
+
+		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
 	})
 }
