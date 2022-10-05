@@ -237,5 +237,30 @@ func TestInspect_Query(t *testing.T) {
 		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, []map[string]interface{}{})
+
+		selector = map[string]interface{}{
+			"ID":             5,
+			"AccountAddress": "0xb",
+		}
+
+		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, []map[string]interface{}{})
+
+		selector = map[string]interface{}{
+			"ID":             "5",
+			"AccountAddress": "0xb",
+		}
+
+		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		require.Error(t, err)
+
+		selector = map[string]interface{}{
+			"IDd":            5,
+			"AccountAddress": "0xb",
+		}
+
+		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		require.Error(t, err)
 	})
 }
