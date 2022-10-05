@@ -42,7 +42,7 @@ func TestInspect_Query(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
-	expectedTokenBalance := []*TokenBalance{
+	insertTokenBalance := []*TokenBalance{
 		{
 			ID:              1,
 			AccountID:       1,
@@ -53,7 +53,18 @@ func TestInspect_Query(t *testing.T) {
 		},
 	}
 
-	err := table.Insert(context.Background(), expectedTokenBalance)
+	expectedTokenBalance := []map[string]interface{}{
+		{
+			"ID":              uint64(1),
+			"AccountID":       uint32(1),
+			"ContractAddress": "0xc",
+			"AccountAddress":  "0xa",
+			"TokenID":         uint32(10),
+			"Balance":         uint64(501),
+		},
+	}
+
+	err := table.Insert(context.Background(), insertTokenBalance)
 	require.NoError(t, err)
 
 	insp, err := NewInspect([]TableInfo{table})
@@ -64,5 +75,5 @@ func TestInspect_Query(t *testing.T) {
 
 	resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 10, nil)
 	require.NoError(t, err)
-	require.NotNil(t, resp)
+	assert.Equal(t, resp, expectedTokenBalance)
 }

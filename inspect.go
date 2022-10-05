@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/fatih/structs"
 )
 
 type Inspect interface {
@@ -66,10 +66,14 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 		},
 	)
 
-	spew.Dump(result.Interface())
+	resultArray := result.Elem()
+	resultMapArray := make([]map[string]interface{}, 0)
+	for i := 0; i < resultArray.Len(); i++ {
+		row := resultArray.Index(i)
+		resultMapArray = append(resultMapArray, structs.Map(row.Interface()))
+	}
 
-	//TODO implement me
-	panic("implement me")
+	return resultMapArray, nil
 }
 
 func (in *inspect) findTableAndIndex(table string, index string) (TableInfo, IndexInfo, error) {
