@@ -51,29 +51,70 @@ func TestInspect_Query(t *testing.T) {
 			TokenID:         10,
 			Balance:         501,
 		},
-	}
-
-	expectedTokenBalance := []map[string]interface{}{
 		{
-			"ID":              uint64(1),
-			"AccountID":       uint32(1),
-			"ContractAddress": "0xc",
-			"AccountAddress":  "0xa",
-			"TokenID":         uint32(10),
-			"Balance":         uint64(501),
+			ID:              2,
+			AccountID:       1,
+			ContractAddress: "0xc",
+			AccountAddress:  "0xa",
+			TokenID:         5,
+			Balance:         1,
 		},
 	}
 
 	err := table.Insert(context.Background(), insertTokenBalance)
 	require.NoError(t, err)
 
-	insp, err := NewInspect([]TableInfo{table})
-	require.NoError(t, err)
+	t.Run("Single", func(t *testing.T) {
+		expectedTokenBalance := []map[string]interface{}{
+			{
+				"ID":              uint64(1),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(10),
+				"Balance":         uint64(501),
+			},
+			{
+				"ID":              uint64(2),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(5),
+				"Balance":         uint64(1),
+			},
+		}
 
-	tables := insp.Tables()
-	require.Equal(t, 1, len(tables))
+		insp, err := NewInspect([]TableInfo{table})
+		require.NoError(t, err)
 
-	resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 10, nil)
-	require.NoError(t, err)
-	assert.Equal(t, resp, expectedTokenBalance)
+		tables := insp.Tables()
+		require.Equal(t, 1, len(tables))
+
+		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 0, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+	})
+
+	t.Run("SingleWithLimit", func(t *testing.T) {
+		expectedTokenBalance := []map[string]interface{}{
+			{
+				"ID":              uint64(1),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(10),
+				"Balance":         uint64(501),
+			},
+		}
+
+		insp, err := NewInspect([]TableInfo{table})
+		require.NoError(t, err)
+
+		tables := insp.Tables()
+		require.Equal(t, 1, len(tables))
+
+		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+	})
 }

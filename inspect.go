@@ -11,7 +11,7 @@ import (
 type Inspect interface {
 	Tables() []string
 	Indexes(table string) []string
-	Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit int, after *string) ([]map[string]interface{}, error)
+	Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after *string) ([]map[string]interface{}, error)
 }
 
 type inspect struct {
@@ -44,7 +44,7 @@ func (in *inspect) Indexes(table string) []string {
 	return indexes
 }
 
-func (in *inspect) Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit int, after *string) ([]map[string]interface{}, error) {
+func (in *inspect) Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after *string) ([]map[string]interface{}, error) {
 	if table == "" {
 		return nil, fmt.Errorf("table can not be empty")
 	}
@@ -58,6 +58,10 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
+
+	if limit > 0 {
+		queryValue = queryValue.MethodByName("Limit").Call([]reflect.Value{reflect.ValueOf(limit)})[0]
+	}
 
 	queryValue.MethodByName("Execute").Call(
 		[]reflect.Value{
