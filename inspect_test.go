@@ -263,4 +263,42 @@ func TestInspect_Query(t *testing.T) {
 		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.Error(t, err)
 	})
+
+	t.Run("SimpleWithAfter", func(t *testing.T) {
+		expectedTokenBalance := []map[string]interface{}{
+			{
+				"ID":              uint64(1),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(10),
+				"Balance":         uint64(501),
+			},
+		}
+
+		expectedTokenBalance2 := []map[string]interface{}{
+			{
+				"ID":              uint64(2),
+				"AccountID":       uint32(1),
+				"ContractAddress": "0xc",
+				"AccountAddress":  "0xa",
+				"TokenID":         uint32(5),
+				"Balance":         uint64(1),
+			},
+		}
+
+		insp, err := NewInspect([]TableInfo{table})
+		require.NoError(t, err)
+
+		tables := insp.Tables()
+		require.Equal(t, 1, len(tables))
+
+		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance)
+
+		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, resp[0])
+		require.NoError(t, err)
+		assert.Equal(t, resp, expectedTokenBalance2)
+	})
 }
