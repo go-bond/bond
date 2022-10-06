@@ -30,6 +30,7 @@ func (in *inspect) Tables() []string {
 	for _, ti := range in.tableInfos {
 		tables = append(tables, ti.Name())
 	}
+
 	return tables
 }
 
@@ -43,6 +44,7 @@ func (in *inspect) Indexes(table string) []string {
 			}
 		}
 	}
+
 	return indexes
 }
 
