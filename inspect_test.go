@@ -109,7 +109,7 @@ func TestInspect_Query(t *testing.T) {
 		tables := insp.Tables()
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 0, nil)
+		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -132,7 +132,7 @@ func TestInspect_Query(t *testing.T) {
 		tables := insp.Tables()
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -159,7 +159,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint64(1),
 		}
 
-		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -167,7 +167,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint32(1),
 		}
 
-		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -175,7 +175,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint16(1),
 		}
 
-		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -183,7 +183,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": 1,
 		}
 
-		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -191,7 +191,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": 1.0,
 		}
 
-		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -226,7 +226,7 @@ func TestInspect_Query(t *testing.T) {
 			"AccountAddress": "0xa",
 		}
 
-		resp, err := insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		resp, err := insp.Query(context.Background(), tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -234,7 +234,7 @@ func TestInspect_Query(t *testing.T) {
 			"AccountAddress": "0xb",
 		}
 
-		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, []map[string]interface{}{})
 
@@ -243,7 +243,7 @@ func TestInspect_Query(t *testing.T) {
 			"AccountAddress": "0xb",
 		}
 
-		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, []map[string]interface{}{})
 
@@ -252,7 +252,7 @@ func TestInspect_Query(t *testing.T) {
 			"AccountAddress": "0xb",
 		}
 
-		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.Error(t, err)
 
 		selector = map[string]interface{}{
@@ -260,7 +260,7 @@ func TestInspect_Query(t *testing.T) {
 			"AccountAddress": "0xb",
 		}
 
-		resp, err = insp.Query(tables[0], "account_address_idx", selector, nil, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], "account_address_idx", selector, nil, 0, nil)
 		require.Error(t, err)
 	})
 
@@ -293,11 +293,11 @@ func TestInspect_Query(t *testing.T) {
 		tables := insp.Tables()
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
-		resp, err = insp.Query(tables[0], PrimaryIndexName, nil, nil, 1, resp[0])
+		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, resp[0])
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance2)
 	})

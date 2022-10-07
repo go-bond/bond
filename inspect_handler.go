@@ -61,7 +61,7 @@ func buildTablesHandler(inspect Inspect) http.HandlerFunc {
 }
 
 type requestIndexes struct {
-	TableName string `json:"tableName"`
+	Table string `json:"table"`
 }
 
 func buildIndexesHandler(inspect Inspect) http.HandlerFunc {
@@ -86,7 +86,7 @@ func buildIndexesHandler(inspect Inspect) http.HandlerFunc {
 
 		switch accept {
 		case "application/json":
-			data, err = json.Marshal(inspect.Indexes(req.TableName))
+			data, err = json.Marshal(inspect.Indexes(req.Table))
 			if err != nil {
 				response.WriteHeader(http.StatusInternalServerError)
 				return
@@ -125,7 +125,7 @@ func buildEntryFieldsHandler(inspect Inspect) http.HandlerFunc {
 
 		switch accept {
 		case "application/json":
-			data, err = json.Marshal(inspect.EntryFields(req.TableName))
+			data, err = json.Marshal(inspect.EntryFields(req.Table))
 			if err != nil {
 				response.WriteHeader(http.StatusInternalServerError)
 				return
@@ -138,7 +138,53 @@ func buildEntryFieldsHandler(inspect Inspect) http.HandlerFunc {
 	}
 }
 
+type requestQuery struct {
+	Table         string                 `json:"table"`
+	Index         string                 `json:"index"`
+	IndexSelector map[string]interface{} `json:"indexSelector"`
+	Filter        map[string]interface{} `json:"filter"`
+	Limit         uint64                 `json:"limit"`
+	After         map[string]interface{} `json:"after"`
+}
+
 func buildQueryHandler(inspect Inspect) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
+		accept := request.Header.Get("Accept")
+		if accept == "" {
+			accept = "application/json"
+		}
+
+		data, err := ioutil.ReadAll(request.Body)
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var req requestQuery
+		err = json.Unmarshal(data, &req)
+		if err != nil {
+			response.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		switch accept {
+		case "application/json":
+			result, err := inspect.Query(request.Context(), req.Table, req.Index, req.IndexSelector,
+				req.Filter, req.Limit, req.After)
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			data, err = json.Marshal(result)
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			_, _ = response.Write(data)
+		default:
+			response.WriteHeader(http.StatusNotAcceptable)
+		}
 	}
 }

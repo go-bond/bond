@@ -2,6 +2,7 @@ package bond
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func TestNewInspectHandler(t *testing.T) {
 		req, _ := http.NewRequest(
 			"POST",
 			"/bond/indexes",
-			bytes.NewBufferString("{\"tableName\": \"token_balance\"}"))
+			bytes.NewBufferString("{\"table\": \"token_balance\"}"))
 
 		mux.ServeHTTP(w, req)
 		require.Equal(t, 200, w.Code)
@@ -55,7 +56,7 @@ func TestNewInspectHandler(t *testing.T) {
 		req, _ := http.NewRequest(
 			"POST",
 			"/bond/entryFields",
-			bytes.NewBufferString("{\"tableName\": \"token_balance\"}"))
+			bytes.NewBufferString("{\"table\": \"token_balance\"}"))
 
 		mux.ServeHTTP(w, req)
 		require.Equal(t, 200, w.Code)
@@ -74,6 +75,265 @@ func TestNewInspectHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Equal(t, expectedEntryFields, entryFields)
+	})
+
+	t.Run("Query", func(t *testing.T) {
+		insertTokenBalance := []*TokenBalance{
+			{
+				ID:              1,
+				AccountID:       1,
+				ContractAddress: "0xc",
+				AccountAddress:  "0xa",
+				TokenID:         10,
+				Balance:         501,
+			},
+			{
+				ID:              2,
+				AccountID:       1,
+				ContractAddress: "0xc",
+				AccountAddress:  "0xa",
+				TokenID:         5,
+				Balance:         1,
+			},
+		}
+
+		err = table.Insert(context.Background(), insertTokenBalance)
+		require.NoError(t, err)
+
+		t.Run("Simple", func(t *testing.T) {
+			expectedTokenBalance := []map[string]interface{}{
+				{
+					"ID":              float64(1),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(10),
+					"Balance":         float64(501),
+				},
+				{
+					"ID":              float64(2),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(5),
+					"Balance":         float64(1),
+				},
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBufferString("{\"table\": \"token_balance\"}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			var results []map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance)
+		})
+
+		t.Run("SimpleWithLimit", func(t *testing.T) {
+			expectedTokenBalance := []map[string]interface{}{
+				{
+					"ID":              float64(1),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(10),
+					"Balance":         float64(501),
+				},
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBufferString("{\"table\": \"token_balance\", \"limit\": 1}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			var results []map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance)
+		})
+
+		t.Run("SimpleWithFilter", func(t *testing.T) {
+			expectedTokenBalance := []map[string]interface{}{
+				{
+					"ID":              float64(1),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(10),
+					"Balance":         float64(501),
+				},
+			}
+
+			requestBody := map[string]interface{}{
+				"table": "token_balance",
+				"filter": map[string]interface{}{
+					"ID": uint64(1),
+				},
+			}
+
+			requestBodyData, err := json.Marshal(requestBody)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBuffer(requestBodyData))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			var results []map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance)
+		})
+
+		t.Run("SimpleWithSecondaryIndex", func(t *testing.T) {
+			expectedTokenBalance := []map[string]interface{}{
+				{
+					"ID":              float64(1),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(10),
+					"Balance":         float64(501),
+				},
+				{
+					"ID":              float64(2),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(5),
+					"Balance":         float64(1),
+				},
+			}
+
+			requestBody := map[string]interface{}{
+				"table": "token_balance",
+				"index": "account_address_idx",
+				"indexSelector": map[string]interface{}{
+					"AccountAddress": "0xa",
+				},
+			}
+
+			requestBodyData, err := json.Marshal(requestBody)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBuffer(requestBodyData))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			var results []map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance)
+
+			requestBody = map[string]interface{}{
+				"table": "token_balance",
+				"index": "account_address_idx",
+				"indexSelector": map[string]interface{}{
+					"AccountAddress": "0xb",
+				},
+			}
+
+			requestBodyData, err = json.Marshal(requestBody)
+			require.NoError(t, err)
+
+			w = httptest.NewRecorder()
+			req, _ = http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBuffer(requestBodyData))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, []map[string]interface{}{})
+		})
+
+		t.Run("SimpleWithAfter", func(t *testing.T) {
+			expectedTokenBalance := []map[string]interface{}{
+				{
+					"ID":              float64(1),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(10),
+					"Balance":         float64(501),
+				},
+			}
+
+			expectedTokenBalance2 := []map[string]interface{}{
+				{
+					"ID":              float64(2),
+					"AccountID":       float64(1),
+					"ContractAddress": "0xc",
+					"AccountAddress":  "0xa",
+					"TokenID":         float64(5),
+					"Balance":         float64(1),
+				},
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBufferString("{\"table\": \"token_balance\", \"limit\": 1}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			var results []map[string]interface{}
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance)
+
+			requestBody := map[string]interface{}{
+				"table": "token_balance",
+				"after": results[0],
+			}
+
+			requestBodyData, err := json.Marshal(requestBody)
+			require.NoError(t, err)
+
+			w = httptest.NewRecorder()
+			req, _ = http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBuffer(requestBodyData))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
+
+			err = json.Unmarshal(w.Body.Bytes(), &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedTokenBalance2)
+		})
 	})
 
 }

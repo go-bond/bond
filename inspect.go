@@ -13,7 +13,7 @@ type Inspect interface {
 	Indexes(table string) []string
 	EntryFields(table string) map[string]string
 
-	Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error)
+	Query(ctx context.Context, table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error)
 }
 
 type inspect struct {
@@ -66,7 +66,7 @@ func (in *inspect) EntryFields(table string) map[string]string {
 	return nil
 }
 
-func (in *inspect) Query(table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error) {
+func (in *inspect) Query(ctx context.Context, table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error) {
 	if table == "" {
 		return nil, fmt.Errorf("table can not be empty")
 	}
@@ -141,12 +141,15 @@ func (in *inspect) Query(table string, index string, indexSelector map[string]in
 		queryValue = queryValue.MethodByName("After").Call([]reflect.Value{afterValue})[0]
 	}
 
-	queryValue.MethodByName("Execute").Call(
+	execValues := queryValue.MethodByName("Execute").Call(
 		[]reflect.Value{
-			reflect.ValueOf(context.Background()),
+			reflect.ValueOf(ctx),
 			result,
 		},
 	)
+	if execValues[0].Interface() != nil {
+		return nil, execValues[0].Interface().(error)
+	}
 
 	resultArray := result.Elem()
 	resultMapArray := make([]map[string]interface{}, 0)
