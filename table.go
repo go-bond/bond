@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -129,6 +130,10 @@ func (t *Table[T]) Indexes() []IndexInfo {
 	for _, idx := range t.secondaryIndexes {
 		indexInfos = append(indexInfos, idx)
 	}
+
+	sort.Slice(indexInfos, func(i, j int) bool {
+		return indexInfos[i].ID() < indexInfos[j].ID()
+	})
 
 	return indexInfos
 }
