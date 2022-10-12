@@ -19,7 +19,9 @@ func TestInspect_Tables(t *testing.T) {
 		"token_balance",
 	}
 
-	assert.Equal(t, expectedTables, insp.Tables())
+	tables, err := insp.Tables()
+	require.NoError(t, err)
+	assert.Equal(t, expectedTables, tables)
 }
 
 func TestInspect_Indexes(t *testing.T) {
@@ -35,7 +37,9 @@ func TestInspect_Indexes(t *testing.T) {
 		"account_and_contract_address_idx",
 	}
 
-	require.Equal(t, expectedIndexes, insp.Indexes("token_balance"))
+	indexes, err := insp.Indexes("token_balance")
+	require.NoError(t, err)
+	require.Equal(t, expectedIndexes, indexes)
 }
 
 func TestInspect_EntryFields(t *testing.T) {
@@ -45,7 +49,7 @@ func TestInspect_EntryFields(t *testing.T) {
 	insp, err := NewInspect([]TableInfo{table})
 	require.NoError(t, err)
 
-	expectedIndexes := map[string]string{
+	expectedFields := map[string]string{
 		"ID":              "uint64",
 		"AccountID":       "uint32",
 		"AccountAddress":  "string",
@@ -54,7 +58,9 @@ func TestInspect_EntryFields(t *testing.T) {
 		"Balance":         "uint64",
 	}
 
-	require.Equal(t, expectedIndexes, insp.EntryFields("token_balance"))
+	fields, err := insp.EntryFields("token_balance")
+	require.NoError(t, err)
+	require.Equal(t, expectedFields, fields)
 }
 
 func TestInspect_Query(t *testing.T) {
@@ -106,7 +112,8 @@ func TestInspect_Query(t *testing.T) {
 		insp, err := NewInspect([]TableInfo{table})
 		require.NoError(t, err)
 
-		tables := insp.Tables()
+		tables, err := insp.Tables()
+		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
 		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 0, nil)
@@ -129,7 +136,8 @@ func TestInspect_Query(t *testing.T) {
 		insp, err := NewInspect([]TableInfo{table})
 		require.NoError(t, err)
 
-		tables := insp.Tables()
+		tables, err := insp.Tables()
+		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
 		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
@@ -152,7 +160,8 @@ func TestInspect_Query(t *testing.T) {
 		insp, err := NewInspect([]TableInfo{table})
 		require.NoError(t, err)
 
-		tables := insp.Tables()
+		tables, err := insp.Tables()
+		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
 		filter := map[string]interface{}{
@@ -219,7 +228,8 @@ func TestInspect_Query(t *testing.T) {
 		insp, err := NewInspect([]TableInfo{table})
 		require.NoError(t, err)
 
-		tables := insp.Tables()
+		tables, err := insp.Tables()
+		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
 		selector := map[string]interface{}{
@@ -290,7 +300,8 @@ func TestInspect_Query(t *testing.T) {
 		insp, err := NewInspect([]TableInfo{table})
 		require.NoError(t, err)
 
-		tables := insp.Tables()
+		tables, err := insp.Tables()
+		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
 		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
