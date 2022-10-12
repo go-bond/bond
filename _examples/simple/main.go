@@ -18,7 +18,7 @@ type ExampleStruct struct {
 }
 
 func main() {
-	fmt.Println("=>")
+	fmt.Println("=> Simple Operations Example")
 
 	db, err := bond.Open("example", &bond.Options{})
 	if err != nil {

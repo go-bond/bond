@@ -42,30 +42,32 @@ const (
     ExampleStructTableId bond.TableID = 1
 )
 
-ExampleStructTable := bond.NewTable[*ExampleStruct](
+ExampleStructTable := bond.NewTable[*ExampleStruct](bond.TableOptions[*ExampleStruct]{
     // The database instance
-    db,
+    DB:        db,
     // The unique table identifier
-    ExampleStructTableId,
-    // The primary key building function
-    func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+    TableID:   ExampleStructTableID,
+    // The table name for inspect purposes
+    TableName: "example_stuct_table",
+    TablePrimaryKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
         return b.AddUint64Field(es.Id).Bytes()
-    }
-)
+    },
+})
 ```
 
 The index creation:
 ```go
-ExampleStructTypeIndex := bond.NewIndex[*ExampleStruct](
+ExampleStructTypeIndex := bond.NewIndex[*ExampleStruct](bond.IndexOptions[*ExampleStruct]{
     // The unique index identifier
-    bond.PrimaryIndexID+1,
-	// The function that determines index key
-    func(b bond.KeyBuilder, es *ExampleStruct) []byte {
+    IndexID:   bond.PrimaryIndexID + 1,
+    // The index name for inspect purposes
+    IndexName: "type_idx",
+    // The function that determines index key
+    IndexKeyFunc: func(b bond.KeyBuilder, es *ExampleStruct) []byte {
         return b.AddBytesField([]byte(es.Type)).Bytes()
     },
-	// The function that determines index ordering
-    bond.IndexOrderDefault[*ExampleStruct],
-)
+    IndexOrderFunc: bond.IndexOrderDefault[*ExampleStruct],
+})
 ```
 
 Insert:
