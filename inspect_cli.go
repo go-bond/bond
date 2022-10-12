@@ -16,6 +16,13 @@ var _FlagBondURL = &cli.StringFlag{
 	Required: true,
 }
 
+var _FlagHeaders = &cli.StringSliceFlag{
+	Name:     "headers",
+	Usage:    "sets http headers",
+	Value:    cli.NewStringSlice(),
+	Required: false,
+}
+
 var _FlagTable = &cli.StringFlag{
 	Name:     "table",
 	Usage:    "sets table",
@@ -76,11 +83,24 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 			"bond-cli --url http://localhost:7777/bond entry-fields --table token_balances",
 		Flags: []cli.Flag{
 			_FlagBondURL,
+			_FlagHeaders,
 		},
 		Before: func(ctx *cli.Context) error {
 			url := ctx.String(_FlagBondURL.Name)
 			if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-				inspect = NewInspectRemote(url)
+				headersStr := ctx.StringSlice(_FlagHeaders.Name)
+
+				headers := make(map[string]string)
+				for _, s := range headersStr {
+					header := strings.Split(s, "=")
+					if len(header) != 2 {
+						return fmt.Errorf("invalid header: %s", s)
+					}
+
+					headers[header[0]] = header[1]
+				}
+
+				inspect = NewInspectRemote(url, headers)
 			} else {
 				if init == nil {
 					return fmt.Errorf("this CLI only supports http & https urls")
@@ -98,12 +118,17 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 				Name:  "tables",
 				Usage: "lists table names",
 				Action: func(ctx *cli.Context) error {
-					resultJson, err := json.Marshal(inspect.Tables())
+					tables, err := inspect.Tables()
 					if err != nil {
 						return err
 					}
 
-					fmt.Print(resultJson)
+					resultJson, err := json.Marshal(tables)
+					if err != nil {
+						return err
+					}
+
+					fmt.Print(string(resultJson))
 					return nil
 				},
 			},
@@ -114,12 +139,17 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 					_FlagTable,
 				},
 				Action: func(ctx *cli.Context) error {
-					resultJson, err := json.Marshal(inspect.Indexes(ctx.String(_FlagTable.Name)))
+					indexes, err := inspect.Indexes(ctx.String(_FlagTable.Name))
 					if err != nil {
 						return err
 					}
 
-					fmt.Print(resultJson)
+					resultJson, err := json.Marshal(indexes)
+					if err != nil {
+						return err
+					}
+
+					fmt.Print(string(resultJson))
 					return nil
 				},
 			},
@@ -130,12 +160,17 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 					_FlagTable,
 				},
 				Action: func(ctx *cli.Context) error {
-					resultJson, err := json.Marshal(inspect.EntryFields(ctx.String(_FlagTable.Name)))
+					fields, err := inspect.EntryFields(ctx.String(_FlagTable.Name))
 					if err != nil {
 						return err
 					}
 
-					fmt.Print(resultJson)
+					resultJson, err := json.Marshal(fields)
+					if err != nil {
+						return err
+					}
+
+					fmt.Print(string(resultJson))
 					return nil
 				},
 			},
@@ -183,7 +218,7 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 					result, err := inspect.Query(
 						queryCtx,
 						ctx.String(_FlagTable.Name),
-						ctx.String(_FlagTable.Name),
+						ctx.String(_FlagIndex.Name),
 						indexSelector,
 						filter,
 						ctx.Uint64(_FlagLimit.Name),
@@ -198,7 +233,7 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 						return err
 					}
 
-					fmt.Print(resultJson)
+					fmt.Print(string(resultJson))
 					return nil
 				},
 			},

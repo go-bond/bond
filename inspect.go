@@ -9,9 +9,9 @@ import (
 )
 
 type Inspect interface {
-	Tables() []string
-	Indexes(table string) []string
-	EntryFields(table string) map[string]string
+	Tables() ([]string, error)
+	Indexes(table string) ([]string, error)
+	EntryFields(table string) (map[string]string, error)
 
 	Query(ctx context.Context, table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error)
 }
@@ -24,17 +24,17 @@ func NewInspect(ti []TableInfo) (Inspect, error) {
 	return &inspect{tableInfos: ti}, nil
 }
 
-func (in *inspect) Tables() []string {
+func (in *inspect) Tables() ([]string, error) {
 	var tables []string
 
 	for _, ti := range in.tableInfos {
 		tables = append(tables, ti.Name())
 	}
 
-	return tables
+	return tables, nil
 }
 
-func (in *inspect) Indexes(table string) []string {
+func (in *inspect) Indexes(table string) ([]string, error) {
 	var indexes []string
 
 	for _, ti := range in.tableInfos {
@@ -42,13 +42,14 @@ func (in *inspect) Indexes(table string) []string {
 			for _, ii := range ti.Indexes() {
 				indexes = append(indexes, ii.Name())
 			}
+			return indexes, nil
 		}
 	}
 
-	return indexes
+	return nil, fmt.Errorf("table not found")
 }
 
-func (in *inspect) EntryFields(table string) map[string]string {
+func (in *inspect) EntryFields(table string) (map[string]string, error) {
 	for _, ti := range in.tableInfos {
 		if table == ti.Name() {
 			emptyEntry := makeValue(ti.EntryType())
@@ -60,10 +61,10 @@ func (in *inspect) EntryFields(table string) map[string]string {
 			for fieldName, value := range structs.Map(emptyEntry.Interface()) {
 				fieldsAndTypes[fieldName] = reflect.ValueOf(value).Kind().String()
 			}
-			return fieldsAndTypes
+			return fieldsAndTypes, nil
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("table not found")
 }
 
 func (in *inspect) Query(ctx context.Context, table string, index string, indexSelector map[string]interface{}, filter map[string]interface{}, limit uint64, after map[string]interface{}) ([]map[string]interface{}, error) {

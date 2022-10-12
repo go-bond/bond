@@ -7,13 +7,20 @@ import (
 	"regexp"
 )
 
+const (
+	TablesPath      = "/tables"
+	IndexesPath     = "/indexes"
+	EntryFieldsPath = "/entryFields"
+	QueryPath       = "/query"
+)
+
 func NewInspectHandler(inspect Inspect) http.HandlerFunc {
 	var (
 		// path pattern matchers
-		endsInTables      = regexp.MustCompile("/tables$")
-		endsInIndexes     = regexp.MustCompile("/indexes$")
-		endsInEntryFields = regexp.MustCompile("/entryFields$")
-		endsInQuery       = regexp.MustCompile("/query$")
+		endsInTables      = regexp.MustCompile(TablesPath + "$")
+		endsInIndexes     = regexp.MustCompile(IndexesPath + "$")
+		endsInEntryFields = regexp.MustCompile(EntryFieldsPath + "$")
+		endsInQuery       = regexp.MustCompile(QueryPath + "$")
 
 		// handlers
 		tablesHandler      = buildTablesHandler(inspect)
@@ -47,7 +54,13 @@ func buildTablesHandler(inspect Inspect) http.HandlerFunc {
 
 		switch accept {
 		case "application/json":
-			data, err := json.Marshal(inspect.Tables())
+			tables, err := inspect.Tables()
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			data, err := json.Marshal(tables)
 			if err != nil {
 				response.WriteHeader(http.StatusInternalServerError)
 				return
@@ -86,7 +99,13 @@ func buildIndexesHandler(inspect Inspect) http.HandlerFunc {
 
 		switch accept {
 		case "application/json":
-			data, err = json.Marshal(inspect.Indexes(req.Table))
+			indexes, err := inspect.Indexes(req.Table)
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			data, err = json.Marshal(indexes)
 			if err != nil {
 				response.WriteHeader(http.StatusInternalServerError)
 				return
@@ -125,7 +144,13 @@ func buildEntryFieldsHandler(inspect Inspect) http.HandlerFunc {
 
 		switch accept {
 		case "application/json":
-			data, err = json.Marshal(inspect.EntryFields(req.Table))
+			fields, err := inspect.EntryFields(req.Table)
+			if err != nil {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			data, err = json.Marshal(fields)
 			if err != nil {
 				response.WriteHeader(http.StatusInternalServerError)
 				return
