@@ -80,6 +80,6 @@ func main() {
 	})
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Printf("[Error] %s\n", err.Error())
+		_, _ = fmt.Fprintf(os.Stderr, "[Error] %s\n", err.Error())
 	}
 }

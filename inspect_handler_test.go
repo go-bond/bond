@@ -36,45 +36,93 @@ func TestNewInspectHandler(t *testing.T) {
 	})
 
 	t.Run("Indexes", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest(
-			"POST",
-			"/bond/indexes",
-			bytes.NewBufferString("{\"table\": \"token_balance\"}"))
+		t.Run("Simple", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/indexes",
+				bytes.NewBufferString("{\"table\": \"token_balance\"}"))
 
-		mux.ServeHTTP(w, req)
-		require.Equal(t, 200, w.Code)
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
 
-		assert.Equal(t,
-			"[\"primary\",\"account_address_idx\",\"account_and_contract_address_idx\"]",
-			w.Body.String(),
-		)
+			assert.Equal(t,
+				"[\"primary\",\"account_address_idx\",\"account_and_contract_address_idx\"]",
+				w.Body.String(),
+			)
+		})
+
+		t.Run("ErrorTableNotFound", func(t *testing.T) {
+			expectedError := map[string]interface{}{
+				"error": "table not found",
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/indexes",
+				bytes.NewBufferString("{\"table\": \"no_such_table\"}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 500, w.Code)
+
+			var results map[string]interface{}
+			data := w.Body.Bytes()
+			err = json.Unmarshal(data, &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedError)
+		})
 	})
 
 	t.Run("EntryFields", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest(
-			"POST",
-			"/bond/entryFields",
-			bytes.NewBufferString("{\"table\": \"token_balance\"}"))
+		t.Run("Simple", func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/entryFields",
+				bytes.NewBufferString("{\"table\": \"token_balance\"}"))
 
-		mux.ServeHTTP(w, req)
-		require.Equal(t, 200, w.Code)
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 200, w.Code)
 
-		expectedEntryFields := map[string]string{
-			"AccountAddress":  "string",
-			"AccountID":       "uint32",
-			"Balance":         "uint64",
-			"ContractAddress": "string",
-			"ID":              "uint64",
-			"TokenID":         "uint32",
-		}
+			expectedEntryFields := map[string]string{
+				"AccountAddress":  "string",
+				"AccountID":       "uint32",
+				"Balance":         "uint64",
+				"ContractAddress": "string",
+				"ID":              "uint64",
+				"TokenID":         "uint32",
+			}
 
-		var entryFields map[string]string
-		err = json.Unmarshal(w.Body.Bytes(), &entryFields)
-		require.NoError(t, err)
+			var entryFields map[string]string
+			err = json.Unmarshal(w.Body.Bytes(), &entryFields)
+			require.NoError(t, err)
 
-		assert.Equal(t, expectedEntryFields, entryFields)
+			assert.Equal(t, expectedEntryFields, entryFields)
+		})
+
+		t.Run("ErrorTableNotFound", func(t *testing.T) {
+			expectedError := map[string]interface{}{
+				"error": "table not found",
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/entryFields",
+				bytes.NewBufferString("{\"table\": \"no_such_table\"}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 500, w.Code)
+
+			var results map[string]interface{}
+			data := w.Body.Bytes()
+			err = json.Unmarshal(data, &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedError)
+		})
 	})
 
 	t.Run("Query", func(t *testing.T) {
@@ -333,6 +381,28 @@ func TestNewInspectHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, results, expectedTokenBalance2)
+		})
+
+		t.Run("ErrorTableNotFound", func(t *testing.T) {
+			expectedError := map[string]interface{}{
+				"error": "table not found",
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(
+				"POST",
+				"/bond/query",
+				bytes.NewBufferString("{\"table\": \"no_such_table\", \"limit\": 1}"))
+
+			mux.ServeHTTP(w, req)
+			require.Equal(t, 500, w.Code)
+
+			var results map[string]interface{}
+			data := w.Body.Bytes()
+			err = json.Unmarshal(data, &results)
+			require.NoError(t, err)
+
+			assert.Equal(t, results, expectedError)
 		})
 	})
 

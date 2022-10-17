@@ -45,6 +45,19 @@ func NewInspectHandler(inspect Inspect) http.HandlerFunc {
 	}
 }
 
+type responseError struct {
+	Error string `json:"error"`
+}
+
+func newResponseError(err error) responseError {
+	return responseError{Error: err.Error()}
+}
+
+func newResponseErrorBytes(err error) ([]byte, error) {
+	respErr := newResponseError(err)
+	return json.Marshal(respErr)
+}
+
 func buildTablesHandler(inspect Inspect) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		accept := request.Header.Get("Accept")
@@ -56,19 +69,19 @@ func buildTablesHandler(inspect Inspect) http.HandlerFunc {
 		case "application/json":
 			tables, err := inspect.Tables()
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
 			data, err := json.Marshal(tables)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
-			_, _ = response.Write(data)
+			writeResponse(response, http.StatusOK, data)
 		default:
-			response.WriteHeader(http.StatusNotAcceptable)
+			writeEmptyResponse(response, http.StatusNotAcceptable)
 		}
 	}
 }
@@ -86,14 +99,14 @@ func buildIndexesHandler(inspect Inspect) http.HandlerFunc {
 
 		data, err := ioutil.ReadAll(request.Body)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
 		var req requestIndexes
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -101,19 +114,19 @@ func buildIndexesHandler(inspect Inspect) http.HandlerFunc {
 		case "application/json":
 			indexes, err := inspect.Indexes(req.Table)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
 			data, err = json.Marshal(indexes)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
-			_, _ = response.Write(data)
+			writeResponse(response, http.StatusOK, data)
 		default:
-			response.WriteHeader(http.StatusNotAcceptable)
+			writeEmptyResponse(response, http.StatusNotAcceptable)
 		}
 	}
 }
@@ -131,14 +144,14 @@ func buildEntryFieldsHandler(inspect Inspect) http.HandlerFunc {
 
 		data, err := ioutil.ReadAll(request.Body)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
 		var req requestEntryFields
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -146,19 +159,19 @@ func buildEntryFieldsHandler(inspect Inspect) http.HandlerFunc {
 		case "application/json":
 			fields, err := inspect.EntryFields(req.Table)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
 			data, err = json.Marshal(fields)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
-			_, _ = response.Write(data)
+			writeResponse(response, http.StatusOK, data)
 		default:
-			response.WriteHeader(http.StatusNotAcceptable)
+			writeEmptyResponse(response, http.StatusNotAcceptable)
 		}
 	}
 }
@@ -181,14 +194,14 @@ func buildQueryHandler(inspect Inspect) http.HandlerFunc {
 
 		data, err := ioutil.ReadAll(request.Body)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
 		var req requestQuery
 		err = json.Unmarshal(data, &req)
 		if err != nil {
-			response.WriteHeader(http.StatusInternalServerError)
+			writeErrorResponse(response, http.StatusInternalServerError, err)
 			return
 		}
 
@@ -197,19 +210,37 @@ func buildQueryHandler(inspect Inspect) http.HandlerFunc {
 			result, err := inspect.Query(request.Context(), req.Table, req.Index, req.IndexSelector,
 				req.Filter, req.Limit, req.After)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
 			data, err = json.Marshal(result)
 			if err != nil {
-				response.WriteHeader(http.StatusInternalServerError)
+				writeErrorResponse(response, http.StatusInternalServerError, err)
 				return
 			}
 
-			_, _ = response.Write(data)
+			writeResponse(response, http.StatusOK, data)
 		default:
-			response.WriteHeader(http.StatusNotAcceptable)
+			writeEmptyResponse(response, http.StatusNotAcceptable)
 		}
+	}
+}
+
+func writeResponse(response http.ResponseWriter, status int, data []byte) {
+	response.WriteHeader(status)
+	_, _ = response.Write(data)
+}
+
+func writeEmptyResponse(response http.ResponseWriter, status int) {
+	response.WriteHeader(status)
+}
+
+func writeErrorResponse(response http.ResponseWriter, status int, err error) {
+	response.WriteHeader(status)
+
+	errBytes, errErrResp := newResponseErrorBytes(err)
+	if errErrResp == nil {
+		_, _ = response.Write(errBytes)
 	}
 }

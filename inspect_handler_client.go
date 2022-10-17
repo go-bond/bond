@@ -46,7 +46,13 @@ func (i *inspectClient) Tables() ([]string, error) {
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("request failed with status: %s", resp.Status())
+		respErr := responseError{}
+		err = json.Unmarshal(resp.Body(), &respErr)
+		if err != nil {
+			return nil, fmt.Errorf("request failed with status(%s) ", resp.Status())
+		}
+
+		return nil, fmt.Errorf("request failed with status(%s), reason: %s", resp.Status(), respErr.Error)
 	}
 
 	var result []string
@@ -75,7 +81,13 @@ func (i *inspectClient) Indexes(table string) ([]string, error) {
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("request failed with status: %s", resp.Status())
+		respErr := responseError{}
+		err = json.Unmarshal(resp.Body(), &respErr)
+		if err != nil {
+			return nil, fmt.Errorf("request failed with status(%s) ", resp.Status())
+		}
+
+		return nil, fmt.Errorf("request failed with status(%s), reason: %s", resp.Status(), respErr.Error)
 	}
 
 	var result []string
@@ -104,7 +116,13 @@ func (i *inspectClient) EntryFields(table string) (map[string]string, error) {
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("request failed with status: %s", resp.Status())
+		respErr := responseError{}
+		err = json.Unmarshal(resp.Body(), &respErr)
+		if err != nil {
+			return nil, fmt.Errorf("request failed with status(%s) ", resp.Status())
+		}
+
+		return nil, fmt.Errorf("request failed with status(%s), reason: %s", resp.Status(), respErr.Error)
 	}
 
 	var result map[string]string
@@ -140,7 +158,13 @@ func (i *inspectClient) Query(ctx context.Context, table string, index string, i
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("request failed with status: %s", resp.Status())
+		respErr := responseError{}
+		err = json.Unmarshal(resp.Body(), &respErr)
+		if err != nil {
+			return nil, fmt.Errorf("request failed with status(%s)", resp.Status())
+		}
+
+		return nil, fmt.Errorf("request failed with status(%s), reason: %s", resp.Status(), respErr.Error)
 	}
 
 	var result []map[string]interface{}
