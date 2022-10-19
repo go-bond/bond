@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
 )
 
 // FilterFunc is the function template to be used for record filtering.
@@ -47,7 +48,7 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 	return Query[R]{
 		table:         t,
 		index:         i,
-		indexSelector: makeNew[R](),
+		indexSelector: utils.MakeNew[R](),
 		queries:       []FilterAndIndex[R]{},
 		orderLessFunc: nil,
 		offset:        0,

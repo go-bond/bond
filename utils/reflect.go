@@ -1,8 +1,8 @@
-package bond
+package utils
 
 import "reflect"
 
-func makeNew[T any]() T {
+func MakeNew[T any]() T {
 	var v T
 	if typ := reflect.TypeOf(v); typ.Kind() == reflect.Ptr {
 		elem := typ.Elem()
@@ -12,17 +12,17 @@ func makeNew[T any]() T {
 	}
 }
 
-func makeNewAny(v any) any {
-	return makeValue(reflect.TypeOf(v)).Interface()
+func MakeNewAny(v any) any {
+	return MakeValue(reflect.TypeOf(v)).Interface()
 }
 
-func makeValue(elem reflect.Type) reflect.Value {
+func MakeValue(elem reflect.Type) reflect.Value {
 	if elem.Kind() == reflect.Ptr {
 		nextElem := elem.Elem()
 		if nextElem.Kind() == reflect.Ptr {
 			ptrElem := nextElem.Elem()
 			newValue := reflect.New(nextElem)
-			newValue.Elem().Set(makeValue(ptrElem))
+			newValue.Elem().Set(MakeValue(ptrElem))
 			return newValue
 		}
 		return reflect.New(nextElem)
@@ -31,12 +31,12 @@ func makeValue(elem reflect.Type) reflect.Value {
 	}
 }
 
-func findRootInterface(v reflect.Value) any {
+func FindRootInterface(v reflect.Value) any {
 	if v.Kind() == reflect.Ptr {
 		if v.Elem().Kind() != reflect.Ptr {
 			return v.Interface()
 		}
-		return findRootInterface(v.Elem())
+		return FindRootInterface(v.Elem())
 	} else {
 		return v.Interface()
 	}

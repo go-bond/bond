@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/_benchmarks/bench"
+	"github.com/go-bond/bond/serializers"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -25,8 +26,10 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		Name       string
 		Serializer bond.Serializer[any]
 	}{
-		//{"JSONSerializer", &bond.JsonSerializer{}},
-		{"MsgpackSerializer", &bond.MsgpackSerializer{}},
+		{"JSONSerializer", &serializers.JsonSerializer{}},
+		{"MsgpackSerializer", &serializers.MsgpackSerializer{}},
+		{"MsgpackGenSerializer", &serializers.MsgpackGenSerializer{}},
+		{"CBORSerializer", &serializers.CBORSerializer{}},
 	}
 
 	var results []bench.BenchmarkResult

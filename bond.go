@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/serializers"
 )
 
 type Options struct {
@@ -34,7 +35,7 @@ func Open(dirname string, opts *Options) (*DB, error) {
 	if opts.Serializer != nil {
 		serializer = opts.Serializer
 	} else {
-		serializer = &JsonSerializer{}
+		serializer = &serializers.JsonSerializer{}
 	}
 
 	db := &DB{DB: pdb, serializer: serializer}

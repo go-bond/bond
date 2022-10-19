@@ -5,13 +5,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 func TestMsgpackSerializer_SerializerWithClosable(t *testing.T) {
-	s := MsgpackSerializer{
+	s := serializers.MsgpackSerializer{
 		Encoder: &SyncPoolWrapper[*msgpack.Encoder]{
 			Pool: sync.Pool{New: func() interface{} {
 				return msgpack.NewEncoder(nil)
@@ -51,7 +52,7 @@ func TestMsgpackSerializer_SerializerWithClosable(t *testing.T) {
 }
 
 func TestMsgpackGenSerializer_SerializerWithClosable(t *testing.T) {
-	s := MsgpackGenSerializer{
+	s := serializers.MsgpackGenSerializer{
 		Buffer: &SyncPoolWrapper[bytes.Buffer]{
 			Pool: sync.Pool{New: func() interface{} { return bytes.Buffer{} }},
 		},

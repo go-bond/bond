@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
 )
 
@@ -121,7 +122,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	snap := t.db.NewSnapshot()
 
 	var prefixBuffer [DataKeyBufferSize]byte
-	prefix := t.keyPrefix(t.primaryIndex, makeNew[T](), prefixBuffer[:0])
+	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
 
 	iter := snap.NewIter(&pebble.IterOptions{
 		LowerBound: prefix,
@@ -533,7 +534,7 @@ func (t *Table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	data, closer, err := t.db.getKV(key, batch)
 	if err != nil {
-		return makeNew[T](), fmt.Errorf("get failed: %w", err)
+		return utils.MakeNew[T](), fmt.Errorf("get failed: %w", err)
 	}
 
 	defer func() { _ = closer.Close() }()
@@ -541,7 +542,7 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	var tr T
 	err = t.serializer.Deserialize(data, &tr)
 	if err != nil {
-		return makeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
+		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
 
 	return tr, nil
@@ -568,7 +569,7 @@ func (t *Table[T]) Query() Query[T] {
 }
 
 func (t *Table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error {
-	return t.ScanIndex(ctx, t.primaryIndex, makeNew[T](), tr, optBatch...)
+	return t.ScanIndex(ctx, t.primaryIndex, utils.MakeNew[T](), tr, optBatch...)
 }
 
 func (t *Table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
@@ -583,7 +584,7 @@ func (t *Table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, opt
 }
 
 func (t *Table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
-	return t.ScanIndexForEach(ctx, t.primaryIndex, makeNew[T](), f, optBatch...)
+	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
 func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
@@ -612,7 +613,7 @@ func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f f
 			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
 				return record, nil
 			} else {
-				return makeNew[T](), err
+				return utils.MakeNew[T](), err
 			}
 		}
 	} else {
@@ -624,7 +625,7 @@ func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f f
 
 			valueData, closer, err := t.db.getKV(tableKey, batch)
 			if err != nil {
-				return makeNew[T](), err
+				return utils.MakeNew[T](), err
 			}
 
 			defer func() { _ = closer.Close() }()
@@ -633,7 +634,7 @@ func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f f
 			if err = t.serializer.Deserialize(valueData, &record); err == nil {
 				return record, nil
 			} else {
-				return makeNew[T](), err
+				return utils.MakeNew[T](), err
 			}
 		}
 	}
