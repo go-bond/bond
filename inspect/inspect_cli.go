@@ -1,4 +1,4 @@
-package bond
+package inspect
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-bond/bond"
 	"github.com/urfave/cli/v2"
 )
 
@@ -32,7 +33,7 @@ var _FlagTable = &cli.StringFlag{
 var _FlagIndex = &cli.StringFlag{
 	Name:     "index",
 	Usage:    "sets query index",
-	Value:    PrimaryIndexName,
+	Value:    bond.PrimaryIndexName,
 	Required: false,
 }
 

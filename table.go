@@ -139,7 +139,7 @@ func (t *Table[T]) Indexes() []IndexInfo {
 }
 
 func (t *Table[T]) EntryType() reflect.Type {
-	return reflect.TypeOf(makeNew[T]())
+	return reflect.TypeOf(utils.MakeNew[T]())
 }
 
 func (t *Table[T]) PrimaryIndex() *Index[T] {

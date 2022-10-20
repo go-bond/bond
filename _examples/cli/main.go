@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/inspect"
 )
 
 type ExampleStruct struct {
@@ -129,7 +130,7 @@ func main() {
 
 	fmt.Println("==> Start Inspect Handler")
 
-	insp, err := bond.NewInspect([]bond.TableInfo{ExampleStructTable})
+	insp, err := inspect.NewInspect([]bond.TableInfo{ExampleStructTable})
 	if err != nil {
 		panic(err)
 	}
@@ -139,7 +140,7 @@ func main() {
 	go func() {
 		listen <- struct{}{}
 
-		err = http.ListenAndServe(":5555", bond.NewInspectHandler(insp))
+		err = http.ListenAndServe(":5555", inspect.NewInspectHandler(insp))
 		if err != nil {
 			panic(err)
 		}

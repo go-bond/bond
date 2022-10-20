@@ -1,18 +1,114 @@
-package bond
+package inspect
 
 import (
 	"context"
+	"os"
 	"testing"
 
+	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type TokenBalance struct {
+	ID              uint64 `json:"id"`
+	AccountID       uint32 `json:"accountId"`
+	ContractAddress string `json:"contractAddress"`
+	AccountAddress  string `json:"accountAddress"`
+	TokenID         uint32 `json:"tokenId"`
+	Balance         uint64 `json:"balance"`
+}
+
+const dbName = "test_db"
+
+func setupDatabase(serializer ...bond.Serializer[any]) *bond.DB {
+	options := &bond.Options{}
+	if len(serializer) > 0 && serializer[0] != nil {
+		options.Serializer = serializer[0]
+	}
+
+	db, _ := bond.Open(dbName, options)
+	return db
+}
+
+func tearDownDatabase(db *bond.DB) {
+	_ = db.Close()
+	_ = os.RemoveAll(dbName)
+}
+
+func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
+	db := setupDatabase()
+
+	const (
+		TokenBalanceTableID = bond.TableID(1)
+	)
+
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	const (
+		_                                 = bond.PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
+
+	var (
+		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
+			},
+			IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+		})
+	)
+
+	var TokenBalanceIndexes = []*bond.Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAndContractAddressIndex,
+	}
+
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	if err != nil {
+		panic(err)
+	}
+
+	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
+}
+
+func TestBond_Open(t *testing.T) {
+	db, err := bond.Open(dbName, &bond.Options{})
+	defer func() { _ = os.RemoveAll(dbName) }()
+
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	err = db.Close()
+	require.NoError(t, err)
+}
 
 func TestInspect_Tables(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
-	insp, err := NewInspect([]TableInfo{table})
+	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
 
 	expectedTables := []string{
@@ -28,7 +124,7 @@ func TestInspect_Indexes(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
-	insp, err := NewInspect([]TableInfo{table})
+	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
 
 	expectedIndexes := []string{
@@ -46,7 +142,7 @@ func TestInspect_EntryFields(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
-	insp, err := NewInspect([]TableInfo{table})
+	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
 
 	expectedFields := map[string]string{
@@ -109,14 +205,14 @@ func TestInspect_Query(t *testing.T) {
 			},
 		}
 
-		insp, err := NewInspect([]TableInfo{table})
+		insp, err := NewInspect([]bond.TableInfo{table})
 		require.NoError(t, err)
 
 		tables, err := insp.Tables()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 0, nil)
+		resp, err := insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, nil, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -133,14 +229,14 @@ func TestInspect_Query(t *testing.T) {
 			},
 		}
 
-		insp, err := NewInspect([]TableInfo{table})
+		insp, err := NewInspect([]bond.TableInfo{table})
 		require.NoError(t, err)
 
 		tables, err := insp.Tables()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		resp, err := insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, nil, 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -157,7 +253,7 @@ func TestInspect_Query(t *testing.T) {
 			},
 		}
 
-		insp, err := NewInspect([]TableInfo{table})
+		insp, err := NewInspect([]bond.TableInfo{table})
 		require.NoError(t, err)
 
 		tables, err := insp.Tables()
@@ -168,7 +264,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint64(1),
 		}
 
-		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err := insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -176,7 +272,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint32(1),
 		}
 
-		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -184,7 +280,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": uint16(1),
 		}
 
-		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -192,7 +288,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": 1,
 		}
 
-		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
@@ -200,7 +296,7 @@ func TestInspect_Query(t *testing.T) {
 			"ID": 1.0,
 		}
 
-		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, filter, 0, nil)
+		resp, err = insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, filter, 0, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 	})
@@ -225,7 +321,7 @@ func TestInspect_Query(t *testing.T) {
 			},
 		}
 
-		insp, err := NewInspect([]TableInfo{table})
+		insp, err := NewInspect([]bond.TableInfo{table})
 		require.NoError(t, err)
 
 		tables, err := insp.Tables()
@@ -297,18 +393,18 @@ func TestInspect_Query(t *testing.T) {
 			},
 		}
 
-		insp, err := NewInspect([]TableInfo{table})
+		insp, err := NewInspect([]bond.TableInfo{table})
 		require.NoError(t, err)
 
 		tables, err := insp.Tables()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(tables))
 
-		resp, err := insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, nil)
+		resp, err := insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, nil, 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance)
 
-		resp, err = insp.Query(context.Background(), tables[0], PrimaryIndexName, nil, nil, 1, resp[0])
+		resp, err = insp.Query(context.Background(), tables[0], bond.PrimaryIndexName, nil, nil, 1, resp[0])
 		require.NoError(t, err)
 		assert.Equal(t, resp, expectedTokenBalance2)
 	})

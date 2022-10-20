@@ -1,4 +1,4 @@
-package bond
+package inspect
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ func TestNewInspectHandler(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
-	insp, err := NewInspect([]TableInfo{table})
+	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

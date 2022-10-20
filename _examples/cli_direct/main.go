@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/inspect"
 )
 
 type ExampleStruct struct {
@@ -16,7 +17,7 @@ type ExampleStruct struct {
 }
 
 func main() {
-	app := bond.NewInspectCLI(func(path string) (bond.Inspect, error) {
+	app := inspect.NewInspectCLI(func(path string) (inspect.Inspect, error) {
 		db, err := bond.Open(path, &bond.Options{})
 		if err != nil {
 			panic(err)
@@ -76,7 +77,7 @@ func main() {
 			panic(err)
 		}
 
-		return bond.NewInspect([]bond.TableInfo{ExampleStructTable})
+		return inspect.NewInspect([]bond.TableInfo{ExampleStructTable})
 	})
 
 	if err := app.Run(os.Args); err != nil {

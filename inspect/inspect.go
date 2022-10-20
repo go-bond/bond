@@ -1,4 +1,4 @@
-package bond
+package inspect
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"reflect"
 
 	"github.com/fatih/structs"
+	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/utils"
 )
 
 type Inspect interface {
@@ -17,10 +19,10 @@ type Inspect interface {
 }
 
 type inspect struct {
-	tableInfos []TableInfo
+	tableInfos []bond.TableInfo
 }
 
-func NewInspect(ti []TableInfo) (Inspect, error) {
+func NewInspect(ti []bond.TableInfo) (Inspect, error) {
 	return &inspect{tableInfos: ti}, nil
 }
 
@@ -52,7 +54,7 @@ func (in *inspect) Indexes(table string) ([]string, error) {
 func (in *inspect) EntryFields(table string) (map[string]string, error) {
 	for _, ti := range in.tableInfos {
 		if table == ti.Name() {
-			emptyEntry := makeValue(ti.EntryType())
+			emptyEntry := utils.MakeValue(ti.EntryType())
 			if emptyEntry.Kind() == reflect.Ptr {
 				emptyEntry = emptyEntry.Elem()
 			}
@@ -82,9 +84,9 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
 
-	if indexInfo.Name() != PrimaryIndexName {
+	if indexInfo.Name() != bond.PrimaryIndexName {
 		indexValue := reflect.ValueOf(indexInfo)
-		indexSelectorValue := makeValue(tableInfo.EntryType())
+		indexSelectorValue := utils.MakeValue(tableInfo.EntryType())
 		err = setFields(indexSelectorValue, indexSelector)
 		if err != nil {
 			return nil, err
@@ -133,7 +135,7 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 	}
 
 	if after != nil {
-		afterValue := makeValue(tableInfo.EntryType())
+		afterValue := utils.MakeValue(tableInfo.EntryType())
 		err = setFields(afterValue, after)
 		if err != nil {
 			return nil, err
@@ -162,13 +164,13 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 	return resultMapArray, nil
 }
 
-func (in *inspect) findTableAndIndexInfo(table string, index string) (TableInfo, IndexInfo, error) {
+func (in *inspect) findTableAndIndexInfo(table string, index string) (bond.TableInfo, bond.IndexInfo, error) {
 	if index == "" {
-		index = PrimaryIndexName
+		index = bond.PrimaryIndexName
 	}
 
-	var tableInfo TableInfo
-	var indexInfo IndexInfo
+	var tableInfo bond.TableInfo
+	var indexInfo bond.IndexInfo
 
 	for _, t := range in.tableInfos {
 		if t.Name() == table {
