@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
@@ -26,8 +28,18 @@ func TableUpsertOnConflictReplace[T any](_, new T) T {
 
 func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
 
+type TableInfo interface {
+	ID() TableID
+	Name() string
+	Indexes() []IndexInfo
+	EntryType() reflect.Type
+}
+
 type TableR[T any] interface {
+	TableInfo
+
 	PrimaryIndex() *Index[T]
+	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
 
 	Get(tr T, optBatch ...*pebble.Batch) (T, error)
@@ -52,8 +64,18 @@ type TableRW[T any] interface {
 	TableW[T]
 }
 
+type TableOptions[T any] struct {
+	DB *DB
+
+	TableID             TableID
+	TableName           string
+	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
+	Serializer          Serializer[*T]
+}
+
 type Table[T any] struct {
-	TableID TableID
+	id   TableID
+	name string
 
 	db *DB
 
@@ -67,27 +89,73 @@ type Table[T any] struct {
 	mutex sync.RWMutex
 }
 
-func NewTable[T any](db *DB, id TableID, trkFn TablePrimaryKeyFunc[T], trkSer ...Serializer[*T]) *Table[T] {
-	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: db.Serializer()}
-	if len(trkSer) > 0 {
-		serializer = trkSer[0]
+func NewTable[T any](opt TableOptions[T]) *Table[T] {
+	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
+	if opt.Serializer != nil {
+		serializer = opt.Serializer
 	}
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
 	return &Table[T]{
-		TableID:          id,
-		db:               db,
-		primaryKeyFunc:   trkFn,
-		primaryIndex:     NewIndex(PrimaryIndexID, primaryIndexKey[T], IndexOrderDefault[T]),
+		db:             opt.DB,
+		id:             opt.TableID,
+		name:           opt.TableName,
+		primaryKeyFunc: opt.TablePrimaryKeyFunc,
+		primaryIndex: NewIndex(IndexOptions[T]{
+			IndexID:        PrimaryIndexID,
+			IndexName:      PrimaryIndexName,
+			IndexKeyFunc:   primaryIndexKey[T],
+			IndexOrderFunc: IndexOrderDefault[T],
+		}),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		serializer:       serializer,
 		mutex:            sync.RWMutex{},
 	}
 }
 
+func (t *Table[T]) ID() TableID {
+	return t.id
+}
+
+func (t *Table[T]) Name() string {
+	return t.name
+}
+
+func (t *Table[T]) Indexes() []IndexInfo {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
+	indexInfos := []IndexInfo{t.primaryIndex}
+	for _, idx := range t.secondaryIndexes {
+		indexInfos = append(indexInfos, idx)
+	}
+
+	sort.Slice(indexInfos, func(i, j int) bool {
+		return indexInfos[i].ID() < indexInfos[j].ID()
+	})
+
+	return indexInfos
+}
+
+func (t *Table[T]) EntryType() reflect.Type {
+	return reflect.TypeOf(utils.MakeNew[T]())
+}
+
 func (t *Table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
+}
+
+func (t *Table[T]) SecondaryIndexes() []*Index[T] {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
+	var indexes []*Index[T]
+	for _, idx := range t.secondaryIndexes {
+		indexes = append(indexes, idx)
+	}
+
+	return indexes
 }
 
 func (t *Table[T]) Serializer() Serializer[*T] {
@@ -112,8 +180,8 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	for _, idx := range idxs {
 		idxsMap[idx.IndexID] = idx
 		err := t.db.DeleteRange(
-			[]byte{byte(t.TableID), byte(idx.IndexID)},
-			[]byte{byte(t.TableID), byte(idx.IndexID + 1)}, pebble.Sync)
+			[]byte{byte(t.id), byte(idx.IndexID)},
+			[]byte{byte(t.id), byte(idx.IndexID + 1)}, pebble.Sync)
 		if err != nil {
 			return fmt.Errorf("failed to delete index: %w", err)
 		}
@@ -553,7 +621,7 @@ func (t *Table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batc
 		options = &pebble.IterOptions{}
 	}
 
-	selector := _KeyEncode(_Key{TableID: t.TableID}, nil)
+	selector := _KeyEncode(_Key{TableID: t.id}, nil)
 	options.LowerBound = selector
 
 	if len(optBatch) > 0 && optBatch[0] != nil {
@@ -672,7 +740,7 @@ func (t *Table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
 	return _KeyEncode(_Key{
-		TableID:    t.TableID,
+		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
 		IndexOrder: []byte{},
@@ -684,7 +752,7 @@ func (t *Table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
 	return _KeyEncode(_Key{
-		TableID:    t.TableID,
+		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKey,
 		IndexOrder: []byte{},
@@ -700,7 +768,7 @@ func (t *Table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	).Bytes()
 
 	return _KeyEncode(_Key{
-		TableID:    t.TableID,
+		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKeyPart,
 		IndexOrder: orderKeyPart,

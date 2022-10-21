@@ -40,8 +40,13 @@ func BenchmarkTableDeleteSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 			TokenBalanceTableID = bond.TableID(1)
 		)
 
-		tokenBalanceTable := bond.NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddUint64Field(tb.ID).Bytes()
+		tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
+			DB:        db,
+			TableName: "token_balance",
+			TableID:   TokenBalanceTableID,
+			TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddUint64Field(tb.ID).Bytes()
+			},
 		})
 
 		const (
@@ -50,13 +55,14 @@ func BenchmarkTableDeleteSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 		)
 
 		var (
-			TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](
-				TokenBalanceAccountAddressIndexID,
-				func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+				IndexID:   TokenBalanceAccountAddressIndexID,
+				IndexName: "account_address_idx",
+				IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 					return builder.AddStringField(tb.AccountAddress).Bytes()
 				},
-				bond.IndexOrderDefault[*TokenBalance],
-			)
+				IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+			})
 		)
 
 		err := tokenBalanceTable.AddIndex([]*bond.Index[*TokenBalance]{

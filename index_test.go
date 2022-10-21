@@ -484,28 +484,30 @@ func TestBond_NewIndex(t *testing.T) {
 		TokenBalanceAccountIDIndexID = IndexID(1)
 	)
 
-	TokenBalanceAccountIDIndex := NewIndex[*TokenBalance](
-		TokenBalanceAccountIDIndexID,
-		func(builder KeyBuilder, tb *TokenBalance) []byte {
+	TokenBalanceAccountIDIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   TokenBalanceAccountIDIndexID,
+		IndexName: "account_id_idx",
+		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
-		IndexOrderDefault[*TokenBalance],
-	)
+		IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+	})
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIDIndex.IndexID)
 	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 1}))
 	assert.Equal(t, true, TokenBalanceAccountIDIndex.IndexFilterFunction(&TokenBalance{AccountID: 2}))
 
-	TokenBalanceAccountIndexSelective := NewIndex[*TokenBalance](
-		TokenBalanceAccountIDIndexID,
-		func(builder KeyBuilder, tb *TokenBalance) []byte {
+	TokenBalanceAccountIndexSelective := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   TokenBalanceAccountIDIndexID,
+		IndexName: "account_id_1_idx",
+		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
-		IndexOrderDefault[*TokenBalance],
-		func(tb *TokenBalance) bool {
+		IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		IndexFilterFunc: func(tb *TokenBalance) bool {
 			return tb.AccountID == 1
 		},
-	)
+	})
 
 	assert.Equal(t, TokenBalanceAccountIDIndexID, TokenBalanceAccountIndexSelective.IndexID)
 	assert.Equal(t, true, TokenBalanceAccountIndexSelective.IndexFilterFunction(&TokenBalance{AccountID: 1}))
@@ -514,13 +516,14 @@ func TestBond_NewIndex(t *testing.T) {
 
 func TestIndex_IndexKeyFunction(t *testing.T) {
 	NameIndexID := IndexID(1)
-	NameIndex := NewIndex[*TestStructure](
-		NameIndexID,
-		func(builder KeyBuilder, ts *TestStructure) []byte {
+	NameIndex := NewIndex[*TestStructure](IndexOptions[*TestStructure]{
+		IndexID:   NameIndexID,
+		IndexName: "name_idx",
+		IndexKeyFunc: func(builder KeyBuilder, ts *TestStructure) []byte {
 			return builder.AddStringField(ts.Name).Bytes()
 		},
-		IndexOrderDefault[*TestStructure],
-	)
+		IndexOrderFunc: IndexOrderDefault[*TestStructure],
+	})
 
 	testStructure := &TestStructure{1, "test", "test desc"}
 
@@ -534,15 +537,16 @@ func TestBond_NewIndex_Ordered(t *testing.T) {
 		AccountIDOrderDESCBalanceIndexID = IndexID(1)
 	)
 
-	AccountIDIndexOrderDESCBalance := NewIndex[*TokenBalance](
-		AccountIDOrderDESCBalanceIndexID,
-		func(builder KeyBuilder, tb *TokenBalance) []byte {
+	AccountIDIndexOrderDESCBalance := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   AccountIDOrderDESCBalanceIndexID,
+		IndexName: "id_ord_by_bal_desc_idx",
+		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint32Field(tb.AccountID).Bytes()
 		},
-		func(o IndexOrder, tb *TokenBalance) IndexOrder {
+		IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
 			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 		},
-	)
+	})
 
 	testStructure := &TokenBalance{
 		ID:              1,
@@ -569,8 +573,13 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -580,26 +589,28 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-			func(tb *TokenBalance) bool {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
@@ -677,8 +688,13 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -688,30 +704,32 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
 				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 			},
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
 				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 			},
-			func(tb *TokenBalance) bool {
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
@@ -789,8 +807,13 @@ func TestBond_Table_Index_Update(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -800,26 +823,28 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-			func(tb *TokenBalance) bool {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
@@ -911,8 +936,13 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -922,30 +952,32 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
 				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 			},
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			func(o IndexOrder, tb *TokenBalance) IndexOrder {
+			IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
 				return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 			},
-			func(tb *TokenBalance) bool {
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
@@ -1037,8 +1069,13 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -1048,26 +1085,28 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-			func(tb *TokenBalance) bool {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
@@ -1140,8 +1179,13 @@ func TestBond_Table_Reindex(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](db, TokenBalanceTableID, func(builder KeyBuilder, tb *TokenBalance) []byte {
-		return builder.AddUint64Field(tb.ID).Bytes()
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	const (
@@ -1151,26 +1195,28 @@ func TestBond_Table_Reindex(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-		)
-		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](
-			TokenBalanceAccountAndContractAddressIndexID,
-			func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
 					Bytes()
 			},
-			IndexOrderDefault[*TokenBalance],
-			func(tb *TokenBalance) bool {
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
 				return tb.ContractAddress == "0xtestContract"
 			},
-		)
+		})
 	)
 
 	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAddressIndex}, false)

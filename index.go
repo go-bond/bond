@@ -109,27 +109,56 @@ func IndexOrderDefault[T any](o IndexOrder, t T) IndexOrder {
 }
 
 const PrimaryIndexID = IndexID(0)
+const PrimaryIndexName = "primary"
+
+type IndexInfo interface {
+	ID() IndexID
+	Name() string
+}
+
+type IndexOptions[T any] struct {
+	IndexID         IndexID
+	IndexName       string
+	IndexKeyFunc    IndexKeyFunction[T]
+	IndexOrderFunc  IndexOrderFunction[T]
+	IndexFilterFunc IndexFilterFunction[T]
+}
 
 type Index[T any] struct {
-	IndexID             IndexID
+	IndexID   IndexID
+	IndexName string
+
 	IndexKeyFunction    IndexKeyFunction[T]
 	IndexFilterFunction IndexFilterFunction[T]
 	IndexOrderFunction  IndexOrderFunction[T]
 }
 
-func NewIndex[T any](idxID IndexID, idxFn IndexKeyFunction[T], idxOrderFn IndexOrderFunction[T], idxFFn ...IndexFilterFunction[T]) *Index[T] {
+func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
 	idx := &Index[T]{
-		IndexID:            idxID,
-		IndexKeyFunction:   idxFn,
-		IndexOrderFunction: idxOrderFn,
-		IndexFilterFunction: func(t T) bool {
-			return true
-		},
+		IndexID:             opt.IndexID,
+		IndexName:           opt.IndexName,
+		IndexKeyFunction:    opt.IndexKeyFunc,
+		IndexOrderFunction:  opt.IndexOrderFunc,
+		IndexFilterFunction: opt.IndexFilterFunc,
 	}
 
-	if len(idxFFn) > 0 {
-		idx.IndexFilterFunction = idxFFn[0]
+	if idx.IndexOrderFunction == nil {
+		idx.IndexOrderFunction = IndexOrderDefault[T]
+	}
+
+	if idx.IndexFilterFunction == nil {
+		idx.IndexFilterFunction = func(t T) bool {
+			return true
+		}
 	}
 
 	return idx
+}
+
+func (i *Index[T]) ID() IndexID {
+	return i.IndexID
+}
+
+func (i *Index[T]) Name() string {
+	return i.IndexName
 }
