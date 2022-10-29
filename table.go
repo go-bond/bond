@@ -252,17 +252,17 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var writeBatch *pebble.Batch
+	var keyBatch *pebble.Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	indexKeyBatch := t.db.NewBatch()
 	if externalBatch {
-		writeBatch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		writeBatch = t.db.NewIndexedBatch()
+		keyBatch = t.db.NewIndexedBatch()
 	}
 
 	closeBatch := func() {
-		_ = writeBatch.Close()
+		_ = keyBatch.Close()
 		_ = indexKeyBatch.Close()
 	}
 
@@ -283,7 +283,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if t.exist(key, writeBatch) {
+		if t.exist(key, keyBatch) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -293,7 +293,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 			return err
 		}
 
-		err = writeBatch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, pebble.Sync)
 		if err != nil {
 			closeBatch()
 			return err
@@ -312,14 +312,14 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		}
 	}
 
-	err := writeBatch.Apply(indexKeyBatch, pebble.Sync)
+	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
 	if err != nil {
 		closeBatch()
 		return err
 	}
 
 	if !externalBatch {
-		err := writeBatch.Commit(pebble.Sync)
+		err := keyBatch.Commit(pebble.Sync)
 		if err != nil {
 			closeBatch()
 			return err
