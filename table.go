@@ -317,6 +317,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		closeBatch()
 		return err
 	}
+	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
 		err := keyBatch.Commit(pebble.Sync)
