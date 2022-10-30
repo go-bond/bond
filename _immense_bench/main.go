@@ -56,7 +56,6 @@ var insertedEntries uint64
 // Number of entires = batchSize * totalBatch
 func insertRecords(db *bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	idGenerator := NewUniqueRand()
-
 	TokenBalanceTableID := bond.TableID(idGenerator.Int())
 
 	table := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
@@ -156,7 +155,6 @@ func DirSize(path string) (uint64, error) {
 }
 
 func main() {
-
 	app := &cli.App{
 		Flags: []cli.Flag{
 			&cli.IntFlag{
@@ -176,7 +174,7 @@ func main() {
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
-			action(cCtx.Int("total_table"),
+			runBondInsert(cCtx.Int("total_table"),
 				cCtx.Int("total_batch"),
 				cCtx.Int("batch_size"))
 			return nil
@@ -189,7 +187,7 @@ func main() {
 
 }
 
-func action(totalTable, totalBatch, batchSize int) {
+func runBondInsert(totalTable, totalBatch, batchSize int) {
 	db, err := bond.Open("example", &bond.Options{})
 	if err != nil {
 		panic(err)
