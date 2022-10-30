@@ -156,30 +156,29 @@ func DirSize(path string) (uint64, error) {
 }
 
 func main() {
-	//
-	// 800000000000
+
 	app := &cli.App{
 		Flags: []cli.Flag{
 			&cli.IntFlag{
-				Name:  "batchsize",
+				Name:  "batch_size",
 				Value: 100,
 				Usage: "size of the batch",
 			},
 			&cli.IntFlag{
-				Name:  "totalbatch",
-				Value: 2000,
+				Name:  "total_batch",
+				Value: 8000,
 				Usage: "number of batch",
 			},
 			&cli.IntFlag{
-				Name:  "totaltable",
+				Name:  "total_table",
 				Value: 8,
 				Usage: "number of table",
 			},
 		},
 		Action: func(cCtx *cli.Context) error {
-			action(cCtx.Int("totaltable"),
-				cCtx.Int("totalbatch"),
-				cCtx.Int("batchsize"))
+			action(cCtx.Int("total_table"),
+				cCtx.Int("total_batch"),
+				cCtx.Int("batch_size"))
 			return nil
 		},
 	}
