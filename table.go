@@ -361,6 +361,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
+			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -460,6 +461,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
+			_ = batch.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
