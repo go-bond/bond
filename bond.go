@@ -8,12 +8,6 @@ import (
 	"github.com/go-bond/bond/serializers"
 )
 
-type Options struct {
-	pebble.Options
-
-	Serializer Serializer[any]
-}
-
 type DB struct {
 	*pebble.DB
 
@@ -21,12 +15,15 @@ type DB struct {
 }
 
 func Open(dirname string, opts *Options) (*DB, error) {
-	if opts.Comparer == nil {
-		opts.Comparer = pebble.DefaultComparer
-		opts.Comparer.Split = _KeyPrefixSplitIndex
+	if opts == nil {
+		opts = DefaultOptions()
 	}
 
-	pdb, err := pebble.Open(dirname, &opts.Options)
+	if opts.PebbleOptions == nil {
+		opts.PebbleOptions = DefaultPebbleOptions()
+	}
+
+	pdb, err := pebble.Open(dirname, opts.PebbleOptions)
 	if err != nil {
 		return nil, err
 	}

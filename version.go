@@ -13,9 +13,6 @@ const (
 
 	// BOND_DB_DATA_TABLE_ID ..
 	BOND_DB_DATA_TABLE_ID = 0x0
-
-	// BOND_DB_DATA_VERSION_KEY ..
-	BOND_DB_DATA_VERSION_KEY = "__bond_db_data_version__"
 )
 
 func (db *DB) Version() int {
@@ -36,5 +33,11 @@ func (db *DB) initVersion() error {
 }
 
 func bondDataVersionKey() []byte {
-	return append([]byte{BOND_DB_DATA_TABLE_ID}, []byte(BOND_DB_DATA_VERSION_KEY)...)
+	return _KeyEncode(_Key{
+		BOND_DB_DATA_TABLE_ID,
+		0,
+		[]byte{},
+		[]byte{},
+		[]byte("__bond_db_data_version__"),
+	})
 }
