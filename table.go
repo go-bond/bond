@@ -101,7 +101,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
-	table := &_table[T]{
+	return &_table[T]{
 		db:             opt.DB,
 		id:             opt.TableID,
 		name:           opt.TableName,
