@@ -10,6 +10,7 @@ import (
 )
 
 const DefaultMaxConcurrentCompactions = 4
+const DefaultMaxWriterConcurrency = 8
 
 type Options struct {
 	PebbleOptions *pebble.Options
@@ -44,7 +45,9 @@ func DefaultPebbleOptions() *pebble.Options {
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
+
 	opts.Experimental.MinDeletionRate = 128 << 20 // 128 MB
+	opts.Experimental.MaxWriterConcurrency = DefaultMaxWriterConcurrency
 
 	for i := 0; i < len(opts.Levels); i++ {
 		l := &opts.Levels[i]
