@@ -8,7 +8,12 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-type TableUnsafeUpdate[T any] interface {
+// TableUnsafeUpdater provides access to UnsafeUpdate method that allows
+// to reduce number of database calls if you already have original version
+// of the entry.
+//
+// Warning: If you provide outdated rows the table indexes may be corrupted.
+type TableUnsafeUpdater[T any] interface {
 	UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error
 }
 

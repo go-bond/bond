@@ -57,10 +57,10 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 
 	_ = it.Close()
 
-	unsafeUpdateTable, ok := tokenBalanceTable.(TableUnsafeUpdate[*TokenBalance])
+	tableUnsafeUpdater, ok := tokenBalanceTable.(TableUnsafeUpdater[*TokenBalance])
 	require.True(t, ok)
 
-	err = unsafeUpdateTable.UnsafeUpdate(
+	err = tableUnsafeUpdater.UnsafeUpdate(
 		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdated},
 		[]*TokenBalance{tokenBalanceAccount},
