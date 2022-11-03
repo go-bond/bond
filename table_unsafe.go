@@ -12,7 +12,7 @@ type TableUnsafeUpdate[T any] interface {
 	UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error
 }
 
-func (t *Table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error {
 	if len(trs) != len(oldTrs) {
 		return fmt.Errorf("params need to be of equal size")
 	}

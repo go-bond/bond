@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupDatabaseForQuery() (*DB, TableRW[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance]) {
+func setupDatabaseForQuery() (*DB, Table[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance]) {
 	db := setupDatabase()
 
 	const (

@@ -122,7 +122,7 @@ func BenchmarkTableUpsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 	return results
 }
 
-func UpsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
+func UpsertInBatchSize(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -134,7 +134,7 @@ func UpsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, inse
 	}
 }
 
-func UpsertInBatchSizeWithBatch(db *bond.DB, tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
+func UpsertInBatchSizeWithBatch(db *bond.DB, tbt bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 

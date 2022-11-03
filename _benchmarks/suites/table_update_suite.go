@@ -116,7 +116,7 @@ func BenchmarkTableUpdateSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 	return results
 }
 
-func UpdateInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, updateBatchSize int) func(*testing.B) {
+func UpdateInBatchSize(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, updateBatchSize int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

@@ -33,7 +33,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 //		}).
 //		Limit(50)
 type Query[R any] struct {
-	table         *Table[R]
+	table         *_table[R]
 	index         *Index[R]
 	indexSelector R
 
@@ -44,7 +44,7 @@ type Query[R any] struct {
 	isAfter       bool
 }
 
-func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
+func newQuery[R any](t *_table[R], i *Index[R]) Query[R] {
 	return Query[R]{
 		table:         t,
 		index:         i,
@@ -58,7 +58,7 @@ func newQuery[R any](t *Table[R], i *Index[R]) Query[R] {
 }
 
 // Table returns table that is used by this query.
-func (q Query[R]) Table() *Table[R] {
+func (q Query[R]) Table() Table[R] {
 	return q.table
 }
 

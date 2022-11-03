@@ -47,13 +47,13 @@ func TestBondTable_Interfaces(t *testing.T) {
 	})
 	require.NotNil(t, tokenBalanceTable)
 
-	tableReadInterface := TableR[*TokenBalance](tokenBalanceTable)
+	tableReadInterface := TableReader[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableReadInterface)
 
-	tableWriteInterface := TableW[*TokenBalance](tokenBalanceTable)
+	tableWriteInterface := TableWriter[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableWriteInterface)
 
-	tableReadWriteInterface := TableRW[*TokenBalance](tokenBalanceTable)
+	tableReadWriteInterface := Table[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableReadWriteInterface)
 }
 

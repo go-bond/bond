@@ -217,7 +217,7 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 	return results
 }
 
-func QueryWithOpts(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, offset int, limit int) func(b *testing.B) {
+func QueryWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, offset int, limit int) func(b *testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
