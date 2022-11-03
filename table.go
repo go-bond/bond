@@ -50,9 +50,13 @@ type TableR[T any] interface {
 	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
 	ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+
+	NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator
 }
 
 type TableW[T any] interface {
+	AddIndex(idxs []*Index[T], reIndex ...bool) error
+
 	Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 	Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
@@ -89,7 +93,7 @@ type Table[T any] struct {
 	mutex sync.RWMutex
 }
 
-func NewTable[T any](opt TableOptions[T]) *Table[T] {
+func NewTable[T any](opt TableOptions[T]) TableRW[T] {
 	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = opt.Serializer
@@ -477,7 +481,7 @@ func (t *Table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new
 		keyBuffer      [DataKeyBufferSize]byte
 		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
 
-		indexKeys = make([][]byte, 0, len(t.secondaryIndexes))
+		indexKeys = make([][]byte, 0, len(indexes))
 	)
 
 	for _, tr := range trs {

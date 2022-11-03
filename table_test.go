@@ -26,7 +26,7 @@ func TestBond_NewTable(t *testing.T) {
 		},
 	})
 	require.NotNil(t, tokenBalanceTable)
-	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.id)
+	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.ID())
 }
 
 func TestBondTable_Interfaces(t *testing.T) {
