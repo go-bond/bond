@@ -33,7 +33,7 @@ func DefaultOptions() *Options {
 func DefaultPebbleOptions() *pebble.Options {
 	opts := &pebble.Options{
 		FS:                          vfs.Default,
-		Comparer:                    DefaultPebbleComparer(),
+		Comparer:                    DefaultKeyComparer(),
 		L0CompactionThreshold:       2,
 		L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB
@@ -62,10 +62,4 @@ func DefaultPebbleOptions() *pebble.Options {
 	}
 
 	return opts
-}
-
-func DefaultPebbleComparer() *pebble.Comparer {
-	comparer := *pebble.DefaultComparer
-	comparer.Split = _KeyPrefixSplitIndex
-	return &comparer
 }

@@ -165,7 +165,7 @@ func TestKeyBuilder_AddBigIntField(t *testing.T) {
 }
 
 func TestKey_Encode_Decode(t *testing.T) {
-	key := _Key{
+	key := Key{
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
@@ -173,14 +173,14 @@ func TestKey_Encode_Decode(t *testing.T) {
 		PrimaryKey: []byte("recordKey"),
 	}
 
-	keyRaw := _KeyEncode(key)
-	keyReconstructed := _KeyDecode(keyRaw)
+	keyRaw := KeyEncode(key)
+	keyReconstructed := KeyDecode(keyRaw)
 
 	assert.Equal(t, key, keyReconstructed)
 }
 
 func TestKey_ToKeyPrefix(t *testing.T) {
-	key := _Key{
+	key := Key{
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
@@ -188,7 +188,7 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 		PrimaryKey: []byte("recordKey"),
 	}
 
-	expectedPrefixKey := _Key{
+	expectedPrefixKey := Key{
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
@@ -204,11 +204,11 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 	assert.Equal(t, false, keyPrefix.IsDataKey())
 	assert.Equal(t, true, keyPrefix.IsIndexKey())
 	assert.Equal(t, true, keyPrefix.IsKeyPrefix())
-	assert.Equal(t, expectedKeyPrefix, _KeyEncode(keyPrefix))
+	assert.Equal(t, expectedKeyPrefix, KeyEncode(keyPrefix))
 }
 
 func TestKey_ToDataKey(t *testing.T) {
-	key := _Key{
+	key := Key{
 		TableID:    1,
 		IndexID:    1,
 		IndexKey:   []byte("indexKey"),
@@ -216,7 +216,7 @@ func TestKey_ToDataKey(t *testing.T) {
 		PrimaryKey: []byte("recordKey"),
 	}
 
-	expectedTableKey := _Key{
+	expectedTableKey := Key{
 		TableID:    1,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
@@ -232,7 +232,7 @@ func TestKey_ToDataKey(t *testing.T) {
 	assert.Equal(t, true, tableKey.IsDataKey())
 	assert.Equal(t, false, tableKey.IsIndexKey())
 	assert.Equal(t, false, tableKey.IsKeyPrefix())
-	assert.Equal(t, expectedTableKeyRaw, _KeyEncode(tableKey))
+	assert.Equal(t, expectedTableKeyRaw, KeyEncode(tableKey))
 }
 
 func Benchmark_KeyBuilder(b *testing.B) {

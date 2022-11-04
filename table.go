@@ -48,8 +48,8 @@ type TableReader[T any] interface {
 
 	Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error
 	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
-	ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
 
 	NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator
 }
@@ -670,7 +670,7 @@ func (t *_table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Bat
 		options = &pebble.IterOptions{}
 	}
 
-	selector := _KeyEncode(_Key{TableID: t.id}, nil)
+	selector := KeyEncode(Key{TableID: t.id}, nil)
 	options.LowerBound = selector
 
 	if len(optBatch) > 0 && optBatch[0] != nil {
@@ -690,7 +690,7 @@ func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch
 }
 
 func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
-	return t.ScanIndexForEach(ctx, i, s, func(lazy Lazy[T]) (bool, error) {
+	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
 			return true, nil
@@ -700,11 +700,11 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 	}, optBatch...)
 }
 
-func (t *_table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
@@ -735,10 +735,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		}
 	} else {
 		getValue = func() (T, error) {
-			tableKey := _KeyBytesToDataKeyBytes(
-				iter.Key(),
-				keyBuffer[:0],
-			)
+			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
 
 			valueData, closer, err := t.db.getKV(tableKey, batch)
 			if err != nil {
@@ -763,7 +760,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		default:
 		}
 
-		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
+		if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
 			break
 		} else {
 			if err != nil {
@@ -788,7 +785,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
@@ -800,7 +797,7 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKey,
@@ -816,7 +813,7 @@ func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
 	).Bytes()
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKeyPart,

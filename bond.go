@@ -23,7 +23,7 @@ func Open(dirname string, opts *Options) (*DB, error) {
 		opts.PebbleOptions = DefaultPebbleOptions()
 	}
 
-	opts.PebbleOptions.Comparer = DefaultPebbleComparer()
+	opts.PebbleOptions.Comparer = DefaultKeyComparer()
 
 	pdb, err := pebble.Open(dirname, opts.PebbleOptions)
 	if err != nil {

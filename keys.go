@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math/big"
+
+	"github.com/cockroachdb/pebble"
 )
 
 type KeyBuilder struct {
@@ -142,7 +144,7 @@ func (b KeyBuilder) Bytes() []byte {
 	return b.buff
 }
 
-type _Key struct {
+type Key struct {
 	TableID    TableID
 	IndexID    IndexID
 	IndexKey   []byte
@@ -150,8 +152,8 @@ type _Key struct {
 	PrimaryKey []byte
 }
 
-func (k _Key) ToDataKey() _Key {
-	return _Key{
+func (k Key) ToDataKey() Key {
+	return Key{
 		TableID:    k.TableID,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
@@ -160,8 +162,8 @@ func (k _Key) ToDataKey() _Key {
 	}
 }
 
-func (k _Key) ToKeyPrefix() _Key {
-	return _Key{
+func (k Key) ToKeyPrefix() Key {
+	return Key{
 		TableID:    k.TableID,
 		IndexID:    k.IndexID,
 		IndexKey:   k.IndexKey,
@@ -170,19 +172,19 @@ func (k _Key) ToKeyPrefix() _Key {
 	}
 }
 
-func (k _Key) IsDataKey() bool {
+func (k Key) IsDataKey() bool {
 	return k.IndexID == PrimaryIndexID && len(k.IndexKey) == 0
 }
 
-func (k _Key) IsIndexKey() bool {
+func (k Key) IsIndexKey() bool {
 	return k.IndexID != PrimaryIndexID && len(k.IndexKey) != 0
 }
 
-func (k _Key) IsKeyPrefix() bool {
+func (k Key) IsKeyPrefix() bool {
 	return len(k.PrimaryKey) == 0
 }
 
-func _KeyEncode(key _Key, rawBuffs ...[]byte) []byte {
+func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	var rawBuff []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
 		rawBuff = rawBuffs[0]
@@ -208,7 +210,7 @@ func _KeyEncode(key _Key, rawBuffs ...[]byte) []byte {
 	return buff.Bytes()
 }
 
-func _KeyDecode(keyBytes []byte) _Key {
+func KeyDecode(keyBytes []byte) Key {
 	buff := bytes.NewBuffer(keyBytes)
 
 	tableID, _ := buff.ReadByte()
@@ -232,7 +234,7 @@ func _KeyDecode(keyBytes []byte) _Key {
 	primaryKey := make([]byte, primaryKeyLen)
 	_, _ = buff.Read(primaryKey)
 
-	return _Key{
+	return Key{
 		TableID:    TableID(tableID),
 		IndexID:    IndexID(indexID),
 		IndexKey:   indexKey,
@@ -241,7 +243,9 @@ func _KeyDecode(keyBytes []byte) _Key {
 	}
 }
 
-func _KeyBytesToDataKeyBytes(key []byte, rawBuffs ...[]byte) []byte {
+type KeyBytes []byte
+
+func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	var rawBuff []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
 		rawBuff = rawBuffs[0]
@@ -261,6 +265,16 @@ func _KeyBytesToDataKeyBytes(key []byte, rawBuffs ...[]byte) []byte {
 	buff.Write(key[10+indexKeyLen+indexOrderLen:])
 
 	return buff.Bytes()
+}
+
+func (key KeyBytes) ToKey() Key {
+	return KeyDecode(key)
+}
+
+func DefaultKeyComparer() *pebble.Comparer {
+	comparer := *pebble.DefaultComparer
+	comparer.Split = _KeyPrefixSplitIndex
+	return &comparer
 }
 
 func _KeyPrefixSplitIndex(rawKey []byte) int {

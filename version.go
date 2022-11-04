@@ -33,7 +33,7 @@ func (db *DB) initVersion() error {
 }
 
 func bondDataVersionKey() []byte {
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		BOND_DB_DATA_TABLE_ID,
 		0,
 		[]byte{},
