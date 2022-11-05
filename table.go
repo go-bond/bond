@@ -35,7 +35,7 @@ type TableInfo interface {
 	EntryType() reflect.Type
 }
 
-type TableR[T any] interface {
+type TableReader[T any] interface {
 	TableInfo
 
 	PrimaryIndex() *Index[T]
@@ -50,18 +50,22 @@ type TableR[T any] interface {
 	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
 	ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+
+	NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator
 }
 
-type TableW[T any] interface {
+type TableWriter[T any] interface {
+	AddIndex(idxs []*Index[T], reIndex ...bool) error
+
 	Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 	Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
 	Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
 }
 
-type TableRW[T any] interface {
-	TableR[T]
-	TableW[T]
+type Table[T any] interface {
+	TableReader[T]
+	TableWriter[T]
 }
 
 type TableOptions[T any] struct {
@@ -73,7 +77,7 @@ type TableOptions[T any] struct {
 	Serializer          Serializer[*T]
 }
 
-type Table[T any] struct {
+type _table[T any] struct {
 	id   TableID
 	name string
 
@@ -89,7 +93,7 @@ type Table[T any] struct {
 	mutex sync.RWMutex
 }
 
-func NewTable[T any](opt TableOptions[T]) *Table[T] {
+func NewTable[T any](opt TableOptions[T]) Table[T] {
 	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = opt.Serializer
@@ -97,7 +101,7 @@ func NewTable[T any](opt TableOptions[T]) *Table[T] {
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
-	return &Table[T]{
+	return &_table[T]{
 		db:             opt.DB,
 		id:             opt.TableID,
 		name:           opt.TableName,
@@ -114,15 +118,15 @@ func NewTable[T any](opt TableOptions[T]) *Table[T] {
 	}
 }
 
-func (t *Table[T]) ID() TableID {
+func (t *_table[T]) ID() TableID {
 	return t.id
 }
 
-func (t *Table[T]) Name() string {
+func (t *_table[T]) Name() string {
 	return t.name
 }
 
-func (t *Table[T]) Indexes() []IndexInfo {
+func (t *_table[T]) Indexes() []IndexInfo {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
 
@@ -138,15 +142,15 @@ func (t *Table[T]) Indexes() []IndexInfo {
 	return indexInfos
 }
 
-func (t *Table[T]) EntryType() reflect.Type {
+func (t *_table[T]) EntryType() reflect.Type {
 	return reflect.TypeOf(utils.MakeNew[T]())
 }
 
-func (t *Table[T]) PrimaryIndex() *Index[T] {
+func (t *_table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
 }
 
-func (t *Table[T]) SecondaryIndexes() []*Index[T] {
+func (t *_table[T]) SecondaryIndexes() []*Index[T] {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
 
@@ -158,11 +162,11 @@ func (t *Table[T]) SecondaryIndexes() []*Index[T] {
 	return indexes
 }
 
-func (t *Table[T]) Serializer() Serializer[*T] {
+func (t *_table[T]) Serializer() Serializer[*T] {
 	return t.serializer
 }
 
-func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
+func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	t.mutex.Lock()
 	for _, idx := range idxs {
 		t.secondaryIndexes[idx.IndexID] = idx
@@ -175,7 +179,7 @@ func (t *Table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	return nil
 }
 
-func (t *Table[T]) reindex(idxs []*Index[T]) error {
+func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	idxsMap := make(map[IndexID]*Index[T])
 	for _, idx := range idxs {
 		idxsMap[idx.IndexID] = idx
@@ -242,7 +246,7 @@ func (t *Table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *Table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -313,7 +317,7 @@ func (t *Table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batc
 	return nil
 }
 
-func (t *Table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -403,7 +407,7 @@ func (t *Table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Batc
 	return nil
 }
 
-func (t *Table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -459,7 +463,7 @@ func (t *Table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batc
 	return nil
 }
 
-func (t *Table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -477,7 +481,7 @@ func (t *Table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new
 		keyBuffer      [DataKeyBufferSize]byte
 		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
 
-		indexKeys = make([][]byte, 0, len(t.secondaryIndexes))
+		indexKeys = make([][]byte, 0, len(indexes))
 	)
 
 	for _, tr := range trs {
@@ -563,7 +567,7 @@ func (t *Table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new
 	return nil
 }
 
-func (t *Table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
+func (t *_table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
 	var batch *pebble.Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
@@ -576,7 +580,7 @@ func (t *Table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
 	return t.exist(key, batch)
 }
 
-func (t *Table[T]) exist(key []byte, batch *pebble.Batch) bool {
+func (t *_table[T]) exist(key []byte, batch *pebble.Batch) bool {
 	_, closer, err := t.db.getKV(key, batch)
 	if err != nil {
 		return false
@@ -586,7 +590,7 @@ func (t *Table[T]) exist(key []byte, batch *pebble.Batch) bool {
 	return true
 }
 
-func (t *Table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
+func (t *_table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 	var batch *pebble.Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
@@ -599,7 +603,7 @@ func (t *Table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 	return t.get(key, batch)
 }
 
-func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
+func (t *_table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	data, closer, err := t.db.getKV(key, batch)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed: %w", err)
@@ -616,7 +620,7 @@ func (t *Table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	return tr, nil
 }
 
-func (t *Table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator {
+func (t *_table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator {
 	if options == nil {
 		options = &pebble.IterOptions{}
 	}
@@ -632,15 +636,15 @@ func (t *Table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batc
 	}
 }
 
-func (t *Table[T]) Query() Query[T] {
+func (t *_table[T]) Query() Query[T] {
 	return newQuery(t, t.primaryIndex)
 }
 
-func (t *Table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error {
 	return t.ScanIndex(ctx, t.primaryIndex, utils.MakeNew[T](), tr, optBatch...)
 }
 
-func (t *Table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
 	return t.ScanIndexForEach(ctx, i, s, func(lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
@@ -651,11 +655,11 @@ func (t *Table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, opt
 	}, optBatch...)
 }
 
-func (t *Table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
-func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
@@ -736,7 +740,7 @@ func (t *Table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f f
 	return nil
 }
 
-func (t *Table[T]) key(tr T, buff []byte) []byte {
+func (t *_table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
 	return _KeyEncode(_Key{
@@ -748,7 +752,7 @@ func (t *Table[T]) key(tr T, buff []byte) []byte {
 	}, buff[len(primaryKey):len(primaryKey)])
 }
 
-func (t *Table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
+func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
 	return _KeyEncode(_Key{
@@ -760,7 +764,7 @@ func (t *Table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	}, indexKey[len(indexKey):])
 }
 
-func (t *Table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
+func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
 	orderKeyPart := idx.IndexOrderFunction(
@@ -776,7 +780,7 @@ func (t *Table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	}, orderKeyPart[len(orderKeyPart):])
 }
 
-func (t *Table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {
+func (t *_table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {
 	indexKeys := indexKeysBuff[:0]
 
 	for _, idx := range idxs {
@@ -789,7 +793,7 @@ func (t *Table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, inde
 	return indexKeys
 }
 
-func (t *Table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
+func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
 	newTrKeys := t.indexKeys(newTr, idxs, buff[:0], [][]byte{})
 	if len(newTrKeys) != 0 {
 		buff = newTrKeys[len(newTrKeys)-1]

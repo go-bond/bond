@@ -111,7 +111,7 @@ func BenchmarkTableInsertSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 	return results
 }
 
-func InsertInBatchSize(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
+func InsertInBatchSize(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

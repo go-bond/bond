@@ -188,7 +188,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 	return results
 }
 
-func ScanElements(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, numberToScan int) func(*testing.B) {
+func ScanElements(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, numberToScan int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -216,7 +216,7 @@ func ScanElements(tbt *bond.Table[*TokenBalance], tbs []*TokenBalance, numberToS
 	}
 }
 
-func ScanIndexElements(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, tbs []*TokenBalance, numberToScan int) func(*testing.B) {
+func ScanIndexElements(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, tbs []*TokenBalance, numberToScan int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -241,7 +241,7 @@ func ScanIndexElements(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBal
 	}
 }
 
-func ScanSkipThrough(tbt *bond.Table[*TokenBalance], numberToSkip int, numberToRead int) func(*testing.B) {
+func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRead int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -273,7 +273,7 @@ func ScanSkipThrough(tbt *bond.Table[*TokenBalance], numberToSkip int, numberToR
 	}
 }
 
-func ScanIndexSkipThrough(tbt *bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
+func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 

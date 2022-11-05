@@ -26,7 +26,7 @@ func TestBond_NewTable(t *testing.T) {
 		},
 	})
 	require.NotNil(t, tokenBalanceTable)
-	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.id)
+	assert.Equal(t, TokenBalanceTableID, tokenBalanceTable.ID())
 }
 
 func TestBondTable_Interfaces(t *testing.T) {
@@ -47,13 +47,13 @@ func TestBondTable_Interfaces(t *testing.T) {
 	})
 	require.NotNil(t, tokenBalanceTable)
 
-	tableReadInterface := TableR[*TokenBalance](tokenBalanceTable)
+	tableReadInterface := TableReader[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableReadInterface)
 
-	tableWriteInterface := TableW[*TokenBalance](tokenBalanceTable)
+	tableWriteInterface := TableWriter[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableWriteInterface)
 
-	tableReadWriteInterface := TableRW[*TokenBalance](tokenBalanceTable)
+	tableReadWriteInterface := Table[*TokenBalance](tokenBalanceTable)
 	require.NotNil(t, tableReadWriteInterface)
 }
 

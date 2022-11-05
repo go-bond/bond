@@ -36,7 +36,7 @@ func tearDownDatabase(db *bond.DB) {
 	_ = os.RemoveAll(dbName)
 }
 
-func setupDatabaseForQuery() (*bond.DB, *bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
+func setupDatabaseForQuery() (*bond.DB, bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
 	db := setupDatabase()
 
 	const (
