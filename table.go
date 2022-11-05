@@ -252,12 +252,18 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch *pebble.Batch
+	var keyBatch *pebble.Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+	indexKeyBatch := t.db.NewBatch()
 	if externalBatch {
-		batch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		batch = t.db.NewIndexedBatch()
+		keyBatch = t.db.NewIndexedBatch()
+	}
+
+	closeBatch := func() {
+		_ = keyBatch.Close()
+		_ = indexKeyBatch.Close()
 	}
 
 	var (
@@ -269,6 +275,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
+			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -277,19 +284,21 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if t.exist(key, batch) {
+		if t.exist(key, keyBatch) {
+			closeBatch()
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
+			closeBatch()
 			return err
 		}
 
-		err = batch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 
@@ -298,18 +307,25 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 
 		// update indexes
 		for _, indexKey := range indexKeys {
-			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	if err != nil {
+		closeBatch()
+		return err
+	}
+	_ = indexKeyBatch.Close()
+
 	if !externalBatch {
-		err := batch.Commit(pebble.Sync)
+		err := keyBatch.Commit(pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 	}
@@ -323,12 +339,18 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch *pebble.Batch
+	var keyBatch *pebble.Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+	indexKeyBatch := t.db.NewBatch()
 	if externalBatch {
-		batch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		batch = t.db.NewIndexedBatch()
+		keyBatch = t.db.NewIndexedBatch()
+	}
+
+	closeBatch := func() {
+		_ = keyBatch.Close()
+		_ = indexKeyBatch.Close()
 	}
 
 	var (
@@ -339,6 +361,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
+			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -347,16 +370,16 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		key := t.key(tr, keyBuffer[:0])
 
 		// old record
-		oldTrData, closer, err := batch.Get(key)
+		oldTrData, closer, err := keyBatch.Get(key)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 
 		var oldTr T
 		err = t.serializer.Deserialize(oldTrData, &oldTr)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 
@@ -365,13 +388,14 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
+			closeBatch()
 			return err
 		}
 
 		// update entry
-		err = batch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 
@@ -380,26 +404,33 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
-			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 		}
 
 		for _, indexKey := range toRemoveIndexKeys {
-			err = batch.Delete(indexKey, pebble.Sync)
+			err = indexKeyBatch.Delete(indexKey, pebble.Sync)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	if err != nil {
+		closeBatch()
+		return err
+	}
+	_ = indexKeyBatch.Close()
+
 	if !externalBatch {
-		err := batch.Commit(pebble.Sync)
+		err := keyBatch.Commit(pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 	}
@@ -430,6 +461,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
+			_ = batch.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -469,12 +501,18 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch *pebble.Batch
+	var keyBatch *pebble.Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+	indexKeyBatch := t.db.NewBatch()
 	if externalBatch {
-		batch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		batch = t.db.NewIndexedBatch()
+		keyBatch = t.db.NewIndexedBatch()
+	}
+
+	closeBatch := func() {
+		_ = keyBatch.Close()
+		_ = indexKeyBatch.Close()
 	}
 
 	var (
@@ -496,11 +534,11 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		// old record
 		var oldTr T
-		oldTrData, closer, err := batch.Get(key)
+		oldTrData, closer, err := keyBatch.Get(key)
 		if err == nil {
 			err = t.serializer.Deserialize(oldTrData, &oldTr)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 
@@ -520,9 +558,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		}
 
 		// update entry
-		err = batch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			_ = keyBatch.Close()
 			return err
 		}
 
@@ -540,26 +578,33 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
-			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 		}
 
 		for _, indexKey := range toRemoveIndexKeys {
-			err = batch.Delete(indexKey, pebble.Sync)
+			err = indexKeyBatch.Delete(indexKey, pebble.Sync)
 			if err != nil {
-				_ = batch.Close()
+				closeBatch()
 				return err
 			}
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	if err != nil {
+		closeBatch()
+		return err
+	}
+	_ = indexKeyBatch.Close()
+
 	if !externalBatch {
-		err := batch.Commit(pebble.Sync)
+		err := keyBatch.Commit(pebble.Sync)
 		if err != nil {
-			_ = batch.Close()
+			closeBatch()
 			return err
 		}
 	}
