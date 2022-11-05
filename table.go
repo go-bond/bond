@@ -75,6 +75,8 @@ type TableOptions[T any] struct {
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
+
+	Filter Filter
 }
 
 type _table[T any] struct {
@@ -90,6 +92,8 @@ type _table[T any] struct {
 
 	serializer Serializer[*T]
 
+	filter Filter
+
 	mutex sync.RWMutex
 }
 
@@ -101,7 +105,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
-	return &_table[T]{
+	table := &_table[T]{
 		db:             opt.DB,
 		id:             opt.TableID,
 		name:           opt.TableName,
@@ -114,8 +118,11 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		}),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		serializer:       serializer,
+		filter:           opt.Filter,
 		mutex:            sync.RWMutex{},
 	}
+
+	return table
 }
 
 func (t *_table[T]) ID() TableID {
@@ -312,6 +319,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 				closeBatch()
 				return err
 			}
+		}
+
+		if t.filter != nil {
+			t.filter.Add(key)
 		}
 	}
 
@@ -626,6 +637,10 @@ func (t *_table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch *pebble.Batch) bool {
+	if t.filter != nil && !t.filter.MayContain(key) {
+		return false
+	}
+
 	_, closer, err := t.db.getKV(key, batch)
 	if err != nil {
 		return false
@@ -645,6 +660,11 @@ func (t *_table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 
 	var keyBuffer [DataKeyBufferSize]byte
 	key := t.key(tr, keyBuffer[:0])
+
+	if t.filter != nil && !t.filter.MayContain(key) {
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
+
 	return t.get(key, batch)
 }
 

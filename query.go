@@ -141,7 +141,7 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...*pebble.Batch
 	for _, query := range q.queries {
 		count := uint64(0)
 		skippedFirstRow := false
-		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(lazy Lazy[R]) (bool, error) {
+		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
 			if q.isAfter && !skippedFirstRow {
 				skippedFirstRow = true
 				return true, nil
