@@ -295,6 +295,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	t.mutex.RUnlock()
 
 	var keyBatch Batch
+	var keyBatchCtx context.Context
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	indexKeyBatch := t.db.Batch()
 	if externalBatch {
@@ -302,6 +303,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	} else {
 		keyBatch = t.db.Batch()
 	}
+	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
 	closeBatch := func() {
 		_ = keyBatch.Close()
@@ -357,7 +359,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		if t.filter != nil {
-			t.filter.Add(ctx, key)
+			t.filter.Add(keyBatchCtx, key)
 		}
 	}
 
@@ -548,6 +550,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	t.mutex.RUnlock()
 
 	var keyBatch Batch
+	var keyBatchCtx context.Context
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	indexKeyBatch := t.db.Batch()
 	if externalBatch {
@@ -555,6 +558,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	} else {
 		keyBatch = t.db.Batch()
 	}
+	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
 	closeBatch := func() {
 		_ = keyBatch.Close()
@@ -638,6 +642,10 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				return err
 			}
 		}
+
+		if t.filter != nil && !isUpdate {
+			t.filter.Add(keyBatchCtx, key)
+		}
 	}
 
 	err := keyBatch.Apply(indexKeyBatch)
@@ -672,7 +680,7 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch Batch) bool {
-	if t.filter != nil && !t.filter.MayContain(context.TODO(), key) {
+	if t.filter != nil && !t.filter.MayContain(context.Background(), key) {
 		return false
 	}
 
