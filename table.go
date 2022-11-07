@@ -35,6 +35,29 @@ type TableInfo interface {
 	EntryType() reflect.Type
 }
 
+type TableGetter[T any] interface {
+	Get(tr T, optBatch ...Batch) (T, error)
+}
+
+type TableExistChecker[T any] interface {
+	Exist(tr T, optBatch ...Batch) bool
+}
+
+type TableQuerier[T any] interface {
+	Query() Query[T]
+}
+
+type TableScanner[T any] interface {
+	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
+	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+}
+
+type TableIterationer[T any] interface {
+	Iter(opt *IterOptions, optBatch ...Batch) Iterator
+}
+
 type TableReader[T any] interface {
 	TableInfo
 
@@ -42,25 +65,37 @@ type TableReader[T any] interface {
 	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
 
-	Get(tr T, optBatch ...Batch) (T, error)
-	Exist(tr T, optBatch ...Batch) bool
-	Query() Query[T]
+	TableGetter[T]
+	TableExistChecker[T]
+	TableQuerier[T]
 
-	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
-	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
-	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+	TableScanner[T]
+	TableIterationer[T]
+}
 
-	Iter(opt *IterOptions, optBatch ...Batch) Iterator
+type TableInserter[T any] interface {
+	Insert(ctx context.Context, trs []T, optBatch ...Batch) error
+}
+
+type TableUpdater[T any] interface {
+	Update(ctx context.Context, trs []T, optBatch ...Batch) error
+}
+
+type TableUpserter[T any] interface {
+	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error
+}
+
+type TableDeleter[T any] interface {
+	Delete(ctx context.Context, trs []T, optBatch ...Batch) error
 }
 
 type TableWriter[T any] interface {
 	AddIndex(idxs []*Index[T], reIndex ...bool) error
 
-	Insert(ctx context.Context, trs []T, optBatch ...Batch) error
-	Update(ctx context.Context, trs []T, optBatch ...Batch) error
-	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error
-	Delete(ctx context.Context, trs []T, optBatch ...Batch) error
+	TableInserter[T]
+	TableUpdater[T]
+	TableUpserter[T]
+	TableDeleter[T]
 }
 
 type Table[T any] interface {
