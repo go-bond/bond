@@ -44,7 +44,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -67,7 +67,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()

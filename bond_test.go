@@ -9,7 +9,7 @@ import (
 
 const dbName = "test_db"
 
-func setupDatabase(serializer ...Serializer[any]) *DB {
+func setupDatabase(serializer ...Serializer[any]) DB {
 	options := &Options{}
 	if len(serializer) > 0 && serializer[0] != nil {
 		options.Serializer = serializer[0]
@@ -19,7 +19,7 @@ func setupDatabase(serializer ...Serializer[any]) *DB {
 	return db
 }
 
-func tearDownDatabase(db *DB) {
+func tearDownDatabase(db DB) {
 	_ = db.Close()
 	_ = os.RemoveAll(dbName)
 }

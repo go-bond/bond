@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cockroachdb/pebble"
 	"golang.org/x/exp/maps"
 )
 
@@ -14,10 +13,10 @@ import (
 //
 // Warning: If you provide outdated rows the table indexes may be corrupted.
 type TableUnsafeUpdater[T any] interface {
-	UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error
+	UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...Batch) error
 }
 
-func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...Batch) error {
 	if len(trs) != len(oldTrs) {
 		return fmt.Errorf("params need to be of equal size")
 	}
@@ -27,12 +26,12 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch *pebble.Batch
+	var batch Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.NewIndexedBatch()
+		batch = t.db.Batch()
 	}
 
 	var (
@@ -60,7 +59,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// update entry
-		err = batch.Set(key, data, pebble.Sync)
+		err = batch.Set(key, data, Sync)
 		if err != nil {
 			_ = batch.Close()
 			return err
@@ -71,7 +70,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
-			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			err = batch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
 				_ = batch.Close()
 				return err
@@ -79,7 +78,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		for _, indexKey := range toRemoveIndexKeys {
-			err = batch.Delete(indexKey, pebble.Sync)
+			err = batch.Delete(indexKey, Sync)
 			if err != nil {
 				_ = batch.Close()
 				return err
@@ -88,7 +87,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	}
 
 	if !externalBatch {
-		err := batch.Commit(pebble.Sync)
+		err := batch.Commit(Sync)
 		if err != nil {
 			_ = batch.Close()
 			return err

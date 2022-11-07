@@ -248,7 +248,7 @@ func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRe
 		for i := 0; i < b.N; i++ {
 			var counter = 0
 			var tokenBalances []*TokenBalance
-			err := tbt.ScanForEach(context.Background(), func(l bond.Lazy[*TokenBalance]) (bool, error) {
+			err := tbt.ScanForEach(context.Background(), func(_ bond.KeyBytes, l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {
 					return true, nil
@@ -280,7 +280,7 @@ func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenB
 		for i := 0; i < b.N; i++ {
 			var counter = 1
 			var tokenBalances []*TokenBalance
-			err := tbt.ScanIndexForEach(context.Background(), idx, sel, func(l bond.Lazy[*TokenBalance]) (bool, error) {
+			err := tbt.ScanIndexForEach(context.Background(), idx, sel, func(_ bond.KeyBytes, l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {
 					return true, nil

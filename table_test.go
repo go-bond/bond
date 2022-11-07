@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,7 +174,7 @@ func TestBondTable_Insert(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -250,7 +249,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.Error(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -298,7 +297,7 @@ func TestBondTable_Update(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -314,7 +313,7 @@ func TestBondTable_Update(t *testing.T) {
 	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -364,7 +363,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -383,7 +382,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	err = tokenBalanceTable.Update(ctx, []*TokenBalance{tokenBalanceAccountUpdated})
 	require.Error(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -441,7 +440,7 @@ func TestBondTable_Upsert(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -460,7 +459,7 @@ func TestBondTable_Upsert(t *testing.T) {
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	var tokenBalances []*TokenBalance
 	for it.First(); it.Valid(); it.Next() {
@@ -522,7 +521,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -544,7 +543,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.Error(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	var tokenBalances []*TokenBalance
 	for it.First(); it.Valid(); it.Next() {
@@ -613,7 +612,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -642,7 +641,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	var tokenBalances []*TokenBalance
 	for it.First(); it.Valid(); it.Next() {
@@ -712,7 +711,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -741,7 +740,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	var tokenBalances []*TokenBalance
 	for it.First(); it.Valid(); it.Next() {
@@ -786,7 +785,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 
 	err := tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.Error(t, err)
-	assert.False(t, tokenBalanceTable.NewIter(nil).First())
+	assert.False(t, tokenBalanceTable.Iter(nil).First())
 }
 
 func TestBondTable_Delete(t *testing.T) {
@@ -820,7 +819,7 @@ func TestBondTable_Delete(t *testing.T) {
 	err = tokenBalanceTable.Delete(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	assert.False(t, tokenBalanceTable.NewIter(nil).First())
+	assert.False(t, tokenBalanceTable.Iter(nil).First())
 }
 
 func TestBondTable_Exist(t *testing.T) {
@@ -1087,7 +1086,7 @@ func TestBond_Batch(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	batch := db.NewIndexedBatch()
+	batch := db.Batch()
 
 	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)
@@ -1101,10 +1100,10 @@ func TestBond_Batch(t *testing.T) {
 	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance}, batch)
 	require.NoError(t, err)
 
-	err = batch.Commit(pebble.Sync)
+	err = batch.Commit(Sync)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
 )
 
@@ -122,7 +121,7 @@ func (q Query[R]) After(sel R) Query[R] {
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...*pebble.Batch) error {
+func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error {
 	if q.isAfter && q.orderLessFunc != nil {
 		return fmt.Errorf("after can not be used with order")
 	}
