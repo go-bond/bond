@@ -363,7 +363,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
 		closeBatch()
 		return err
@@ -468,7 +468,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
 		closeBatch()
 		return err
@@ -648,7 +648,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
 		closeBatch()
 		return err
@@ -656,7 +656,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
 			closeBatch()
 			return err

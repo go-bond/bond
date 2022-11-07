@@ -58,7 +58,7 @@ func (m *MockBatch) Iter(opt *IterOptions, batch ...Batch) Iterator {
 	panic("implement me")
 }
 
-func (m *MockBatch) Apply(b Batch) error {
+func (m *MockBatch) Apply(b Batch, opt WriteOptions) error {
 	//TODO implement me
 	panic("implement me")
 }

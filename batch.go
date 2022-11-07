@@ -9,6 +9,14 @@ import (
 
 var sequenceId = NumberSequence{}
 
+type Committer interface {
+	Commit(opt WriteOptions) error
+
+	OnCommit(func(b Batch) error)
+	OnCommitted(func(b Batch))
+	OnError(func(b Batch, err error))
+}
+
 type Batch interface {
 	ID() uint64
 	Len() int
@@ -21,13 +29,9 @@ type Batch interface {
 	DeleterWithRange
 	Iterationer
 
-	Apply(b Batch) error
-	Commit(opt WriteOptions) error
-	Close() error
-
-	OnCommit(func(b Batch) error)
-	OnCommitted(func(b Batch))
-	OnError(func(b Batch, err error))
+	Applier
+	Committer
+	Closer
 }
 
 type _batch struct {
@@ -82,13 +86,13 @@ func (b *_batch) Iter(opt *IterOptions, _ ...Batch) Iterator {
 	return b.NewIter(pebbleIterOptions(opt))
 }
 
-func (b *_batch) Apply(batch Batch) error {
+func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
 	innerBatch, ok := batch.(*_batch)
 	if !ok {
-		return fmt.Errorf("incorrect param")
+		return fmt.Errorf("incorrect batch param")
 	}
 
-	return b.Batch.Apply(innerBatch.Batch, pebble.Sync)
+	return b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
 }
 
 func (b *_batch) Commit(opt WriteOptions) error {

@@ -37,6 +37,12 @@ type Iterationer interface {
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
 
+type Applier interface {
+	Apply(b Batch, opt WriteOptions) error
+}
+
+type Closer io.Closer
+
 type DB interface {
 	Serializer() Serializer[any]
 
@@ -47,8 +53,9 @@ type DB interface {
 	Iterationer
 
 	Batch() Batch
+	Applier
 
-	Close() error
+	Closer
 }
 
 type _db struct {
@@ -140,6 +147,10 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 
 func (db *_db) Batch() Batch {
 	return newBatch(db)
+}
+
+func (db *_db) Apply(b Batch, opt WriteOptions) error {
+	return b.Commit(opt)
 }
 
 func (db *_db) Close() error {
