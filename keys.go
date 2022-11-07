@@ -267,6 +267,14 @@ func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	return buff.Bytes()
 }
 
+func (key KeyBytes) TableID() TableID {
+	return TableID(key[0])
+}
+
+func (key KeyBytes) IndexID() IndexID {
+	return IndexID(key[1])
+}
+
 func (key KeyBytes) ToKey() Key {
 	return KeyDecode(key)
 }
