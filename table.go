@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"sync"
@@ -306,7 +307,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
 	closeBatch := func() {
-		_ = keyBatch.Close()
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
 	}
 
@@ -397,7 +400,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	closeBatch := func() {
-		_ = keyBatch.Close()
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
 	}
 
@@ -561,7 +566,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
 	closeBatch := func() {
-		_ = keyBatch.Close()
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
 	}
 
@@ -583,16 +590,23 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		key := t.key(tr, keyBuffer[:0])
 
 		// old record
-		var oldTr T
-		oldTrData, closer, err := keyBatch.Get(key)
-		if err == nil {
-			err = t.serializer.Deserialize(oldTrData, &oldTr)
-			if err != nil {
-				closeBatch()
-				return err
-			}
+		var (
+			oldTr     T
+			oldTrData []byte
+			closer    io.Closer
+			err       error
+		)
+		if t.exist(key, keyBatch) {
+			oldTrData, closer, err = keyBatch.Get(key)
+			if err == nil {
+				err = t.serializer.Deserialize(oldTrData, &oldTr)
+				if err != nil {
+					closeBatch()
+					return err
+				}
 
-			_ = closer.Close()
+				_ = closer.Close()
+			}
 		}
 
 		// handle upsert
@@ -680,7 +694,8 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch Batch) bool {
-	if t.filter != nil && !t.filter.MayContain(context.Background(), key) {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return false
 	}
 
@@ -704,7 +719,8 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 	var keyBuffer [DataKeyBufferSize]byte
 	key := t.key(tr, keyBuffer[:0])
 
-	if t.filter != nil && !t.filter.MayContain(context.TODO(), key) {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
