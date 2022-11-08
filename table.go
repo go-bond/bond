@@ -244,6 +244,9 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	})
 
 	batch := t.db.Batch()
+	defer func() {
+		_ = batch.Close()
+	}()
 
 	counter := 0
 	indexKeysBuffer := make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(idxs))
@@ -295,10 +298,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch Batch
-	var keyBatchCtx context.Context
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.Batch()
+	var (
+		keyBatch      Batch
+		keyBatchCtx   context.Context
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
@@ -306,12 +311,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
-	closeBatch := func() {
+	defer func() {
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer       [DataKeyBufferSize]byte
@@ -322,7 +327,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -332,20 +336,17 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// check if exist
 		if t.exist(key, keyBatch) {
-			closeBatch()
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
 		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -356,7 +357,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		for _, indexKey := range indexKeys {
 			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
@@ -368,15 +368,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}
@@ -390,21 +387,23 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.Batch()
+	var (
+		keyBatch      Batch
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
 		keyBatch = t.db.Batch()
 	}
 
-	closeBatch := func() {
+	defer func() {
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -414,7 +413,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -425,14 +423,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// old record
 		oldTrData, closer, err := keyBatch.Get(key)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
 		var oldTr T
 		err = t.serializer.Deserialize(oldTrData, &oldTr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -441,14 +437,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
 		// update entry
 		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -459,7 +453,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		for _, indexKey := range toAddIndexKeys {
 			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
@@ -467,7 +460,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		for _, indexKey := range toRemoveIndexKeys {
 			err = indexKeyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
@@ -475,15 +467,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}
@@ -497,13 +486,23 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+	var (
+		keyBatch      Batch
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
-		batch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		keyBatch = t.db.Batch()
 	}
+
+	defer func() {
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
+		_ = indexKeyBatch.Close()
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -514,7 +513,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			_ = batch.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -522,25 +520,27 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		var key = t.key(tr, keyBuffer[:0])
 		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
-		err := batch.Delete(key, Sync)
+		err := keyBatch.Delete(key, Sync)
 		if err != nil {
-			_ = batch.Close()
 			return err
 		}
 
 		for _, indexKey := range indexKeys {
-			err = batch.Delete(indexKey, Sync)
+			err = keyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				_ = batch.Close()
 				return err
 			}
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, Sync)
+	if err != nil {
+		return err
+	}
+
 	if !externalBatch {
-		err := batch.Commit(Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			_ = batch.Close()
 			return err
 		}
 	}
@@ -554,10 +554,12 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch Batch
-	var keyBatchCtx context.Context
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.Batch()
+	var (
+		keyBatch      Batch
+		keyBatchCtx   context.Context
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
@@ -565,12 +567,12 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
-	closeBatch := func() {
+	defer func() {
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -601,7 +603,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
 				if err != nil {
-					closeBatch()
 					return err
 				}
 
@@ -624,7 +625,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		// update entry
 		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			_ = keyBatch.Close()
 			return err
 		}
 
@@ -644,7 +644,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		for _, indexKey := range toAddIndexKeys {
 			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
@@ -652,7 +651,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		for _, indexKey := range toRemoveIndexKeys {
 			err = indexKeyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
@@ -664,15 +662,12 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
 		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}

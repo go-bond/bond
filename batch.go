@@ -15,6 +15,7 @@ type Committer interface {
 	OnCommit(func(b Batch) error)
 	OnCommitted(func(b Batch))
 	OnError(func(b Batch, err error))
+	OnClose(func(b Batch))
 }
 
 type Batch interface {
@@ -42,6 +43,7 @@ type _batch struct {
 	onCommitCallbacks    []func(b Batch) error
 	onCommittedCallbacks []func(b Batch)
 	onErrorCallbacks     []func(b Batch, err error)
+	onClose              []func(b Batch)
 }
 
 func newBatch(db *_db) Batch {
@@ -64,6 +66,7 @@ func (b *_batch) Reset() {
 	b.onCommitCallbacks = nil
 	b.onCommittedCallbacks = nil
 	b.onErrorCallbacks = nil
+	b.onClose = nil
 }
 
 func (b *_batch) Get(key []byte, _ ...Batch) (data []byte, closer io.Closer, err error) {
@@ -115,6 +118,17 @@ func (b *_batch) Commit(opt WriteOptions) error {
 	return nil
 }
 
+func (b *_batch) Close() error {
+	b.notifyOnClose()
+
+	err := b.Batch.Close()
+	if err != nil {
+		b.notifyOnError(err)
+		return err
+	}
+	return nil
+}
+
 func (b *_batch) OnCommit(f func(b Batch) error) {
 	b.onCommitCallbacks = append(b.onCommitCallbacks, f)
 }
@@ -125,6 +139,10 @@ func (b *_batch) OnCommitted(f func(b Batch)) {
 
 func (b *_batch) OnError(f func(b Batch, err error)) {
 	b.onErrorCallbacks = append(b.onErrorCallbacks, f)
+}
+
+func (b *_batch) OnClose(f func(b Batch)) {
+	b.onClose = append(b.onClose, f)
 }
 
 func (b *_batch) notifyOnCommit() error {
@@ -147,5 +165,11 @@ func (b *_batch) notifyOnCommitted() {
 func (b *_batch) notifyOnError(err error) {
 	for _, f := range b.onErrorCallbacks {
 		f(b, err)
+	}
+}
+
+func (b *_batch) notifyOnClose() {
+	for _, f := range b.onCommittedCallbacks {
+		f(b)
 	}
 }

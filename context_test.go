@@ -88,6 +88,11 @@ func (m *MockBatch) OnError(f func(b Batch, err error)) {
 	panic("implement me")
 }
 
+func (m *MockBatch) OnClose(f func(b Batch)) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func TestContextWithBatch(t *testing.T) {
 	mBatch := &MockBatch{}
 
