@@ -6,13 +6,6 @@ type IterOptions struct {
 	pebble.IterOptions
 }
 
-type Iter interface {
-}
-
-type _iter struct {
-	*pebble.Iterator
-}
-
 type Iterator interface {
 	First() bool
 	Last() bool
