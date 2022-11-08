@@ -235,6 +235,22 @@ func TestKey_ToDataKey(t *testing.T) {
 	assert.Equal(t, expectedTableKeyRaw, KeyEncode(tableKey))
 }
 
+func TestKeyBytes(t *testing.T) {
+	keyStruct := Key{
+		TableID:    1,
+		IndexID:    2,
+		IndexKey:   []byte{0x01, 0x02},
+		IndexOrder: []byte{},
+		PrimaryKey: []byte{0x02, 0x01},
+	}
+
+	keyBytes := KeyBytes(KeyEncode(keyStruct))
+
+	assert.Equal(t, TableID(1), keyBytes.TableID())
+	assert.Equal(t, IndexID(2), keyBytes.IndexID())
+	assert.Equal(t, []byte{0x01, 0x02}, keyBytes.IndexKey())
+}
+
 func Benchmark_KeyBuilder(b *testing.B) {
 	buffer := make([]byte, 0, 512)
 

@@ -277,7 +277,7 @@ func (key KeyBytes) IndexID() IndexID {
 
 func (key KeyBytes) IndexKey() []byte {
 	keyLen := binary.BigEndian.Uint32(key[2:6])
-	return key[6:keyLen]
+	return key[6 : 6+keyLen]
 }
 
 func (key KeyBytes) ToKey() Key {
