@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/bits-and-blooms/bloom v2.0.3+incompatible
+	github.com/bits-and-blooms/bloom/v3 v3.3.1
 	github.com/bpowers/approx-lru v0.7.3
 	github.com/cockroachdb/pebble v0.0.0-20221010155749-f122ff497182
 	github.com/dustin/go-humanize v1.0.0
@@ -24,7 +25,6 @@ require (
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/bits-and-blooms/bitset v1.3.1 // indirect
-	github.com/bits-and-blooms/bloom/v3 v3.3.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
