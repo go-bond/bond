@@ -2,133 +2,43 @@ package filters
 
 import (
 	"context"
-	"io"
 	"testing"
 
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
-type MockBondDB struct {
+type MockScanner[T any] struct {
 	mock.Mock
 }
 
-func (m *MockBondDB) Serializer() bond.Serializer[any] {
+func (m *MockScanner[T]) Scan(ctx context.Context, tr *[]T, optBatch ...bond.Batch) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *MockBondDB) Get(key []byte, batch ...bond.Batch) (data []byte, closer io.Closer, err error) {
+func (m *MockScanner[T]) ScanIndex(ctx context.Context, i *bond.Index[T], s T, tr *[]T, optBatch ...bond.Batch) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *MockBondDB) Set(key []byte, value []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBondDB) Delete(key []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBondDB) DeleteRange(start []byte, end []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBondDB) Iter(opt *bond.IterOptions, batch ...bond.Batch) bond.Iterator {
-	args := m.Called(opt, batch)
-	return args.Get(0).(bond.Iterator)
-}
-
-func (m *MockBondDB) Batch() bond.Batch {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBondDB) Apply(b bond.Batch, opt bond.WriteOptions) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBondDB) Close() error {
-	//TODO implement me
-	panic("implement me")
-}
-
-type MockIterator struct {
-	mock.Mock
-}
-
-func (m *MockIterator) First() bool {
-	args := m.Called()
-	return args.Get(0).(bool)
-}
-
-func (m *MockIterator) Last() bool {
-	args := m.Called()
-	return args.Get(0).(bool)
-}
-
-func (m *MockIterator) Prev() bool {
-	args := m.Called()
-	return args.Get(0).(bool)
-}
-
-func (m *MockIterator) Next() bool {
-	args := m.Called()
-	return args.Get(0).(bool)
-}
-
-func (m *MockIterator) Valid() bool {
-	args := m.Called()
-	return args.Get(0).(bool)
-}
-
-func (m *MockIterator) Error() error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockIterator) SeekGE(key []byte) bool {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockIterator) SeekPrefixGE(key []byte) bool {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockIterator) SeekLT(key []byte) bool {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockIterator) Key() []byte {
-	args := m.Called()
-	return args.Get(0).([]byte)
-}
-
-func (m *MockIterator) Value() []byte {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockIterator) Close() error {
-	args := m.Called()
+func (m *MockScanner[T]) ScanForEach(ctx context.Context, f func(keyBytes bond.KeyBytes, l bond.Lazy[T]) (bool, error), optBatch ...bond.Batch) error {
+	args := m.Called(ctx, f)
 	if err := args.Get(0); err != nil {
 		return err.(error)
 	}
 	return nil
 }
 
+func (m *MockScanner[T]) ScanIndexForEach(ctx context.Context, idx *bond.Index[T], s T, f func(keyBytes bond.KeyBytes, t bond.Lazy[T]) (bool, error), optBatch ...bond.Batch) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func TestNewSingleBloomFilter(t *testing.T) {
-	mDB := &MockBondDB{}
-	mIterator := &MockIterator{}
+	mScanner := &MockScanner[int]{}
 
 	mTableId := bond.TableID(1)
 	mIndexId := bond.IndexID(0)
@@ -138,64 +48,24 @@ func TestNewSingleBloomFilter(t *testing.T) {
 	mKey := append(mKeyPrefix, []byte("key1")...)
 	mKey2 := append(mKeyPrefix2, []byte("key2")...)
 
-	mDB.On("Iter", mock.Anything, mock.Anything).Return(mIterator)
+	mScanner.On("ScanForEach", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		f := args.Get(1).(func(key bond.KeyBytes, lazy bond.Lazy[int]) (bool, error))
+		_, _ = f(mKey, bond.Lazy[int]{GetFunc: func() (int, error) { return 5, nil }})
+	}).Return(nil).Once()
 
-	mIterator.On("First").Return(true).Once()
-	mIterator.On("Valid").Return(true).Once()
-	mIterator.On("Valid").Return(true).Once()
-	mIterator.On("Next").Return(true).Once()
-	mIterator.On("Valid").Return(false).Once()
-	mIterator.On("Next").Return(false).Once()
+	filter := NewSingleBloomFilter(1000, 0.1)
 
-	mIterator.On("Key").Return(mKey).Once()
-	mIterator.On("Key").Return(mKey2).Once()
-
-	mIterator.On("Close").Return(nil).Once()
-
-	filter := NewSingleBloomFilter(mDB, 0, 1000, 0.1)
+	err := InitializeFilter[int](context.Background(), filter, mScanner)
+	require.NoError(t, err)
 
 	assert.Equal(t, true, filter.MayContain(context.TODO(), mKey))
 	assert.Equal(t, false, filter.MayContain(context.TODO(), mKey2))
 
-	mDB.AssertExpectations(t)
-	mIterator.AssertExpectations(t)
-}
-
-func TestNewSingleBloomFilter_SingleTable(t *testing.T) {
-	mDB := &MockBondDB{}
-	mIterator := &MockIterator{}
-
-	mTableId := bond.TableID(1)
-	mIndexId := bond.IndexID(0)
-	mKeyPrefix := []byte{byte(mTableId), byte(mIndexId)}
-	mKeyPrefix2 := []byte{byte(mTableId + 1), byte(mIndexId)}
-	mKey := append(mKeyPrefix, []byte("key1")...)
-	mKey2 := append(mKeyPrefix2, []byte("key1")...)
-
-	mDB.On("Iter", mock.Anything, mock.Anything).Return(mIterator)
-
-	mIterator.On("First").Return(true).Once()
-	mIterator.On("Valid").Return(true).Once()
-	mIterator.On("Valid").Return(true).Once()
-	mIterator.On("Next").Return(true).Once()
-
-	mIterator.On("Key").Return(mKey).Once()
-	mIterator.On("Key").Return(mKey2).Once()
-
-	mIterator.On("Close").Return(nil).Once()
-
-	filter := NewSingleBloomFilter(mDB, 1, 1000, 0.1)
-
-	assert.Equal(t, true, filter.MayContain(context.TODO(), mKey))
-	assert.Equal(t, false, filter.MayContain(context.TODO(), mKey2))
-
-	mDB.AssertExpectations(t)
-	mIterator.AssertExpectations(t)
+	mScanner.AssertExpectations(t)
 }
 
 func TestSingleBloomFilter_Add(t *testing.T) {
-	mDB := &MockBondDB{}
-	mIterator := &MockIterator{}
+	mScanner := &MockScanner[int]{}
 
 	mTableId := bond.TableID(1)
 	mIndexId := bond.IndexID(0)
@@ -203,14 +73,13 @@ func TestSingleBloomFilter_Add(t *testing.T) {
 
 	mKey := append(mKeyPrefix, []byte("key1")...)
 
-	mDB.On("Iter", mock.Anything, mock.Anything).Return(mIterator)
+	filter := NewSingleBloomFilter(1000, 0.1)
 
-	mIterator.On("First").Return(false).Once()
-	mIterator.On("Valid").Return(false).Once()
+	mScanner.On("ScanForEach", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil).Once()
 
-	mIterator.On("Close").Return(nil).Once()
-
-	filter := NewSingleBloomFilter(mDB, 0, 1000, 0.1)
+	err := InitializeFilter[int](context.Background(), filter, mScanner)
+	require.NoError(t, err)
 
 	assert.Equal(t, false, filter.MayContain(context.TODO(), mKey))
 
@@ -218,6 +87,5 @@ func TestSingleBloomFilter_Add(t *testing.T) {
 
 	assert.Equal(t, true, filter.MayContain(context.TODO(), mKey))
 
-	mDB.AssertExpectations(t)
-	mIterator.AssertExpectations(t)
+	mScanner.AssertExpectations(t)
 }
