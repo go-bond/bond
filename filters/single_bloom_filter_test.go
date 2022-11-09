@@ -55,7 +55,7 @@ func TestNewSingleBloomFilter(t *testing.T) {
 
 	filter := NewSingleBloomFilter(1000, 0.1)
 
-	err := InitializeFilter[int](context.Background(), filter, mScanner)
+	err := InitializeFilter(context.Background(), filter, []bond.TableScanner[any]{AnyTableScanner[int](mScanner)})
 	require.NoError(t, err)
 
 	assert.Equal(t, true, filter.MayContain(context.TODO(), mKey))
@@ -78,7 +78,7 @@ func TestSingleBloomFilter_Add(t *testing.T) {
 	mScanner.On("ScanForEach", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil).Once()
 
-	err := InitializeFilter[int](context.Background(), filter, mScanner)
+	err := InitializeFilter(context.Background(), filter, []bond.TableScanner[any]{AnyTableScanner[int](mScanner)})
 	require.NoError(t, err)
 
 	assert.Equal(t, false, filter.MayContain(context.TODO(), mKey))
