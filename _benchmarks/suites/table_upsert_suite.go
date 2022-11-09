@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/_benchmarks/bench"
 	"github.com/go-bond/bond/serializers"
@@ -134,17 +133,17 @@ func UpsertInBatchSize(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, inser
 	}
 }
 
-func UpsertInBatchSizeWithBatch(db *bond.DB, tbt bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
+func UpsertInBatchSizeWithBatch(db bond.DB, tbt bond.Table[*TokenBalance], tbs []*TokenBalance, insertBatchSize int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
-		batch := db.NewIndexedBatch()
+		batch := db.Batch()
 		for i := 0; i < b.N; i++ {
 			err := tbt.Upsert(context.Background(), tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance], batch)
 			if err != nil {
 				panic(err)
 			}
 		}
-		_ = batch.Commit(pebble.Sync)
+		_ = batch.Commit(bond.Sync)
 	}
 }

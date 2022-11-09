@@ -2,24 +2,22 @@ package bond
 
 import (
 	"sync"
-
-	"github.com/cockroachdb/pebble"
 )
 
 type SyncBatch struct {
-	batch *pebble.Batch
+	batch Batch
 
 	mu sync.Mutex
 }
 
-func NewSyncBatch(batch *pebble.Batch) *SyncBatch {
+func NewSyncBatch(batch Batch) *SyncBatch {
 	return &SyncBatch{
 		batch: batch,
 		mu:    sync.Mutex{},
 	}
 }
 
-func (s *SyncBatch) WithSync(f func(batch *pebble.Batch) error) error {
+func (s *SyncBatch) WithSync(f func(batch Batch) error) error {
 	s.mu.Lock()
 	err := f(s.batch)
 	s.mu.Unlock()

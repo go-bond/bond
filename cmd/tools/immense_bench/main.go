@@ -54,7 +54,7 @@ var insertedEntries uint64
 
 // Insert records to the bond db
 // Number of entires = batchSize * totalBatch
-func insertRecords(db *bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
+func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	idGenerator := NewUniqueRand()
 	TokenBalanceTableID := bond.TableID(idGenerator.Int())
 

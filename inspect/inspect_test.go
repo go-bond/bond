@@ -21,7 +21,7 @@ type TokenBalance struct {
 
 const dbName = "test_db"
 
-func setupDatabase(serializer ...bond.Serializer[any]) *bond.DB {
+func setupDatabase(serializer ...bond.Serializer[any]) bond.DB {
 	options := &bond.Options{}
 	if len(serializer) > 0 && serializer[0] != nil {
 		options.Serializer = serializer[0]
@@ -31,12 +31,12 @@ func setupDatabase(serializer ...bond.Serializer[any]) *bond.DB {
 	return db
 }
 
-func tearDownDatabase(db *bond.DB) {
+func tearDownDatabase(db bond.DB) {
 	_ = db.Close()
 	_ = os.RemoveAll(dbName)
 }
 
-func setupDatabaseForQuery() (*bond.DB, bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
+func setupDatabaseForQuery() (bond.DB, bond.Table[*TokenBalance], *bond.Index[*TokenBalance], *bond.Index[*TokenBalance]) {
 	db := setupDatabase()
 
 	const (

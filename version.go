@@ -15,8 +15,8 @@ const (
 	BOND_DB_DATA_TABLE_ID = 0x0
 )
 
-func (db *DB) Version() int {
-	value, _, err := db.Get(bondDataVersionKey())
+func (db *_db) Version() int {
+	value, _, err := db.pebble.Get(bondDataVersionKey())
 	if err != nil {
 		return 0
 	}
@@ -24,16 +24,16 @@ func (db *DB) Version() int {
 	return int(ver)
 }
 
-func (db *DB) initVersion() error {
+func (db *_db) initVersion() error {
 	if db.Version() > 0 {
 		return nil
 	}
 	ver := fmt.Sprintf("%d", BOND_DB_DATA_VERSION)
-	return db.Set(bondDataVersionKey(), []byte(ver), pebble.Sync)
+	return db.pebble.Set(bondDataVersionKey(), []byte(ver), pebble.Sync)
 }
 
 func bondDataVersionKey() []byte {
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		BOND_DB_DATA_TABLE_ID,
 		0,
 		[]byte{},

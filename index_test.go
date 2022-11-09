@@ -655,7 +655,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -671,7 +671,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -774,7 +774,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -790,7 +790,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -903,7 +903,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -919,7 +919,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1036,7 +1036,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -1052,7 +1052,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1160,9 +1160,9 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	assert.False(t, tokenBalanceTable.NewIter(nil).First())
+	assert.False(t, tokenBalanceTable.Iter(nil).First())
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1259,7 +1259,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.NewIter(nil)
+	it := tokenBalanceTable.Iter(nil)
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -1282,7 +1282,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	keys = [][]byte{}
 	for it.First(); it.Valid(); it.Next() {
@@ -1299,7 +1299,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 
 	_ = it.Close()
 
-	it = tokenBalanceTable.NewIter(nil)
+	it = tokenBalanceTable.Iter(nil)
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 

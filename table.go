@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"sync"
@@ -35,6 +36,29 @@ type TableInfo interface {
 	EntryType() reflect.Type
 }
 
+type TableGetter[T any] interface {
+	Get(tr T, optBatch ...Batch) (T, error)
+}
+
+type TableExistChecker[T any] interface {
+	Exist(tr T, optBatch ...Batch) bool
+}
+
+type TableQuerier[T any] interface {
+	Query() Query[T]
+}
+
+type TableScanner[T any] interface {
+	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
+	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+}
+
+type TableIterationer[T any] interface {
+	Iter(opt *IterOptions, optBatch ...Batch) Iterator
+}
+
 type TableReader[T any] interface {
 	TableInfo
 
@@ -42,25 +66,37 @@ type TableReader[T any] interface {
 	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
 
-	Get(tr T, optBatch ...*pebble.Batch) (T, error)
-	Exist(tr T, optBatch ...*pebble.Batch) bool
-	Query() Query[T]
+	TableGetter[T]
+	TableExistChecker[T]
+	TableQuerier[T]
 
-	Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error
-	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error
-	ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error
+	TableScanner[T]
+	TableIterationer[T]
+}
 
-	NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator
+type TableInserter[T any] interface {
+	Insert(ctx context.Context, trs []T, optBatch ...Batch) error
+}
+
+type TableUpdater[T any] interface {
+	Update(ctx context.Context, trs []T, optBatch ...Batch) error
+}
+
+type TableUpserter[T any] interface {
+	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error
+}
+
+type TableDeleter[T any] interface {
+	Delete(ctx context.Context, trs []T, optBatch ...Batch) error
 }
 
 type TableWriter[T any] interface {
 	AddIndex(idxs []*Index[T], reIndex ...bool) error
 
-	Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
-	Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
-	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error
-	Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error
+	TableInserter[T]
+	TableUpdater[T]
+	TableUpserter[T]
+	TableDeleter[T]
 }
 
 type Table[T any] interface {
@@ -69,19 +105,21 @@ type Table[T any] interface {
 }
 
 type TableOptions[T any] struct {
-	DB *DB
+	DB DB
 
 	TableID             TableID
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
+
+	Filter Filter
 }
 
 type _table[T any] struct {
 	id   TableID
 	name string
 
-	db *DB
+	db DB
 
 	primaryKeyFunc TablePrimaryKeyFunc[T]
 
@@ -89,6 +127,8 @@ type _table[T any] struct {
 	secondaryIndexes map[IndexID]*Index[T]
 
 	serializer Serializer[*T]
+
+	filter Filter
 
 	mutex sync.RWMutex
 }
@@ -101,7 +141,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
-	return &_table[T]{
+	table := &_table[T]{
 		db:             opt.DB,
 		id:             opt.TableID,
 		name:           opt.TableName,
@@ -114,8 +154,11 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		}),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
 		serializer:       serializer,
+		filter:           opt.Filter,
 		mutex:            sync.RWMutex{},
 	}
+
+	return table
 }
 
 func (t *_table[T]) ID() TableID {
@@ -185,22 +228,25 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 		idxsMap[idx.IndexID] = idx
 		err := t.db.DeleteRange(
 			[]byte{byte(t.id), byte(idx.IndexID)},
-			[]byte{byte(t.id), byte(idx.IndexID + 1)}, pebble.Sync)
+			[]byte{byte(t.id), byte(idx.IndexID + 1)}, Sync)
 		if err != nil {
 			return fmt.Errorf("failed to delete index: %w", err)
 		}
 	}
 
-	snap := t.db.NewSnapshot()
-
 	var prefixBuffer [DataKeyBufferSize]byte
 	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
 
-	iter := snap.NewIter(&pebble.IterOptions{
-		LowerBound: prefix,
+	iter := t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: prefix,
+		},
 	})
 
-	batch := t.db.NewBatch()
+	batch := t.db.Batch()
+	defer func() {
+		_ = batch.Close()
+	}()
 
 	counter := 0
 	indexKeysBuffer := make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(idxs))
@@ -217,7 +263,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
 
 		for _, indexKey := range indexKeys {
-			err = batch.Set(indexKey, []byte{}, pebble.Sync)
+			err = batch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
 				return fmt.Errorf("failed to set index key during reindexing: %w", err)
 			}
@@ -227,16 +273,16 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 		if counter >= ReindexBatchSize {
 			counter = 0
 
-			err = batch.Commit(pebble.Sync)
+			err = batch.Commit(Sync)
 			if err != nil {
 				return fmt.Errorf("failed to commit reindex batch: %w", err)
 			}
 
-			batch = t.db.NewBatch()
+			batch = t.db.Batch()
 		}
 	}
 
-	err := batch.Commit(pebble.Sync)
+	err := batch.Commit(Sync)
 	if err != nil {
 		return fmt.Errorf("failed to commit reindex batch: %w", err)
 	}
@@ -246,25 +292,31 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch *pebble.Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.NewBatch()
+	var (
+		keyBatch      Batch
+		keyBatchCtx   context.Context
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
-		keyBatch = t.db.NewIndexedBatch()
+		keyBatch = t.db.Batch()
 	}
+	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
-	closeBatch := func() {
-		_ = keyBatch.Close()
+	defer func() {
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer       [DataKeyBufferSize]byte
@@ -275,7 +327,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -285,20 +336,17 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 
 		// check if exist
 		if t.exist(key, keyBatch) {
-			closeBatch()
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
-		err = keyBatch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -307,25 +355,25 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 
 		// update indexes
 		for _, indexKey := range indexKeys {
-			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
+
+		if t.filter != nil {
+			t.filter.Add(keyBatchCtx, key)
+		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(pebble.Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}
@@ -333,25 +381,29 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	return nil
 }
 
-func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch *pebble.Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.NewBatch()
+	var (
+		keyBatch      Batch
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
-		keyBatch = t.db.NewIndexedBatch()
+		keyBatch = t.db.Batch()
 	}
 
-	closeBatch := func() {
-		_ = keyBatch.Close()
+	defer func() {
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -361,7 +413,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			closeBatch()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -372,14 +423,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		// old record
 		oldTrData, closer, err := keyBatch.Get(key)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
 		var oldTr T
 		err = t.serializer.Deserialize(oldTrData, &oldTr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -388,14 +437,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
 		// update entry
-		err = keyBatch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 
@@ -404,33 +451,28 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
-			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
 
 		for _, indexKey := range toRemoveIndexKeys {
-			err = indexKeyBatch.Delete(indexKey, pebble.Sync)
+			err = indexKeyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(pebble.Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}
@@ -438,19 +480,29 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	return nil
 }
 
-func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var batch *pebble.Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+	var (
+		keyBatch      Batch
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
-		batch = optBatch[0]
+		keyBatch = optBatch[0]
 	} else {
-		batch = t.db.NewIndexedBatch()
+		keyBatch = t.db.Batch()
 	}
+
+	defer func() {
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
+		_ = indexKeyBatch.Close()
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -461,7 +513,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
-			_ = batch.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -469,25 +520,27 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 		var key = t.key(tr, keyBuffer[:0])
 		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
-		err := batch.Delete(key, pebble.Sync)
+		err := keyBatch.Delete(key, Sync)
 		if err != nil {
-			_ = batch.Close()
 			return err
 		}
 
 		for _, indexKey := range indexKeys {
-			err = batch.Delete(indexKey, pebble.Sync)
+			err = keyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				_ = batch.Close()
 				return err
 			}
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, Sync)
+	if err != nil {
+		return err
+	}
+
 	if !externalBatch {
-		err := batch.Commit(pebble.Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			_ = batch.Close()
 			return err
 		}
 	}
@@ -495,25 +548,31 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...*pebble.Bat
 	return nil
 }
 
-func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
-	var keyBatch *pebble.Batch
-	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-	indexKeyBatch := t.db.NewBatch()
+	var (
+		keyBatch      Batch
+		keyBatchCtx   context.Context
+		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
+	)
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
-		keyBatch = t.db.NewIndexedBatch()
+		keyBatch = t.db.Batch()
 	}
+	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
 
-	closeBatch := func() {
-		_ = keyBatch.Close()
+	defer func() {
+		if !externalBatch {
+			_ = keyBatch.Close()
+		}
 		_ = indexKeyBatch.Close()
-	}
+	}()
 
 	var (
 		keyBuffer      [DataKeyBufferSize]byte
@@ -533,16 +592,22 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		key := t.key(tr, keyBuffer[:0])
 
 		// old record
-		var oldTr T
-		oldTrData, closer, err := keyBatch.Get(key)
-		if err == nil {
-			err = t.serializer.Deserialize(oldTrData, &oldTr)
-			if err != nil {
-				closeBatch()
-				return err
-			}
+		var (
+			oldTr     T
+			oldTrData []byte
+			closer    io.Closer
+			err       error
+		)
+		if t.exist(key, keyBatch) {
+			oldTrData, closer, err = keyBatch.Get(key)
+			if err == nil {
+				err = t.serializer.Deserialize(oldTrData, &oldTr)
+				if err != nil {
+					return err
+				}
 
-			_ = closer.Close()
+				_ = closer.Close()
+			}
 		}
 
 		// handle upsert
@@ -558,9 +623,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		}
 
 		// update entry
-		err = keyBatch.Set(key, data, pebble.Sync)
+		err = keyBatch.Set(key, data, Sync)
 		if err != nil {
-			_ = keyBatch.Close()
 			return err
 		}
 
@@ -578,33 +642,32 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {
-			err = indexKeyBatch.Set(indexKey, []byte{}, pebble.Sync)
+			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
 
 		for _, indexKey := range toRemoveIndexKeys {
-			err = indexKeyBatch.Delete(indexKey, pebble.Sync)
+			err = indexKeyBatch.Delete(indexKey, Sync)
 			if err != nil {
-				closeBatch()
 				return err
 			}
 		}
+
+		if t.filter != nil && !isUpdate {
+			t.filter.Add(keyBatchCtx, key)
+		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch, pebble.Sync)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
-		closeBatch()
 		return err
 	}
-	_ = indexKeyBatch.Close()
 
 	if !externalBatch {
-		err := keyBatch.Commit(pebble.Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
-			closeBatch()
 			return err
 		}
 	}
@@ -612,8 +675,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	return nil
 }
 
-func (t *_table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
-	var batch *pebble.Batch
+func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
+	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
 	} else {
@@ -625,8 +688,13 @@ func (t *_table[T]) Exist(tr T, optBatch ...*pebble.Batch) bool {
 	return t.exist(key, batch)
 }
 
-func (t *_table[T]) exist(key []byte, batch *pebble.Batch) bool {
-	_, closer, err := t.db.getKV(key, batch)
+func (t *_table[T]) exist(key []byte, batch Batch) bool {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+		return false
+	}
+
+	_, closer, err := t.db.Get(key, batch)
 	if err != nil {
 		return false
 	}
@@ -635,8 +703,8 @@ func (t *_table[T]) exist(key []byte, batch *pebble.Batch) bool {
 	return true
 }
 
-func (t *_table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
-	var batch *pebble.Batch
+func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
+	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
 	} else {
@@ -645,11 +713,17 @@ func (t *_table[T]) Get(tr T, optBatch ...*pebble.Batch) (T, error) {
 
 	var keyBuffer [DataKeyBufferSize]byte
 	key := t.key(tr, keyBuffer[:0])
+
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
+
 	return t.get(key, batch)
 }
 
-func (t *_table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
-	data, closer, err := t.db.getKV(key, batch)
+func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
+	data, closer, err := t.db.Get(key, batch)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed: %w", err)
 	}
@@ -665,19 +739,21 @@ func (t *_table[T]) get(key []byte, batch *pebble.Batch) (T, error) {
 	return tr, nil
 }
 
-func (t *_table[T]) NewIter(options *pebble.IterOptions, optBatch ...*pebble.Batch) *pebble.Iterator {
-	if options == nil {
-		options = &pebble.IterOptions{}
+func (t *_table[T]) Iter(opt *IterOptions, optBatch ...Batch) Iterator {
+	if opt == nil {
+		opt = &IterOptions{}
 	}
 
-	selector := _KeyEncode(_Key{TableID: t.id}, nil)
-	options.LowerBound = selector
+	lower := KeyEncode(Key{TableID: t.id}, nil)
+	upper := KeyEncode(Key{TableID: t.id + 1}, nil)
+	opt.LowerBound = lower
+	opt.UpperBound = upper
 
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch := optBatch[0]
-		return batch.NewIter(options)
+		return batch.Iter(opt)
 	} else {
-		return t.db.NewIter(options)
+		return t.db.Iter(opt)
 	}
 }
 
@@ -685,12 +761,12 @@ func (t *_table[T]) Query() Query[T] {
 	return newQuery(t, t.primaryIndex)
 }
 
-func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...*pebble.Batch) error {
+func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error {
 	return t.ScanIndex(ctx, t.primaryIndex, utils.MakeNew[T](), tr, optBatch...)
 }
 
-func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...*pebble.Batch) error {
-	return t.ScanIndexForEach(ctx, i, s, func(lazy Lazy[T]) (bool, error) {
+func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error {
+	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
 			return true, nil
@@ -700,25 +776,29 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 	}, optBatch...)
 }
 
-func (t *_table[T]) ScanForEach(ctx context.Context, f func(l Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
 	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(t Lazy[T]) (bool, error), optBatch ...*pebble.Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	var prefixBuffer [DataKeyBufferSize]byte
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
-	var iter *pebble.Iterator
-	var batch *pebble.Batch
+	var iter Iterator
+	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
-		iter = batch.NewIter(&pebble.IterOptions{
-			LowerBound: selector,
+		iter = batch.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
 		})
 	} else {
-		iter = t.db.NewIter(&pebble.IterOptions{
-			LowerBound: selector,
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
 		})
 	}
 
@@ -735,12 +815,9 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		}
 	} else {
 		getValue = func() (T, error) {
-			tableKey := _KeyBytesToDataKeyBytes(
-				iter.Key(),
-				keyBuffer[:0],
-			)
+			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
 
-			valueData, closer, err := t.db.getKV(tableKey, batch)
+			valueData, closer, err := t.db.Get(tableKey, batch)
 			if err != nil {
 				return utils.MakeNew[T](), err
 			}
@@ -763,7 +840,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		default:
 		}
 
-		if cont, err := f(Lazy[T]{getValue}); !cont || err != nil {
+		if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
 			break
 		} else {
 			if err != nil {
@@ -788,7 +865,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
 		IndexKey:   []byte{},
@@ -800,7 +877,7 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKey,
@@ -816,7 +893,7 @@ func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
 	).Bytes()
 
-	return _KeyEncode(_Key{
+	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		IndexKey:   indexKeyPart,

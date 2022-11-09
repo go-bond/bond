@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -31,12 +32,24 @@ func DefaultOptions() *Options {
 }
 
 func DefaultPebbleOptions() *pebble.Options {
+	var maxOpenFileLimit = 10000
+
+	pCache := pebble.NewCache(128 << 20) // 128 MB
+	defer func() {
+		pCache.Unref()
+	}()
+
+	pTableCache := pebble.NewTableCache(pCache, runtime.GOMAXPROCS(0), maxOpenFileLimit)
+
 	opts := &pebble.Options{
+		Cache:                       pCache,
+		TableCache:                  pTableCache,
 		FS:                          vfs.Default,
-		Comparer:                    DefaultPebbleComparer(),
+		Comparer:                    DefaultKeyComparer(),
 		L0CompactionThreshold:       2,
 		L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB
+		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
 		MaxConcurrentCompactions:    func() int { return DefaultMaxConcurrentCompactions },
 		MemTableSize:                64 << 20, // 64 MB
@@ -62,10 +75,4 @@ func DefaultPebbleOptions() *pebble.Options {
 	}
 
 	return opts
-}
-
-func DefaultPebbleComparer() *pebble.Comparer {
-	comparer := *pebble.DefaultComparer
-	comparer.Split = _KeyPrefixSplitIndex
-	return &comparer
 }
