@@ -3,7 +3,7 @@ package filters
 import (
 	"context"
 
-	"github.com/bits-and-blooms/bloom"
+	"github.com/bits-and-blooms/bloom/v3"
 )
 
 type SingleBloomFilter struct {
