@@ -33,6 +33,10 @@ type DeleterWithRange interface {
 	DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error
 }
 
+type Batcher interface {
+	Batch() Batch
+}
+
 type Iterationer interface {
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
@@ -52,7 +56,7 @@ type DB interface {
 	DeleterWithRange
 	Iterationer
 
-	Batch() Batch
+	Batcher
 	Applier
 
 	Closer

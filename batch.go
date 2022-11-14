@@ -95,6 +95,12 @@ func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
 		return fmt.Errorf("incorrect batch param")
 	}
 
+	err := innerBatch.notifyOnCommit()
+	if err != nil {
+		return err
+	}
+	defer innerBatch.notifyOnCommitted()
+
 	return b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
 }
 
