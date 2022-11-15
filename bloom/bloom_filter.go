@@ -32,22 +32,22 @@ type _bucket struct {
 type BloomFilter struct {
 	hasher *sync.Pool
 
-	keyPrefix string
-	bucketNum int
-	buckets   []*_bucket
+	keyPrefix    string
+	numOfBuckets int
+	buckets      []*_bucket
 
 	mutex sync.RWMutex
 }
 
-func NewBloomFilter(n uint, fp float64, bucketNum int, keyPrefixes ...string) *BloomFilter {
+func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...string) *BloomFilter {
 	hasher := &sync.Pool{
 		New: func() any {
-			return jump.New(bucketNum, jump.NewCRC32())
+			return jump.New(numOfBuckets, jump.NewCRC32())
 		},
 	}
 
-	buckets := make([]*_bucket, 0, bucketNum)
-	for i := 0; i < bucketNum; i++ {
+	buckets := make([]*_bucket, 0, numOfBuckets)
+	for i := 0; i < numOfBuckets; i++ {
 		buckets = append(buckets, &_bucket{
 			num:            i,
 			hasChanges:     false,
@@ -68,11 +68,11 @@ func NewBloomFilter(n uint, fp float64, bucketNum int, keyPrefixes ...string) *B
 	}
 
 	return &BloomFilter{
-		hasher:    hasher,
-		keyPrefix: keyPrefix,
-		bucketNum: bucketNum,
-		buckets:   buckets,
-		mutex:     sync.RWMutex{},
+		hasher:       hasher,
+		keyPrefix:    keyPrefix,
+		numOfBuckets: numOfBuckets,
+		buckets:      buckets,
+		mutex:        sync.RWMutex{},
 	}
 }
 
@@ -97,7 +97,7 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 	var keyBuff [1024]byte
 
 	bucketNum, bucketNumCloser, err := store.Get(buildBucketNumKey(keyBuff[:0], b.keyPrefix))
-	if err != nil || (err == nil && binary.BigEndian.Uint64(bucketNum) != uint64(b.bucketNum)) {
+	if err != nil || (err == nil && binary.BigEndian.Uint64(bucketNum) != uint64(b.numOfBuckets)) {
 		if err == nil {
 			_ = bucketNumCloser.Close()
 		}
@@ -143,7 +143,7 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 	dataBuff := _buffPool.Get().([]byte)
 	defer _buffPool.Put(dataBuff)
 
-	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.bucketNum))
+	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.numOfBuckets))
 	err := store.Set(buildBucketNumKey(keyBuff[:0], b.keyPrefix), dataBuff[:8], bond.Sync)
 	if err != nil {
 		return err
