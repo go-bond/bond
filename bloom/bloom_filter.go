@@ -61,7 +61,7 @@ func NewBloomFilter(n uint, fp float64, bucketNum int, keyPrefixes ...string) *B
 		IndexID:    0,
 		IndexKey:   []byte{},
 		IndexOrder: []byte{},
-		PrimaryKey: []byte("bloom_filter_"),
+		PrimaryKey: []byte("bf_"),
 	}))
 	if len(keyPrefixes) > 0 {
 		keyPrefix = keyPrefixes[0]
@@ -206,6 +206,6 @@ func buildKey(buff []byte, keyPrefix string, bucketNo int) []byte {
 
 func buildBucketNumKey(buff []byte, keyPrefix string) []byte {
 	buffer := bytes.NewBuffer(buff)
-	_, _ = fmt.Fprintf(buffer, "%sbucket_num", keyPrefix)
+	_, _ = fmt.Fprintf(buffer, "%sbn", keyPrefix)
 	return buffer.Bytes()
 }
