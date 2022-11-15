@@ -3,6 +3,7 @@ package bloom
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -32,6 +33,7 @@ type BloomFilter struct {
 	hasher *sync.Pool
 
 	keyPrefix string
+	bucketNum int
 	buckets   []*_bucket
 
 	mutex sync.RWMutex
@@ -68,6 +70,7 @@ func NewBloomFilter(n uint, fp float64, numOfFilters int, keyPrefixes ...string)
 	return &BloomFilter{
 		hasher:    hasher,
 		keyPrefix: keyPrefix,
+		bucketNum: numOfFilters,
 		buckets:   buckets,
 		mutex:     sync.RWMutex{},
 	}
@@ -91,22 +94,37 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
+	var keyBuff [1024]byte
+
+	bucketNum, bucketNumCloser, err := store.Get(buildBucketNumKey(keyBuff[:0], b.keyPrefix))
+	if err != nil || (err == nil && binary.BigEndian.Uint64(bucketNum) != uint64(b.bucketNum)) {
+		if err == nil {
+			_ = bucketNumCloser.Close()
+		}
+		return fmt.Errorf("configuration changed")
+	}
+
 	for _, bucket := range b.buckets {
-		var keyBuff [1024]byte
 		data, closer, err := store.Get(
 			buildKey(keyBuff[:0], b.keyPrefix, bucket.no))
 		if err != nil {
 			return err
 		}
 
+		filter := bloom.New(0, 0)
 		zr := zstd.NewReader(bytes.NewBuffer(data))
-		_, err = bucket.filter.ReadFrom(zr)
+		_, err = filter.ReadFrom(zr)
 		if err != nil {
 			return err
 		}
 
 		_ = zr.Close()
 		_ = closer.Close()
+
+		err = bucket.filter.Merge(filter)
+		if err != nil {
+			return fmt.Errorf("configuration changed: %w", err)
+		}
 
 		bucket.hasBeenWritten = true
 	}
@@ -118,8 +136,15 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
+	var keyBuff [1024]byte
 	dataBuff := _buffPool.Get().([]byte)
 	defer _buffPool.Put(dataBuff)
+
+	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.bucketNum))
+	err := store.Set(buildBucketNumKey(keyBuff[:0], b.keyPrefix), dataBuff[:8], bond.Sync)
+	if err != nil {
+		return err
+	}
 
 	for _, bucket := range b.buckets {
 		if !bucket.hasChanges && bucket.hasBeenWritten {
@@ -128,7 +153,7 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 
 		buff := bytes.NewBuffer(dataBuff[:0])
 		zw := zstd.NewWriter(buff)
-		_, err := bucket.filter.WriteTo(zw)
+		_, err = bucket.filter.WriteTo(zw)
 		if err != nil {
 			return err
 		}
@@ -138,7 +163,6 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 			return err
 		}
 
-		var keyBuff [1024]byte
 		err = store.Set(
 			buildKey(keyBuff[:0], b.keyPrefix, bucket.no),
 			buff.Bytes(),
@@ -169,5 +193,11 @@ func (b *BloomFilter) hash(key []byte) int {
 func buildKey(buff []byte, keyPrefix string, bucketNo int) []byte {
 	buffer := bytes.NewBuffer(buff)
 	_, _ = fmt.Fprintf(buffer, "%s%d", keyPrefix, bucketNo)
+	return buffer.Bytes()
+}
+
+func buildBucketNumKey(buff []byte, keyPrefix string) []byte {
+	buffer := bytes.NewBuffer(buff)
+	_, _ = fmt.Fprintf(buffer, "%sbucket_num", keyPrefix)
 	return buffer.Bytes()
 }

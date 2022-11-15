@@ -88,6 +88,34 @@ func TestBloomFilter_Save_Load_Clear(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestBloomFilter_Load_Config_Changed(t *testing.T) {
+	bf := NewBloomFilter(10, 0.01, 1000)
+
+	keys := KeyGenerate(200, 128)
+	for _, key := range keys {
+		bf.Add(context.Background(), key)
+	}
+
+	store := filtereStorer{
+		data: make(map[string][]byte),
+	}
+
+	err := bf.Save(context.Background(), &store)
+	require.NoError(t, err)
+
+	bf2 := NewBloomFilter(100, 0.01, 1000)
+	err = bf2.Load(context.Background(), &store)
+	require.Error(t, err)
+
+	bf2 = NewBloomFilter(10, 0.02, 1000)
+	err = bf2.Load(context.Background(), &store)
+	require.Error(t, err)
+
+	bf2 = NewBloomFilter(10, 0.01, 100)
+	err = bf2.Load(context.Background(), &store)
+	require.Error(t, err)
+}
+
 func KeyGenerate(n int, keySize int) (ret [][]byte) {
 	for i := 0; i < n; i++ {
 		ret = append(ret, []byte(RandomString(keySize)))

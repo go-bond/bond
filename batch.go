@@ -101,7 +101,12 @@ func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
 	}
 	defer innerBatch.notifyOnCommitted()
 
-	return b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
+	err = b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
+	if err != nil {
+		innerBatch.notifyOnError(err)
+		return err
+	}
+	return nil
 }
 
 func (b *_batch) Commit(opt WriteOptions) error {

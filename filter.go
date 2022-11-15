@@ -23,6 +23,11 @@ type Filter interface {
 func FilterInitialize(ctx context.Context, filter Filter, db DB, scanners []TableScanner[any]) error {
 	err := filter.Load(ctx, db)
 	if err != nil {
+		err = filter.Clear(ctx, db)
+		if err != nil {
+			return fmt.Errorf("filter initialization failed: %w", err)
+		}
+
 		for _, scanner := range scanners {
 			err = scanner.ScanForEach(ctx, func(keyBytes KeyBytes, lazy Lazy[any]) (bool, error) {
 				filter.Add(ctx, keyBytes)
