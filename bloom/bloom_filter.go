@@ -42,7 +42,7 @@ type BloomFilter struct {
 func NewBloomFilter(n uint, fp float64, numOfFilters int, keyPrefixes ...string) *BloomFilter {
 	hasher := &sync.Pool{
 		New: func() any {
-			return jump.New(numOfFilters, jump.NewFNV1a())
+			return jump.New(numOfFilters, jump.NewCRC32())
 		},
 	}
 
