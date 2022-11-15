@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type filtereStorer struct {
+type filterStorer struct {
 	data map[string][]byte
 }
 
-func (f *filtereStorer) Get(key []byte, batch ...bond.Batch) (data []byte, closer io.Closer, err error) {
+func (f *filterStorer) Get(key []byte, batch ...bond.Batch) (data []byte, closer io.Closer, err error) {
 	keyData, ok := f.data[string(key)]
 	if !ok {
 		return nil, nil, fmt.Errorf("not found")
@@ -25,14 +25,14 @@ func (f *filtereStorer) Get(key []byte, batch ...bond.Batch) (data []byte, close
 	return keyData, io.NopCloser(nil), nil
 }
 
-func (f *filtereStorer) Set(key []byte, value []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
+func (f *filterStorer) Set(key []byte, value []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
 	valueCopy := make([]byte, len(value))
 	copy(valueCopy, value)
 	f.data[string(key)] = valueCopy
 	return nil
 }
 
-func (f *filtereStorer) DeleteRange(start []byte, end []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
+func (f *filterStorer) DeleteRange(start []byte, end []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
 	for key, _ := range f.data {
 		if strings.HasPrefix(key, string(start)) {
 			delete(f.data, key)
@@ -66,7 +66,7 @@ func TestBloomFilter_Save_Load_Clear(t *testing.T) {
 		bf.Add(context.Background(), key)
 	}
 
-	store := filtereStorer{
+	store := filterStorer{
 		data: make(map[string][]byte),
 	}
 
@@ -96,7 +96,7 @@ func TestBloomFilter_Load_Config_Changed(t *testing.T) {
 		bf.Add(context.Background(), key)
 	}
 
-	store := filtereStorer{
+	store := filterStorer{
 		data: make(map[string][]byte),
 	}
 

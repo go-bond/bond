@@ -3,7 +3,6 @@ module github.com/go-bond/bond
 go 1.18
 
 require (
-	github.com/DataDog/zstd v1.5.2
 	github.com/bits-and-blooms/bloom/v3 v3.3.1
 	github.com/cockroachdb/pebble v0.0.0-20221109022758-7b30bd86ff65
 	github.com/dustin/go-humanize v1.0.0
@@ -11,6 +10,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-resty/resty/v2 v2.7.0
 	github.com/google/uuid v1.3.0
+	github.com/klauspost/compress v1.15.12
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/stretchr/testify v1.7.1
 	github.com/tinylib/msgp v1.1.6
@@ -20,6 +20,7 @@ require (
 )
 
 require (
+	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.3.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
@@ -32,7 +33,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/klauspost/compress v1.15.12 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect

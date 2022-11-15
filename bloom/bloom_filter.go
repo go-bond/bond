@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/DataDog/zstd"
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/go-bond/bond"
+	"github.com/klauspost/compress/zstd"
 	"github.com/lithammer/go-jump-consistent-hash"
 )
 
@@ -20,7 +20,7 @@ var _buffPool = sync.Pool{
 }
 
 type _bucket struct {
-	no             int
+	num            int
 	hasChanges     bool
 	hasBeenWritten bool
 
@@ -39,17 +39,17 @@ type BloomFilter struct {
 	mutex sync.RWMutex
 }
 
-func NewBloomFilter(n uint, fp float64, numOfFilters int, keyPrefixes ...string) *BloomFilter {
+func NewBloomFilter(n uint, fp float64, bucketNum int, keyPrefixes ...string) *BloomFilter {
 	hasher := &sync.Pool{
 		New: func() any {
-			return jump.New(numOfFilters, jump.NewCRC32())
+			return jump.New(bucketNum, jump.NewCRC32())
 		},
 	}
 
-	buckets := make([]*_bucket, 0, numOfFilters)
-	for i := 0; i < numOfFilters; i++ {
+	buckets := make([]*_bucket, 0, bucketNum)
+	for i := 0; i < bucketNum; i++ {
 		buckets = append(buckets, &_bucket{
-			no:             i,
+			num:            i,
 			hasChanges:     false,
 			hasBeenWritten: false,
 			filter:         bloom.NewWithEstimates(n, fp),
@@ -70,7 +70,7 @@ func NewBloomFilter(n uint, fp float64, numOfFilters int, keyPrefixes ...string)
 	return &BloomFilter{
 		hasher:    hasher,
 		keyPrefix: keyPrefix,
-		bucketNum: numOfFilters,
+		bucketNum: bucketNum,
 		buckets:   buckets,
 		mutex:     sync.RWMutex{},
 	}
@@ -105,20 +105,23 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 	}
 
 	for _, bucket := range b.buckets {
-		data, closer, err := store.Get(
-			buildKey(keyBuff[:0], b.keyPrefix, bucket.no))
+		data, closer, err := store.Get(buildKey(keyBuff[:0], b.keyPrefix, bucket.num))
 		if err != nil {
 			return err
 		}
 
 		filter := bloom.New(0, 0)
-		zr := zstd.NewReader(bytes.NewBuffer(data))
+		zr, err := zstd.NewReader(bytes.NewBuffer(data))
+		if err != nil {
+			return err
+		}
+
 		_, err = filter.ReadFrom(zr)
 		if err != nil {
 			return err
 		}
 
-		_ = zr.Close()
+		zr.Close()
 		_ = closer.Close()
 
 		err = bucket.filter.Merge(filter)
@@ -152,7 +155,11 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 		}
 
 		buff := bytes.NewBuffer(dataBuff[:0])
-		zw := zstd.NewWriter(buff)
+		zw, err := zstd.NewWriter(buff)
+		if err != nil {
+			return err
+		}
+
 		_, err = bucket.filter.WriteTo(zw)
 		if err != nil {
 			return err
@@ -164,9 +171,10 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 		}
 
 		err = store.Set(
-			buildKey(keyBuff[:0], b.keyPrefix, bucket.no),
+			buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
 			buff.Bytes(),
-			bond.Sync)
+			bond.Sync,
+		)
 		if err != nil {
 			return err
 		}
