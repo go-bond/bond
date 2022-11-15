@@ -3,6 +3,7 @@ module github.com/go-bond/bond
 go 1.18
 
 require (
+	github.com/DataDog/zstd v1.5.2
 	github.com/bits-and-blooms/bloom/v3 v3.3.1
 	github.com/cockroachdb/pebble v0.0.0-20221109022758-7b30bd86ff65
 	github.com/dustin/go-humanize v1.0.0
@@ -19,7 +20,6 @@ require (
 )
 
 require (
-	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.3.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
