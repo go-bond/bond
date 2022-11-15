@@ -22,6 +22,24 @@ func (m *MockFilter) MayContain(ctx context.Context, key []byte) bool {
 	return args.Get(0).(bool)
 }
 
+func (m *MockFilter) Load(ctx context.Context, store FilterStorer) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MockFilter) Save(ctx context.Context, store FilterStorer) error {
+	args := m.Called(ctx, store)
+	if err := args.Get(0); err != nil {
+		return err.(error)
+	}
+	return nil
+}
+
+func (m *MockFilter) Clear(ctx context.Context, store FilterStorer) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func TestFilter_Insert(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
@@ -108,6 +126,9 @@ func TestFilter_Insert_Batch(t *testing.T) {
 
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount}, batch)
 	require.Error(t, err)
+
+	err = batch.Commit(Sync)
+	require.NoError(t, err)
 
 	_ = batch.Close()
 

@@ -10,6 +10,8 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-resty/resty/v2 v2.7.0
 	github.com/google/uuid v1.3.0
+	github.com/klauspost/compress v1.15.12
+	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/stretchr/testify v1.7.1
 	github.com/tinylib/msgp v1.1.6
 	github.com/urfave/cli/v2 v2.16.3
@@ -31,7 +33,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/klauspost/compress v1.15.12 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect

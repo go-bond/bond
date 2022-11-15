@@ -8,6 +8,14 @@ import (
 	"github.com/go-bond/bond/serializers"
 )
 
+const (
+	// BOND_DB_DATA_TABLE_ID ..
+	BOND_DB_DATA_TABLE_ID = 0x0
+
+	// BOND_DB_DATA_USER_SPACE_INDEX_ID
+	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
+)
+
 type WriteOptions struct {
 	Sync bool
 }
@@ -33,6 +41,10 @@ type DeleterWithRange interface {
 	DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error
 }
 
+type Batcher interface {
+	Batch() Batch
+}
+
 type Iterationer interface {
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
@@ -52,16 +64,20 @@ type DB interface {
 	DeleterWithRange
 	Iterationer
 
-	Batch() Batch
+	Batcher
 	Applier
 
 	Closer
+
+	OnClose(func(db DB))
 }
 
 type _db struct {
 	pebble *pebble.DB
 
 	serializer Serializer[any]
+
+	onCloseCallbacks []func(db DB)
 }
 
 func Open(dirname string, opts *Options) (DB, error) {
@@ -154,7 +170,18 @@ func (db *_db) Apply(b Batch, opt WriteOptions) error {
 }
 
 func (db *_db) Close() error {
+	db.notifyOnClose()
 	return db.pebble.Close()
+}
+
+func (db *_db) OnClose(f func(db DB)) {
+	db.onCloseCallbacks = append(db.onCloseCallbacks, f)
+}
+
+func (db *_db) notifyOnClose() {
+	for _, onClose := range db.onCloseCallbacks {
+		onClose(db)
+	}
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {

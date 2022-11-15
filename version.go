@@ -10,9 +10,6 @@ import (
 const (
 	// BOND_DB_DATA_VERSION ..
 	BOND_DB_DATA_VERSION = 1
-
-	// BOND_DB_DATA_TABLE_ID ..
-	BOND_DB_DATA_TABLE_ID = 0x0
 )
 
 func (db *_db) Version() int {

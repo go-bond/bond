@@ -12,7 +12,10 @@ func ContextWithBatch(ctx context.Context, batch Batch) context.Context {
 }
 
 func ContextRetrieveBatch(ctx context.Context) Batch {
-	return ctx.Value(contextKeyName).(Batch)
+	if b := ctx.Value(contextKeyName); b != nil {
+		return b.(Batch)
+	}
+	return nil
 }
 
 func ContextWithSyncBatch(ctx context.Context, batch *SyncBatch) context.Context {
@@ -20,5 +23,8 @@ func ContextWithSyncBatch(ctx context.Context, batch *SyncBatch) context.Context
 }
 
 func ContextRetrieveSyncBatch(ctx context.Context) *SyncBatch {
-	return ctx.Value(contextSyncKeyName).(*SyncBatch)
+	if b := ctx.Value(contextSyncKeyName); b != nil {
+		return b.(*SyncBatch)
+	}
+	return nil
 }

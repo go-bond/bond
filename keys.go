@@ -152,6 +152,16 @@ type Key struct {
 	PrimaryKey []byte
 }
 
+func NewUserKey(key string) KeyBytes {
+	return KeyEncode(Key{
+		TableID:    BOND_DB_DATA_TABLE_ID,
+		IndexID:    BOND_DB_DATA_USER_SPACE_INDEX_ID,
+		IndexKey:   []byte{},
+		IndexOrder: []byte{},
+		PrimaryKey: []byte(key),
+	})
+}
+
 func (k Key) ToDataKey() Key {
 	return Key{
 		TableID:    k.TableID,
