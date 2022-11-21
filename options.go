@@ -54,6 +54,14 @@ func DefaultPebbleOptions() *pebble.Options {
 		MaxConcurrentCompactions:    func() int { return DefaultMaxConcurrentCompactions },
 		MemTableSize:                64 << 20, // 64 MB
 		MemTableStopWritesThreshold: 4,
+		TablePropertyCollectors: []func() pebble.TablePropertyCollector{
+			func() pebble.TablePropertyCollector {
+				return &_tableIDCollector{}
+			},
+			func() pebble.TablePropertyCollector {
+				return &_indexIDCollector{}
+			},
+		},
 	}
 
 	opts.FlushDelayDeleteRange = 10 * time.Second

@@ -787,17 +787,25 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 
 	var iter Iterator
 	var batch Batch
+	var tradeIDFilter = _filterTableID(t.id)
+	var indexIDFilter = _filterIndexID(idx.IndexID)
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
 		iter = batch.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				TableFilter: func(userProps map[string]string) bool {
+					return tradeIDFilter(userProps) && indexIDFilter(userProps)
+				},
 			},
 		})
 	} else {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				TableFilter: func(userProps map[string]string) bool {
+					return tradeIDFilter(userProps) && indexIDFilter(userProps)
+				},
 			},
 		})
 	}
