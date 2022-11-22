@@ -67,56 +67,56 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		},
 	})
 
-	accountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
-		IndexID:   bond.PrimaryIndexID + 1,
-		IndexName: "account_address_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddStringField(tb.AccountAddress).Bytes()
-		},
-		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
-	})
+	// accountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	// 	IndexID:   bond.PrimaryIndexID + 1,
+	// 	IndexName: "account_address_idx",
+	// 	IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	// 		return builder.AddStringField(tb.AccountAddress).Bytes()
+	// 	},
+	// 	IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+	// })
 
-	amountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
-		IndexID:   bond.PrimaryIndexID + 2,
-		IndexName: "account_amount_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
-			return builder.Bytes()
-		},
-		IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
-			return o.OrderUint64(t.Balance, bond.IndexOrderTypeDESC)
-		},
-	})
+	// amountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	// 	IndexID:   bond.PrimaryIndexID + 2,
+	// 	IndexName: "account_amount_idx",
+	// 	IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
+	// 		return builder.Bytes()
+	// 	},
+	// 	IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
+	// 		return o.OrderUint64(t.Balance, bond.IndexOrderTypeDESC)
+	// 	},
+	// })
 
-	tokenIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
-		IndexID:   bond.PrimaryIndexID + 3,
-		IndexName: "token_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
-			return builder.Bytes()
-		},
-		IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
-			return o.OrderUint32(t.TokenID, bond.IndexOrderTypeDESC)
-		},
-	})
+	// tokenIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	// 	IndexID:   bond.PrimaryIndexID + 3,
+	// 	IndexName: "token_idx",
+	// 	IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
+	// 		return builder.Bytes()
+	// 	},
+	// 	IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
+	// 		return o.OrderUint32(t.TokenID, bond.IndexOrderTypeDESC)
+	// 	},
+	// })
 
-	contractIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
-		IndexID:   bond.PrimaryIndexID + 4,
-		IndexName: "contract_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddStringField(tb.ContractAddress).Bytes()
-		},
-		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
-	})
+	// contractIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	// 	IndexID:   bond.PrimaryIndexID + 4,
+	// 	IndexName: "contract_idx",
+	// 	IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+	// 		return builder.AddStringField(tb.ContractAddress).Bytes()
+	// 	},
+	// 	IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+	// })
 
-	err := table.AddIndex([]*bond.Index[*TokenBalance]{
-		accountIdx,
-		amountIdx,
-		tokenIdx,
-		contractIdx,
-	})
+	// err := table.AddIndex([]*bond.Index[*TokenBalance]{
+	// 	accountIdx,
+	// 	amountIdx,
+	// 	tokenIdx,
+	// 	contractIdx,
+	// })
 
-	if err != nil {
-		panic(err)
-	}
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	entries := make([]*TokenBalance, 0, batchSize)
 	for i := 0; i < totalBatch; i++ {

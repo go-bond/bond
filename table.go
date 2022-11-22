@@ -319,7 +319,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer       [DataKeyBufferSize]byte
+		//keyBuffer       [DataKeyBufferSize]byte
 		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
@@ -330,25 +330,28 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
-
-		// insert key
-		key := t.key(tr, keyBuffer[:0])
-
-		// check if exist
-		if t.exist(key, keyBatch) {
-			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
-		}
-
+		keySize := KeySize(9, 0, 0)
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
 			return err
 		}
+		set := keyBatch.SetDeferred(keySize, len(data))
+		// insert key
+		key := t.newKey(tr, set.Key[:0])
+		copy(set.Value, data)
+		// check if exist
+		if t.exist(key, keyBatch) {
+			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
+		}
 
-		err = keyBatch.Set(key, data, Sync)
-		if err != nil {
+		if err := set.Finish(); err != nil {
 			return err
 		}
+		// err = keyBatch.Set(key, data, Sync)
+		// if err != nil {
+		// 	return err
+		// }
 
 		// index keys
 		indexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
@@ -864,7 +867,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
-
+	fmt.Printf("primary key %v \n", primaryKey)
 	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
@@ -872,6 +875,15 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 		IndexOrder: []byte{},
 		PrimaryKey: primaryKey,
 	}, buff[len(primaryKey):len(primaryKey)])
+}
+
+func (t *_table[T]) newKey(tr T, rawBuff []byte) []byte {
+	rawBuff = append(rawBuff, byte(t.id))
+	rawBuff = append(rawBuff, byte(PrimaryIndexID))
+	rawBuff = append(rawBuff, 0, 0, 0, 0)
+	rawBuff = append(rawBuff, 0, 0, 0, 0)
+	t.primaryKeyFunc(NewKeyBuilder(rawBuff[len(rawBuff):]), tr)
+	return rawBuff
 }
 
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {

@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 
 	"github.com/cockroachdb/pebble"
@@ -199,6 +200,9 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
 		rawBuff = rawBuffs[0]
 	}
+	if len(rawBuffs) == 1 {
+		fmt.Printf("raw buf %v len %d cap %d\n", rawBuffs[0], len(rawBuffs[0]), cap(rawBuffs[0]))
+	}
 
 	buff := bytes.NewBuffer(rawBuff)
 	buff.Write([]byte{byte(key.TableID)})
@@ -218,6 +222,18 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	}
 
 	return buff.Bytes()
+}
+
+func KeySize(primarySize, indexSize, indexOrderSize int) int {
+	// tableID + indexID + indexKeyLen
+	size := 1 + 1 + 4
+	size += indexSize
+	// grow size if the incoming key is not `KeyPrefix`
+	if primarySize != 0 {
+		// indexOrderLen + indexOrder + primary
+		size += 4 + indexOrderSize + primarySize
+	}
+	return size
 }
 
 func KeyDecode(keyBytes []byte) Key {

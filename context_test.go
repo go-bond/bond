@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -90,6 +91,10 @@ func (m *MockBatch) OnError(f func(b Batch, err error)) {
 
 func (m *MockBatch) OnClose(f func(b Batch)) {
 	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MockBatch) SetDeferred(keyLen, valueLen int) *pebble.DeferredBatchOp {
 	panic("implement me")
 }
 

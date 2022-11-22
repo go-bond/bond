@@ -23,6 +23,7 @@ type Batch interface {
 	Len() int
 	Empty() bool
 	Reset()
+	SetDeferred(keyLen, valueLen int) *pebble.DeferredBatchOp
 
 	Getter
 	Setter
