@@ -30,6 +30,8 @@ type Batch interface {
 	DeleterWithRange
 	Iterationer
 
+	Deferred
+
 	Applier
 	Committer
 	Closer

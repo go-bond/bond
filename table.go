@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"reflect"
@@ -302,7 +303,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		keyBatch      Batch
 		keyBatchCtx   context.Context
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-		indexKeyBatch = t.db.Batch()
 	)
 	if externalBatch {
 		keyBatch = optBatch[0]
@@ -315,14 +315,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
-		_ = indexKeyBatch.Close()
 	}()
-
-	var (
-		keyBuffer       [DataKeyBufferSize]byte
-		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
-		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
-	)
 
 	for _, tr := range trs {
 		select {
@@ -331,48 +324,50 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		default:
 		}
 
-		// insert key
-		key := t.key(tr, keyBuffer[:0])
-
-		// check if exist
-		if t.exist(key, keyBatch) {
-			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
-		}
-
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
 			return err
 		}
 
-		err = keyBatch.Set(key, data, Sync)
+		info := t.keySize(tr)
+		set := keyBatch.SetDeferred(info.Total, len(data))
+		// insert key
+		set.Key = t.encodeKey(tr, info, PrimaryIndexID, set.Key, nil)
+		copy(set.Value, data)
+
+		// check if exist
+		if t.exist(set.Key, keyBatch) {
+			return fmt.Errorf("record: %x already exist", set.Key[_KeyPrefixSplitIndex(set.Key):])
+		}
+
+		err = set.Finish()
 		if err != nil {
 			return err
 		}
 
-		// index keys
-		indexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
-
-		// update indexes
-		for _, indexKey := range indexKeys {
-			err = indexKeyBatch.Set(indexKey, []byte{}, Sync)
-			if err != nil {
-				return err
-			}
-		}
-
 		if t.filter != nil {
-			t.filter.Add(keyBatchCtx, key)
+			// TODO: @poonai make copy of key before passing to the filter.
+			t.filter.Add(keyBatchCtx, utils.Copy(set.Key))
 		}
-	}
 
-	err := keyBatch.Apply(indexKeyBatch, Sync)
-	if err != nil {
-		return err
+		for _, idx := range indexes {
+			// verify, this record should be indexed or not.
+			if idx.IndexFilterFunction(tr) {
+				info = t.indexKeySize(idx, tr)
+				set = keyBatch.SetDeferred(info.Total, 0)
+				set.Key = t.encodeKey(tr, info, idx.IndexID, set.Key, idx)
+				err = set.Finish()
+				if err != nil {
+					return err
+				}
+			}
+
+		}
 	}
 
 	if !externalBatch {
-		err = keyBatch.Commit(Sync)
+		err := keyBatch.Commit(Sync)
 		if err != nil {
 			return err
 		}
@@ -863,7 +858,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 }
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
-	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
+	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0], false), tr)
 
 	return KeyEncode(Key{
 		TableID:    t.id,
@@ -874,8 +869,34 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 	}, buff[len(primaryKey):len(primaryKey)])
 }
 
+// encodes `key` into the `buff` without using additional space.
+func (t *_table[T]) encodeKey(tr T, info KeySizeInfo, id IndexID, buff []byte, idx *Index[T]) []byte {
+	if idx != nil {
+		_ = idx.IndexKeyFunction(NewKeyBuilder(buff[info.IndexPos:], false), tr)
+		_ = idx.IndexOrderFunction(
+			IndexOrder{keyBuilder: NewKeyBuilder(buff[info.IndexOrderPos:], false)}, tr,
+		)
+	}
+	_ = t.primaryKeyFunc(NewKeyBuilder(buff[info.PrimaryPos:], false), tr)
+	return KeyEncodePebble(KeyV2{TableID: t.id, IndexID: id, Info: info}, buff)
+}
+
+func (t *_table[T]) keySize(tr T) KeySizeInfo {
+	var primarySize = binary.LittleEndian.Uint64(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	return KeySize(int(primarySize), 0, 0)
+}
+
+func (t *_table[T]) indexKeySize(idx *Index[T], tr T) KeySizeInfo {
+	var primarySize = binary.LittleEndian.Uint64(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	var indexSize = binary.LittleEndian.Uint64(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
+	var orderSize = binary.LittleEndian.Uint64(idx.IndexOrderFunction(
+		IndexOrder{keyBuilder: NewKeyBuilder([]byte{}, true)}, tr,
+	).Bytes())
+	return KeySize(int(primarySize), int(indexSize), int(orderSize))
+}
+
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
-	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
+	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0], false), s)
 
 	return KeyEncode(Key{
 		TableID:    t.id,
@@ -887,10 +908,10 @@ func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 }
 
 func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
-	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
-	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
+	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0], false), tr)
+	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):], false), tr)
 	orderKeyPart := idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
+		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):], false)}, tr,
 	).Bytes()
 
 	return KeyEncode(Key{
