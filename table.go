@@ -3,7 +3,6 @@ package bond
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"reflect"
@@ -883,19 +882,19 @@ func (t *_table[T]) encodeKey(tr T, info KeySizeInfo, id IndexID, buff []byte, i
 }
 
 func (t *_table[T]) keySize(tr T) KeySizeInfo {
-	var primarySize = binary.LittleEndian.Uint64(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
 
 	return KeySize(int(primarySize), 0, 0)
 }
 
 func (t *_table[T]) indexKeySize(idx *Index[T], tr T) KeySizeInfo {
-	var primarySize = binary.LittleEndian.Uint64(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
-	var indexSize = binary.LittleEndian.Uint64(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
-	var orderSize = binary.LittleEndian.Uint64(idx.IndexOrderFunction(
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
+	var orderSize = utils.SliceToInt(idx.IndexOrderFunction(
 		IndexOrder{keyBuilder: NewKeyBuilder([]byte{}, true)}, tr,
 	).Bytes())
 
-	return KeySize(int(primarySize), int(indexSize), int(orderSize))
+	return KeySize(primarySize, indexSize, orderSize)
 }
 
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {

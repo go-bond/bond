@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
 )
 
 type KeyBuilder struct {
@@ -201,11 +202,9 @@ func (b KeyBuilder) putFieldID() KeyBuilder {
 
 func (b KeyBuilder) Bytes() []byte {
 	if b.estimateSize {
-		buf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(buf, uint64(b.size))
-		// TODO: @poonai must be optimized with unsafe.
-		return buf
+		return utils.IntToSlice(b.size)
 	}
+
 	return b.buff
 }
 
