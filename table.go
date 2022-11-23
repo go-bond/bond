@@ -350,7 +350,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		for _, idx := range indexes {
-			// verify, this record should be indexed or not.
+			// verify whether this record should be indexed or not.
 			if idx.IndexFilterFunction(tr) {
 				info = t.indexKeySize(idx, tr)
 				set = keyBatch.SetDeferred(info.Total, 0)
