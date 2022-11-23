@@ -528,8 +528,8 @@ func TestIndex_IndexKeyFunction(t *testing.T) {
 	testStructure := &TestStructure{1, "test", "test desc"}
 
 	assert.Equal(t, NameIndexID, NameIndex.IndexID)
-	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.IndexKeyFunction(NewKeyBuilder([]byte{}, false), testStructure))
-	assert.Equal(t, []byte{}, NameIndex.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{}, false)}, testStructure).Bytes())
+	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.IndexKeyFunction(NewKeyBuilder([]byte{}), testStructure))
+	assert.Equal(t, []byte{}, NameIndex.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{})}, testStructure).Bytes())
 }
 
 func TestBond_NewIndex_Ordered(t *testing.T) {
@@ -560,9 +560,9 @@ func TestBond_NewIndex_Ordered(t *testing.T) {
 	_ = AccountIDIndexOrderDESCBalance
 	assert.Equal(t, AccountIDOrderDESCBalanceIndexID, AccountIDIndexOrderDESCBalance.IndexID)
 	assert.Equal(t, []byte{0x01, 0x00, 0x00, 0x00, 0x01},
-		AccountIDIndexOrderDESCBalance.IndexKeyFunction(NewKeyBuilder([]byte{}, false), testStructure))
+		AccountIDIndexOrderDESCBalance.IndexKeyFunction(NewKeyBuilder([]byte{}), testStructure))
 	assert.Equal(t, []byte{0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF0},
-		AccountIDIndexOrderDESCBalance.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{}, false)}, testStructure).Bytes())
+		AccountIDIndexOrderDESCBalance.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{})}, testStructure).Bytes())
 }
 
 func TestBond_Table_Index_Insert(t *testing.T) {

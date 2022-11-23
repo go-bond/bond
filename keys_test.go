@@ -203,20 +203,24 @@ func TestKeyBuilder_AddBigIntField(t *testing.T) {
 }
 
 func TestKeyEncode_Pebble(t *testing.T) {
-	testSubjects := []KeySizeInfo{
-		KeySize(10, 54, 32),
-		KeySize(23, 21, 83),
-		KeySize(65, 21, 34),
-		KeySize(74, 56, 43),
-		KeySize(98, 26, 52),
-		KeySize(45, 83, 75),
-		KeySize(54, 32, 38),
-		KeySize(65, 53, 94),
+	testSubjects := []struct {
+		PrimarySize    int
+		IndexSize      int
+		IndexOrderSize int
+	}{
+		{PrimarySize: 2, IndexSize: 1, IndexOrderSize: 1},
+		{PrimarySize: 23, IndexSize: 21, IndexOrderSize: 83},
+		{PrimarySize: 65, IndexSize: 21, IndexOrderSize: 34},
+		{PrimarySize: 74, IndexSize: 56, IndexOrderSize: 43},
+		{PrimarySize: 98, IndexSize: 26, IndexOrderSize: 52},
+		{PrimarySize: 45, IndexSize: 83, IndexOrderSize: 75},
+		{PrimarySize: 54, IndexSize: 32, IndexOrderSize: 38},
+		{PrimarySize: 65, IndexSize: 53, IndexOrderSize: 94},
 	}
 
 	for _, testSubject := range testSubjects {
 		// normal encoding
-		primary := make([]byte, testSubject.Total-(testSubject.IndexOrderPos+testSubject.IndexOrderSize))
+		primary := make([]byte, testSubject.PrimarySize)
 		index := make([]byte, testSubject.IndexSize)
 		order := make([]byte, testSubject.IndexOrderSize)
 		v1 := KeyEncode(Key{
@@ -227,15 +231,31 @@ func TestKeyEncode_Pebble(t *testing.T) {
 			PrimaryKey: primary,
 		})
 
-		// pebble encoding
-		buf := make([]byte, testSubject.Total)
-		v2 := KeyEncodePebble(KeyV2{
+		// key bytes encoding
+		size := KeySize(testSubject.PrimarySize, testSubject.IndexSize, testSubject.IndexOrderSize)
+		buf := KeyBytes(make([]byte, size))
+		opt := KeyEncodeOption{
 			TableID: 1,
 			IndexID: 1,
-			Info:    testSubject,
-		}, buf)
+			EncodePrimaryKey: func(kb KeyBytes) KeyBytes {
+				kb = kb[:0]
+				kb = append(kb, make([]byte, testSubject.PrimarySize)...)
+				return kb
+			},
+			EncodeIndexKey: func(kb KeyBytes) KeyBytes {
+				kb = kb[:0]
+				kb = append(kb, make([]byte, testSubject.IndexSize)...)
+				return kb
+			},
+			EncodeIndexOrder: func(kb KeyBytes) KeyBytes {
+				kb = kb[:0]
+				kb = append(kb, make([]byte, testSubject.IndexOrderSize)...)
+				return kb
+			},
+		}
+		v2 := buf.Encode(opt)
 
-		assert.Equal(t, v1, v2)
+		assert.Equal(t, v1, []byte(v2))
 	}
 }
 

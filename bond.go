@@ -29,7 +29,7 @@ type Getter interface {
 	Get(key []byte, batch ...Batch) (data []byte, closer io.Closer, err error)
 }
 
-type Deferred interface {
+type DeferredSetter interface {
 	SetDeferred(keyLen, valueLen int) *pebble.DeferredBatchOp
 }
 

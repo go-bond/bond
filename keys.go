@@ -10,19 +10,23 @@ import (
 )
 
 type KeyBuilder struct {
-	buff         []byte
-	fid          byte
-	estimateSize bool // size will be estimated without building the key.
-	size         int
+	buff             []byte
+	fid              byte
+	estimateSizeOnly bool // size will be estimated without building the key.
+	size             int
 }
 
-func NewKeyBuilder(buff []byte, estimateSize bool) KeyBuilder {
-	return KeyBuilder{buff: buff[:0], estimateSize: estimateSize, size: 0}
+func NewKeyBuilder(buff []byte, estimateSizeOnly ...bool) KeyBuilder {
+	estimateSize := false
+	if len(estimateSizeOnly) != 0 {
+		estimateSize = estimateSizeOnly[0]
+	}
+	return KeyBuilder{buff: buff[:0], estimateSizeOnly: estimateSize, size: 0}
 }
 
 func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// type + int64
 		return bt.addSize(1 + 8)
 	}
@@ -43,7 +47,7 @@ func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 
 func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// type + int32
 		return bt.addSize(1 + 4)
 	}
@@ -64,7 +68,7 @@ func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 
 func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// type + int16
 		return bt.addSize(1 + 2)
 	}
@@ -85,7 +89,7 @@ func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 
 func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// uint64
 		return bt.addSize(8)
 	}
@@ -97,7 +101,7 @@ func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
 
 func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// uint32
 		return bt.addSize(4)
 	}
@@ -109,7 +113,7 @@ func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
 
 func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// uint16
 		return bt.addSize(2)
 	}
@@ -121,7 +125,7 @@ func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
 
 func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// byte
 		return bt.addSize(1)
 	}
@@ -132,7 +136,7 @@ func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
 
 func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// string
 		return bt.addSize(len(s))
 	}
@@ -143,7 +147,7 @@ func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 
 func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 	bt := b.putFieldID()
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// bytes
 		return bt.addSize(len(bs))
 	}
@@ -155,7 +159,7 @@ func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 	bt := b.putFieldID()
 	bytesLen := bits / 8
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		// sign + bytesLen
 		return bt.addSize(1 + bytesLen)
 	}
@@ -184,13 +188,13 @@ func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 
 func (b KeyBuilder) addSize(size int) KeyBuilder {
 	return KeyBuilder{
-		estimateSize: true,
-		size:         b.size + size,
+		estimateSizeOnly: true,
+		size:             b.size + size,
 	}
 }
 
 func (b KeyBuilder) putFieldID() KeyBuilder {
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		return b.addSize(1)
 	}
 
@@ -201,7 +205,7 @@ func (b KeyBuilder) putFieldID() KeyBuilder {
 }
 
 func (b KeyBuilder) Bytes() []byte {
-	if b.estimateSize {
+	if b.estimateSizeOnly {
 		return utils.IntToSlice(b.size)
 	}
 
@@ -290,20 +294,6 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	return buff.Bytes()
 }
 
-// encode `key` as per bond's key spec. But, this function assumes `IndexKey`, `IndexOrderKey` and `PrimaryKey`
-// are already encoded in the rawBuf.
-func KeyEncodePebble(key KeyV2, rawBuf []byte) []byte {
-	// key format:
-	// +---------+---------+---------------------------------------------------------------+
-	// | TableID | IndexID | IndexLen | IndexKey | IndexOrderLen | IndexOrder | PrimaryKey |
-	// +---------+---------+---------------------------------------------------------------+
-	rawBuf[0] = byte(key.TableID)
-	rawBuf[1] = byte(key.IndexID)
-	binary.BigEndian.PutUint32(rawBuf[key.Info.IndexPos-4:key.Info.IndexPos], uint32(key.Info.IndexSize))
-	binary.BigEndian.PutUint32(rawBuf[key.Info.IndexOrderPos-4:key.Info.IndexOrderPos], uint32(key.Info.IndexOrderSize))
-	return rawBuf
-}
-
 type KeySizeInfo struct {
 	Total          int
 	PrimaryPos     int
@@ -313,23 +303,10 @@ type KeySizeInfo struct {
 	IndexOrderSize int
 }
 
-func KeySize(primarySize, indexSize, indexOrderSize int) KeySizeInfo {
-	var info = KeySizeInfo{}
-	// tableID + indexID + indexKeyLen
-	size := 1 + 1 + 4
-	info.IndexPos = size
-	size += indexSize
-	info.IndexSize = indexSize
-	// indexOrderLen + indexOrder
-	size += 4
-	info.IndexOrderPos = size
-	size += indexOrderSize
-	info.IndexOrderSize = indexOrderSize
-	// primary Key
-	info.PrimaryPos = size
-	size += +primarySize
-	info.Total = size
-	return info
+func KeySize(primarySize, indexSize, indexOrderSize int) int {
+	// tableID + indexID + indexKeyLen + index + indexOrderSize + indexOrder + primary
+	size := 1 + 1 + 4 + indexSize + 4 + indexOrderSize + primarySize
+	return size
 }
 
 func KeyDecode(keyBytes []byte) Key {
@@ -366,6 +343,42 @@ func KeyDecode(keyBytes []byte) Key {
 }
 
 type KeyBytes []byte
+
+type KeyEncodeOption struct {
+	TableID          TableID
+	IndexID          IndexID
+	EncodePrimaryKey func(KeyBytes) KeyBytes
+	EncodeIndexKey   func(KeyBytes) KeyBytes
+	EncodeIndexOrder func(KeyBytes) KeyBytes
+}
+
+func (key KeyBytes) Encode(opt KeyEncodeOption) KeyBytes {
+	// key format:
+	// +---------+---------+---------------------------------------------------------------+
+	// | TableID | IndexID | IndexLen | IndexKey | IndexOrderLen | IndexOrder | PrimaryKey |
+	// +---------+---------+---------------------------------------------------------------+
+
+	key[0] = byte(opt.TableID)
+	key[1] = byte(opt.IndexID)
+
+	pos := 2
+	// reserve 4 bytes for writing index length
+	size := 0
+	if opt.EncodeIndexKey != nil {
+		size = len(opt.EncodeIndexKey(key[pos+4:]))
+	}
+	binary.BigEndian.PutUint32(key[pos:pos+4], uint32(size))
+
+	pos += 4 + size
+	if opt.EncodeIndexOrder != nil {
+		size = len(opt.EncodeIndexOrder(key[pos+4:]))
+	}
+	binary.BigEndian.PutUint32(key[pos:pos+4], uint32(size))
+
+	pos += 4 + size
+	opt.EncodePrimaryKey(key[pos:])
+	return key
+}
 
 func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	var rawBuff []byte

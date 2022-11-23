@@ -329,10 +329,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			return err
 		}
 
-		info := t.keySize(tr)
-		set := keyBatch.SetDeferred(info.Total, len(data))
+		size := t.keySize(tr)
+		set := keyBatch.SetDeferred(size, len(data))
 		// insert key
-		set.Key = t.encodeKey(tr, info, PrimaryIndexID, set.Key, nil)
+		set.Key = t.encodeKey(tr, PrimaryIndexID, set.Key, nil)
 		copy(set.Value, data)
 
 		// check if exist
@@ -352,9 +352,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		for _, idx := range indexes {
 			// verify whether this record should be indexed or not.
 			if idx.IndexFilterFunction(tr) {
-				info = t.indexKeySize(idx, tr)
-				set = keyBatch.SetDeferred(info.Total, 0)
-				set.Key = t.encodeKey(tr, info, idx.IndexID, set.Key, idx)
+				size = t.indexKeySize(idx, tr)
+				set = keyBatch.SetDeferred(size, 0)
+				set.Key = t.encodeKey(tr, idx.IndexID, set.Key, idx)
 				err = set.Finish()
 				if err != nil {
 					return err
@@ -856,7 +856,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 }
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
-	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0], false), tr)
+	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
 	return KeyEncode(Key{
 		TableID:    t.id,
@@ -868,25 +868,36 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 }
 
 // encodes `key` into the `buff` without using additional space.
-func (t *_table[T]) encodeKey(tr T, info KeySizeInfo, id IndexID, buff []byte, idx *Index[T]) []byte {
-	if idx != nil {
-		_ = idx.IndexKeyFunction(NewKeyBuilder(buff[info.IndexPos:], false), tr)
-		_ = idx.IndexOrderFunction(
-			IndexOrder{keyBuilder: NewKeyBuilder(buff[info.IndexOrderPos:], false)}, tr,
-		)
+func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []byte {
+	opt := KeyEncodeOption{
+		TableID: t.id,
+		IndexID: id,
+		EncodePrimaryKey: func(kb KeyBytes) KeyBytes {
+			return t.primaryKeyFunc(NewKeyBuilder(kb), tr)
+		},
 	}
-	_ = t.primaryKeyFunc(NewKeyBuilder(buff[info.PrimaryPos:], false), tr)
 
-	return KeyEncodePebble(KeyV2{TableID: t.id, IndexID: id, Info: info}, buff)
+	if idx != nil {
+		opt.EncodeIndexKey = func(kb KeyBytes) KeyBytes {
+			return idx.IndexKeyFunction(NewKeyBuilder(kb), tr)
+		}
+		opt.EncodeIndexOrder = func(kb KeyBytes) KeyBytes {
+			return idx.IndexOrderFunction(
+				IndexOrder{keyBuilder: NewKeyBuilder(kb)}, tr,
+			).Bytes()
+		}
+	}
+
+	return KeyBytes(buff).Encode(opt)
 }
 
-func (t *_table[T]) keySize(tr T) KeySizeInfo {
+func (t *_table[T]) keySize(tr T) int {
 	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
 
 	return KeySize(int(primarySize), 0, 0)
 }
 
-func (t *_table[T]) indexKeySize(idx *Index[T], tr T) KeySizeInfo {
+func (t *_table[T]) indexKeySize(idx *Index[T], tr T) int {
 	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
 	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
 	var orderSize = utils.SliceToInt(idx.IndexOrderFunction(
@@ -897,7 +908,7 @@ func (t *_table[T]) indexKeySize(idx *Index[T], tr T) KeySizeInfo {
 }
 
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
-	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0], false), s)
+	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
 
 	return KeyEncode(Key{
 		TableID:    t.id,
@@ -910,9 +921,9 @@ func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 
 func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0], false), tr)
-	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):], false), tr)
+	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
 	orderKeyPart := idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):], false)}, tr,
+		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
 	).Bytes()
 
 	return KeyEncode(Key{
