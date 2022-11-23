@@ -346,7 +346,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		if t.filter != nil {
-			// TODO: @poonai make copy of key before passing to the filter.
 			t.filter.Add(keyBatchCtx, utils.Copy(set.Key))
 		}
 

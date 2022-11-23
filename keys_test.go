@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/go-bond/bond/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,6 +25,43 @@ func TestKeyBuilder_AddInt16Field(t *testing.T) {
 	kb = kb.AddInt16Field(-10)
 
 	assert.Equal(t, []byte{0x01, 0x00, 0xFF, 0xFF - 0x0a}, kb.Bytes())
+}
+
+func TestKeyBuildSizeEstimation(t *testing.T) {
+	kb := NewKeyBuilder([]byte{}, true)
+
+	kb = kb.AddByteField(2)
+	assert.Equal(t, 2, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddBytesField([]byte{1, 2})
+	assert.Equal(t, 5, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddStringField("bond")
+	assert.Equal(t, 10, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddInt16Field(1)
+	assert.Equal(t, 14, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddInt32Field(2)
+	assert.Equal(t, 20, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddInt64Field(10)
+	assert.Equal(t, 30, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddUint64Field(20)
+	assert.Equal(t, 39, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddUint32Field(21)
+	assert.Equal(t, 44, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddUint16Field(22)
+	assert.Equal(t, 47, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddBigIntField(big.NewInt(1), 32)
+	assert.Equal(t, 53, utils.SliceToInt(kb.Bytes()))
+
+	kb = kb.AddBigIntField(big.NewInt(1), 256)
+	assert.Equal(t, 87, utils.SliceToInt(kb.Bytes()))
 }
 
 func TestKeyBuilder_AddInt32Field(t *testing.T) {
