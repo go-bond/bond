@@ -892,16 +892,16 @@ func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []by
 }
 
 func (t *_table[T]) keySize(tr T) int {
-	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}), tr))
 
 	return KeySize(int(primarySize), 0, 0)
 }
 
 func (t *_table[T]) indexKeySize(idx *Index[T], tr T) int {
-	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
-	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}), tr))
+	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(NewKeyBuilder([]byte{}), tr))
 	var orderSize = utils.SliceToInt(idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder([]byte{}, true)}, tr,
+		IndexOrder{keyBuilder: NewKeyBuilder([]byte{})}, tr,
 	).Bytes())
 
 	return KeySize(primarySize, indexSize, orderSize)
@@ -920,7 +920,7 @@ func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 }
 
 func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
-	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0], false), tr)
+	primaryKey := t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
 	orderKeyPart := idx.IndexOrderFunction(
 		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
