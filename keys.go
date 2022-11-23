@@ -220,12 +220,6 @@ type Key struct {
 	PrimaryKey []byte
 }
 
-type KeyV2 struct {
-	TableID TableID
-	IndexID IndexID
-	Info    KeySizeInfo
-}
-
 func NewUserKey(key string) KeyBytes {
 	return KeyEncode(Key{
 		TableID:    BOND_DB_DATA_TABLE_ID,
@@ -292,15 +286,6 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	}
 
 	return buff.Bytes()
-}
-
-type KeySizeInfo struct {
-	Total          int
-	PrimaryPos     int
-	IndexPos       int
-	IndexSize      int
-	IndexOrderPos  int
-	IndexOrderSize int
 }
 
 func KeySize(primarySize, indexSize, indexOrderSize int) int {
