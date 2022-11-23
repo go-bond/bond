@@ -202,6 +202,43 @@ func TestKeyBuilder_AddBigIntField(t *testing.T) {
 	assert.Equal(t, expected, kb.Bytes())
 }
 
+func TestKeyEncode_Pebble(t *testing.T) {
+	testSubjects := []KeySizeInfo{
+		KeySize(10, 54, 32),
+		KeySize(23, 21, 83),
+		KeySize(65, 21, 34),
+		KeySize(74, 56, 43),
+		KeySize(98, 26, 52),
+		KeySize(45, 83, 75),
+		KeySize(54, 32, 38),
+		KeySize(65, 53, 94),
+	}
+
+	for _, testSubject := range testSubjects {
+		// normal encoding
+		primary := make([]byte, testSubject.Total-(testSubject.IndexOrderPos+testSubject.IndexOrderSize))
+		index := make([]byte, testSubject.IndexSize)
+		order := make([]byte, testSubject.IndexOrderSize)
+		v1 := KeyEncode(Key{
+			TableID:    1,
+			IndexID:    1,
+			IndexKey:   index,
+			IndexOrder: order,
+			PrimaryKey: primary,
+		})
+
+		// pebble encoding
+		buf := make([]byte, testSubject.Total)
+		v2 := KeyEncodePebble(KeyV2{
+			TableID: 1,
+			IndexID: 1,
+			Info:    testSubject,
+		}, buf)
+
+		assert.Equal(t, v1, v2)
+	}
+}
+
 func TestKey_Encode_Decode(t *testing.T) {
 	key := Key{
 		TableID:    1,
