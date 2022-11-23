@@ -878,11 +878,13 @@ func (t *_table[T]) encodeKey(tr T, info KeySizeInfo, id IndexID, buff []byte, i
 		)
 	}
 	_ = t.primaryKeyFunc(NewKeyBuilder(buff[info.PrimaryPos:], false), tr)
+
 	return KeyEncodePebble(KeyV2{TableID: t.id, IndexID: id, Info: info}, buff)
 }
 
 func (t *_table[T]) keySize(tr T) KeySizeInfo {
 	var primarySize = binary.LittleEndian.Uint64(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+
 	return KeySize(int(primarySize), 0, 0)
 }
 
@@ -892,6 +894,7 @@ func (t *_table[T]) indexKeySize(idx *Index[T], tr T) KeySizeInfo {
 	var orderSize = binary.LittleEndian.Uint64(idx.IndexOrderFunction(
 		IndexOrder{keyBuilder: NewKeyBuilder([]byte{}, true)}, tr,
 	).Bytes())
+
 	return KeySize(int(primarySize), int(indexSize), int(orderSize))
 }
 

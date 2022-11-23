@@ -21,7 +21,6 @@ func NewKeyBuilder(buff []byte, estimateSize bool) KeyBuilder {
 
 func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 	bt := b.putFieldID()
-
 	if b.estimateSize {
 		// type + int64
 		return bt.addSize(1 + 8)
@@ -43,7 +42,6 @@ func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 
 func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 	bt := b.putFieldID()
-
 	if b.estimateSize {
 		// type + int32
 		return bt.addSize(1 + 4)
@@ -69,6 +67,7 @@ func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 		// type + int16
 		return bt.addSize(1 + 2)
 	}
+
 	if i > 0 {
 		bt.buff = append(bt.buff, 0x02)
 	} else if i == 0 {
@@ -89,6 +88,7 @@ func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
 		// uint64
 		return bt.addSize(8)
 	}
+
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
 	binary.BigEndian.PutUint64(bt.buff[len(bt.buff)-8:], i)
 	return bt
@@ -100,6 +100,7 @@ func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
 		// uint32
 		return bt.addSize(4)
 	}
+
 	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
 	binary.BigEndian.PutUint32(bt.buff[len(bt.buff)-4:], i)
 	return bt
@@ -111,6 +112,7 @@ func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
 		// uint16
 		return bt.addSize(2)
 	}
+
 	bt.buff = append(bt.buff, []byte{0, 0}...)
 	binary.BigEndian.PutUint16(bt.buff[len(bt.buff)-2:], i)
 	return bt
@@ -122,6 +124,7 @@ func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
 		// byte
 		return bt.addSize(1)
 	}
+
 	bt.buff = append(bt.buff, btt)
 	return bt
 }
@@ -132,6 +135,7 @@ func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 		// string
 		return bt.addSize(len(s))
 	}
+
 	bt.buff = append(bt.buff, []byte(s)...)
 	return bt
 }
@@ -142,6 +146,7 @@ func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 		// bytes
 		return bt.addSize(len(bs))
 	}
+
 	bt.buff = append(bt.buff, bs...)
 	return bt
 }
@@ -149,7 +154,6 @@ func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 	bt := b.putFieldID()
 	bytesLen := bits / 8
-
 	if b.estimateSize {
 		// sign + bytesLen
 		return bt.addSize(1 + bytesLen)
