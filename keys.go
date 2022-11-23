@@ -347,7 +347,6 @@ func (key KeyBytes) Encode(opt KeyEncodeOption) KeyBytes {
 	key[1] = byte(opt.IndexID)
 
 	pos := 2
-	// reserve 4 bytes for writing index length
 	size := 0
 	if opt.EncodeIndexKey != nil {
 		size = len(opt.EncodeIndexKey(key[pos+4:]))
