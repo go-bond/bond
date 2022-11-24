@@ -3,6 +3,7 @@ package bond
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 type FilterStorer interface {
@@ -18,6 +19,30 @@ type Filter interface {
 	Load(ctx context.Context, store FilterStorer) error
 	Save(ctx context.Context, store FilterStorer) error
 	Clear(ctx context.Context, store FilterStorer) error
+}
+
+type FilterInitializable struct {
+	Filter
+
+	isInitialized uint64
+}
+
+func (f *FilterInitializable) MayContain(ctx context.Context, key []byte) bool {
+	if atomic.LoadUint64(&f.isInitialized) == 1 {
+		return f.Filter.MayContain(ctx, key)
+	} else {
+		return true
+	}
+}
+
+func (f *FilterInitializable) Initialize(ctx context.Context, db DB, scanners []TableScanner[any]) error {
+	err := FilterInitialize(ctx, f.Filter, db, scanners)
+	if err != nil {
+		return err
+	}
+
+	atomic.StoreUint64(&f.isInitialized, 1)
+	return nil
 }
 
 func FilterInitialize(ctx context.Context, filter Filter, db DB, scanners []TableScanner[any]) error {
