@@ -16,15 +16,15 @@ type KeyBuilder struct {
 	size             int
 }
 
-func NewKeyBuilder(buff []byte, estimateSizeOnly ...bool) KeyBuilder {
+func NewKeyBuilder(buff []byte, estimateSizeOnly ...bool) *KeyBuilder {
 	estimateSize := false
 	if len(estimateSizeOnly) != 0 {
 		estimateSize = estimateSizeOnly[0]
 	}
-	return KeyBuilder{buff: utils.NewBuffer(buff[:0]), estimateSizeOnly: estimateSize, size: 0}
+	return &KeyBuilder{buff: utils.NewBuffer(buff[:0]), estimateSizeOnly: estimateSize, size: 0}
 }
 
-func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
+func (b *KeyBuilder) AddInt64Field(i int64) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int64
@@ -45,7 +45,7 @@ func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
+func (b *KeyBuilder) AddInt32Field(i int32) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int32
@@ -66,7 +66,7 @@ func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
+func (b *KeyBuilder) AddInt16Field(i int16) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int16
@@ -87,7 +87,7 @@ func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
+func (b *KeyBuilder) AddUint64Field(i uint64) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint64
@@ -99,7 +99,7 @@ func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
+func (b *KeyBuilder) AddUint32Field(i uint32) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint32
@@ -111,7 +111,7 @@ func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
+func (b *KeyBuilder) AddUint16Field(i uint16) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint16
@@ -123,7 +123,7 @@ func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
+func (b *KeyBuilder) AddByteField(btt byte) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// byte
@@ -134,7 +134,7 @@ func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddStringField(s string) KeyBuilder {
+func (b *KeyBuilder) AddStringField(s string) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// string
@@ -145,7 +145,7 @@ func (b KeyBuilder) AddStringField(s string) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
+func (b *KeyBuilder) AddBytesField(bs []byte) *KeyBuilder {
 	bt := b.putFieldID()
 	if b.estimateSizeOnly {
 		// bytes
@@ -156,7 +156,7 @@ func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
+func (b *KeyBuilder) AddBigIntField(bi *big.Int, bits int) *KeyBuilder {
 	bt := b.putFieldID()
 	bytesLen := bits / 8
 	if b.estimateSizeOnly {
@@ -185,26 +185,20 @@ func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
 	return bt
 }
 
-func (b KeyBuilder) addSize(size int) KeyBuilder {
-	return KeyBuilder{
-		estimateSizeOnly: true,
-		size:             b.size + size,
-	}
+func (b *KeyBuilder) addSize(size int) *KeyBuilder {
+	b.size += size
+	return b
 }
 
-func (b KeyBuilder) putFieldID() KeyBuilder {
+func (b *KeyBuilder) putFieldID() *KeyBuilder {
 	if b.estimateSizeOnly {
 		return b.addSize(1)
 	}
 	_ = b.buff.WriteByte(b.fid)
-
-	return KeyBuilder{
-		buff: b.buff,
-		fid:  b.fid + 1,
-	}
+	return b
 }
 
-func (b KeyBuilder) Bytes() []byte {
+func (b *KeyBuilder) Bytes() []byte {
 	if b.estimateSizeOnly {
 		return utils.IntToSlice(b.size)
 	}

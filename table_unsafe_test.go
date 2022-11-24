@@ -20,7 +20,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})

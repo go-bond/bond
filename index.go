@@ -3,7 +3,7 @@ package bond
 import "math/big"
 
 type IndexID uint8
-type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
+type IndexKeyFunction[T any] func(builder *KeyBuilder, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
 type IndexOrderFunction[T any] func(o IndexOrder, t T) IndexOrder
 type IndexOrderType bool
@@ -14,7 +14,7 @@ const (
 )
 
 type IndexOrder struct {
-	keyBuilder KeyBuilder
+	keyBuilder *KeyBuilder
 }
 
 func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {

@@ -20,7 +20,7 @@ func TestBond_NewTable(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -40,7 +40,7 @@ func TestBondTable_Interfaces(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -68,7 +68,7 @@ func TestBondTable_PrimaryIndex(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -92,7 +92,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -107,7 +107,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
-			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
@@ -138,7 +138,7 @@ func TestBondTable_Serializer(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -158,7 +158,7 @@ func TestBondTable_Insert(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -198,7 +198,7 @@ func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -230,7 +230,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -273,7 +273,7 @@ func TestBondTable_Update(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -339,7 +339,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -408,7 +408,7 @@ func TestBondTable_Upsert(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -489,7 +489,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -572,7 +572,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -671,7 +671,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -770,7 +770,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -800,7 +800,7 @@ func TestBondTable_Delete(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -834,7 +834,7 @@ func TestBondTable_Exist(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -869,7 +869,7 @@ func TestBondTable_Scan(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -930,7 +930,7 @@ func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -989,7 +989,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -1003,7 +1003,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
-			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			IndexKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
@@ -1070,7 +1070,7 @@ func TestBond_Batch(t *testing.T) {
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})

@@ -21,13 +21,13 @@ const DataKeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize + 6
 const ReindexBatchSize = 10000
 
 type TableID uint8
-type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
+type TablePrimaryKeyFunc[T any] func(builder *KeyBuilder, t T) []byte
 
 func TableUpsertOnConflictReplace[T any](_, new T) T {
 	return new
 }
 
-func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
+func primaryIndexKey[T any](_ *KeyBuilder, _ T) []byte { return []byte{} }
 
 type TableInfo interface {
 	ID() TableID

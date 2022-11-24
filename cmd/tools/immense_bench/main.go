@@ -63,7 +63,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		DB:        db,
 		TableName: fmt.Sprintf("token_balance_%d", idGenerator.Int()),
 		TableID:   TokenBalanceTableID,
-		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -71,7 +71,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	accountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 1,
 		IndexName: "account_address_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		IndexKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddStringField(tb.AccountAddress).Bytes()
 		},
 		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
@@ -80,7 +80,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	amountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 2,
 		IndexName: "account_amount_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
+		IndexKeyFunc: func(builder *bond.KeyBuilder, t *TokenBalance) []byte {
 			return builder.Bytes()
 		},
 		IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
@@ -91,7 +91,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	tokenIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 3,
 		IndexName: "token_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
+		IndexKeyFunc: func(builder *bond.KeyBuilder, t *TokenBalance) []byte {
 			return builder.Bytes()
 		},
 		IndexOrderFunc: func(o bond.IndexOrder, t *TokenBalance) bond.IndexOrder {
@@ -102,7 +102,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	contractIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 4,
 		IndexName: "contract_idx",
-		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		IndexKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddStringField(tb.ContractAddress).Bytes()
 		},
 		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
@@ -160,7 +160,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.IntFlag{
 				Name:  "batch_size",
-				Value: 10,
+				Value: 100,
 				Usage: "size of the batch",
 			},
 			&cli.IntFlag{
