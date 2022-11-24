@@ -47,7 +47,7 @@ func setupDatabaseForQuery() (bond.DB, bond.Table[*TokenBalance], *bond.Index[*T
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
@@ -62,7 +62,7 @@ func setupDatabaseForQuery() (bond.DB, bond.Table[*TokenBalance], *bond.Index[*T
 		TokenBalanceAccountAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
-			IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			IndexKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
 			},
 			IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
@@ -70,7 +70,7 @@ func setupDatabaseForQuery() (bond.DB, bond.Table[*TokenBalance], *bond.Index[*T
 		TokenBalanceAccountAndContractAddressIndex = bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
 			IndexName: "account_and_contract_address_idx",
-			IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			IndexKeyFunc: func(builder *bond.KeyBuilder, tb *TokenBalance) []byte {
 				return builder.
 					AddStringField(tb.AccountAddress).
 					AddStringField(tb.ContractAddress).
