@@ -878,17 +878,23 @@ func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []by
 		TableID: t.id,
 		IndexID: id,
 		EncodePrimaryKey: func(kb KeyBytes) KeyBytes {
-			return t.primaryKeyFunc(NewKeyBuilder(kb), tr)
+			builder := keyBuilderPool.Get().(*KeyBuilder)
+			builder.Reset(kb)
+			return t.primaryKeyFunc(builder, tr)
 		},
 	}
 
 	if idx != nil {
 		opt.EncodeIndexKey = func(kb KeyBytes) KeyBytes {
-			return idx.IndexKeyFunction(NewKeyBuilder(kb), tr)
+			builder := keyBuilderPool.Get().(*KeyBuilder)
+			builder.Reset(kb)
+			return idx.IndexKeyFunction(builder, tr)
 		}
 		opt.EncodeIndexOrder = func(kb KeyBytes) KeyBytes {
+			builder := keyBuilderPool.Get().(*KeyBuilder)
+			builder.Reset(kb)
 			return idx.IndexOrderFunction(
-				IndexOrder{keyBuilder: NewKeyBuilder(kb)}, tr,
+				IndexOrder{keyBuilder: builder}, tr,
 			).Bytes()
 		}
 	}
@@ -897,16 +903,22 @@ func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []by
 }
 
 func (t *_table[T]) keySize(tr T) int {
-	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
+	builder := keySizeBuilderPool.Get().(*KeyBuilder)
+	builder.Reset([]byte{})
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(builder, tr))
 
 	return KeySize(int(primarySize), 0, 0)
 }
 
 func (t *_table[T]) indexKeySize(idx *Index[T], tr T) int {
-	var primarySize = utils.SliceToInt(t.primaryKeyFunc(NewKeyBuilder([]byte{}, true), tr))
-	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(NewKeyBuilder([]byte{}, true), tr))
+	builder := keySizeBuilderPool.Get().(*KeyBuilder)
+	builder.Reset([]byte{})
+	var primarySize = utils.SliceToInt(t.primaryKeyFunc(builder, tr))
+	builder.Reset([]byte{})
+	var indexSize = utils.SliceToInt(idx.IndexKeyFunction(builder, tr))
+	builder.Reset([]byte{})
 	var orderSize = utils.SliceToInt(idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder([]byte{}, true)}, tr,
+		IndexOrder{keyBuilder: builder}, tr,
 	).Bytes())
 
 	return KeySize(primarySize, indexSize, orderSize)

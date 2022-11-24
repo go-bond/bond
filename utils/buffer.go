@@ -103,6 +103,12 @@ func (b *Buffer) Reset() {
 	b.lastRead = opInvalid
 }
 
+func (b *Buffer) UseNewSrc(buf []byte) {
+	b.buf = buf[:0]
+	b.off = 0
+	b.lastRead = opInvalid
+}
+
 // tryGrowByReslice is a inlineable version of grow for the fast-case where the
 // internal buffer only needs to be resliced.
 // It returns the index where bytes should be written and whether it succeeded.

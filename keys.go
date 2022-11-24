@@ -4,10 +4,23 @@ import (
 	"bytes"
 	"encoding/binary"
 	"math/big"
+	"sync"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
 )
+
+var keyBuilderPool = sync.Pool{
+	New: func() any {
+		return NewKeyBuilder([]byte{})
+	},
+}
+
+var keySizeBuilderPool = sync.Pool{
+	New: func() any {
+		return NewKeyBuilder([]byte{}, true)
+	},
+}
 
 type KeyBuilder struct {
 	buff             *utils.Buffer
@@ -22,6 +35,12 @@ func NewKeyBuilder(buff []byte, estimateSizeOnly ...bool) *KeyBuilder {
 		estimateSize = estimateSizeOnly[0]
 	}
 	return &KeyBuilder{buff: utils.NewBuffer(buff[:0]), estimateSizeOnly: estimateSize, size: 0}
+}
+
+func (b *KeyBuilder) Reset(buf []byte) {
+	b.buff.UseNewSrc(buf)
+	b.size = 0
+	b.fid = 0
 }
 
 func (b *KeyBuilder) AddInt64Field(i int64) *KeyBuilder {
