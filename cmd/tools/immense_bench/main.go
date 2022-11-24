@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -159,7 +160,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.IntFlag{
 				Name:  "batch_size",
-				Value: 100,
+				Value: 10,
 				Usage: "size of the batch",
 			},
 			&cli.IntFlag{
@@ -172,11 +173,38 @@ func main() {
 				Value: 8,
 				Usage: "number of table",
 			},
+			&cli.BoolFlag{
+				Name:  "pprof",
+				Value: false,
+				Usage: "run pprof and store the results in current directory",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
+			var (
+				cpuProfile *os.File
+				memProfile *os.File
+				err        error
+			)
+
+			if cCtx.Bool("pprof") {
+				cpuProfile, err = os.Create("cpuprofile")
+				if err != nil {
+					panic(err)
+				}
+				memProfile, err = os.Create("memprofile")
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println("Profiling started")
+				pprof.StartCPUProfile(cpuProfile)
+
+				defer pprof.StopCPUProfile()
+				defer pprof.WriteHeapProfile(memProfile)
+			}
 			runBondInsert(cCtx.Int("total_table"),
 				cCtx.Int("total_batch"),
 				cCtx.Int("batch_size"))
+
 			return nil
 		},
 	}
@@ -194,6 +222,7 @@ func runBondInsert(totalTable, totalBatch, batchSize int) {
 	}
 
 	defer func() {
+		_ = db.Close()
 		sz, _ := DirSize("example")
 		fmt.Printf("size of database %s \n", humanize.Bytes(sz))
 		_ = os.RemoveAll("example")
