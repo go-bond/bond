@@ -44,141 +44,141 @@ func (b *KeyBuilder) Reset(buf []byte) {
 }
 
 func (b *KeyBuilder) AddInt64Field(i int64) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int64
-		return bt.addSize(1 + 8)
+		return b.addSize(1 + 1 + 8)
 	}
 
 	if i > 0 {
-		_ = bt.buff.WriteByte(0x02)
+		_ = b.buff.WriteByte(0x02)
 	} else if i == 0 {
-		_ = bt.buff.WriteByte(0x01)
+		_ = b.buff.WriteByte(0x01)
 	} else {
-		_ = bt.buff.WriteByte(0x00)
+		_ = b.buff.WriteByte(0x00)
 		i = ^-i
 	}
 
-	binary.BigEndian.PutUint64(bt.buff.Extend(8), uint64(i))
-	return bt
+	binary.BigEndian.PutUint64(b.buff.Extend(8), uint64(i))
+	return b
 }
 
 func (b *KeyBuilder) AddInt32Field(i int32) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int32
-		return bt.addSize(1 + 4)
+		return b.addSize(1 + 1 + 4)
 	}
 
 	if i > 0 {
-		_ = bt.buff.WriteByte(0x02)
+		_ = b.buff.WriteByte(0x02)
 	} else if i == 0 {
-		_ = bt.buff.WriteByte(0x01)
+		_ = b.buff.WriteByte(0x01)
 	} else {
-		_ = bt.buff.WriteByte(0x00)
+		_ = b.buff.WriteByte(0x00)
 		i = ^-i
 	}
 
-	binary.BigEndian.PutUint32(bt.buff.Extend(4), uint32(i))
-	return bt
+	binary.BigEndian.PutUint32(b.buff.Extend(4), uint32(i))
+	return b
 }
 
 func (b *KeyBuilder) AddInt16Field(i int16) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// type + int16
-		return bt.addSize(1 + 2)
+		return b.addSize(1 + 1 + 2)
 	}
 
 	if i > 0 {
-		_ = bt.buff.WriteByte(0x02)
+		_ = b.buff.WriteByte(0x02)
 	} else if i == 0 {
-		_ = bt.buff.WriteByte(0x01)
+		_ = b.buff.WriteByte(0x01)
 	} else {
-		_ = bt.buff.WriteByte(0x00)
+		_ = b.buff.WriteByte(0x00)
 		i = ^-i
 	}
 
-	binary.BigEndian.PutUint16(bt.buff.Extend(2), uint16(i))
-	return bt
+	binary.BigEndian.PutUint16(b.buff.Extend(2), uint16(i))
+	return b
 }
 
 func (b *KeyBuilder) AddUint64Field(i uint64) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint64
-		return bt.addSize(8)
+		return b.addSize(1 + 8)
 	}
 
-	binary.BigEndian.PutUint64(bt.buff.Extend(8), i)
-	return bt
+	binary.BigEndian.PutUint64(b.buff.Extend(8), i)
+	return b
 }
 
 func (b *KeyBuilder) AddUint32Field(i uint32) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint32
-		return bt.addSize(4)
+		return b.addSize(1 + 4)
 	}
 
-	binary.BigEndian.PutUint32(bt.buff.Extend(4), i)
-	return bt
+	binary.BigEndian.PutUint32(b.buff.Extend(4), i)
+	return b
 }
 
 func (b *KeyBuilder) AddUint16Field(i uint16) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// uint16
-		return bt.addSize(2)
+		return b.addSize(1 + 2)
 	}
 
-	binary.BigEndian.PutUint16(bt.buff.Extend(2), i)
-	return bt
+	binary.BigEndian.PutUint16(b.buff.Extend(2), i)
+	return b
 }
 
 func (b *KeyBuilder) AddByteField(btt byte) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// byte
-		return bt.addSize(1)
+		return b.addSize(1 + 1)
 	}
 
-	_ = bt.buff.WriteByte(btt)
-	return bt
+	_ = b.buff.WriteByte(btt)
+	return b
 }
 
 func (b *KeyBuilder) AddStringField(s string) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// string
-		return bt.addSize(len(s))
+		return b.addSize(1 + len(s))
 	}
 
-	bt.buff.WriteString(s)
-	return bt
+	b.buff.WriteString(s)
+	return b
 }
 
 func (b *KeyBuilder) AddBytesField(bs []byte) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	if b.estimateSizeOnly {
 		// bytes
-		return bt.addSize(len(bs))
+		return b.addSize(1 + len(bs))
 	}
 
-	_, _ = bt.buff.Write(bs)
-	return bt
+	_, _ = b.buff.Write(bs)
+	return b
 }
 
 func (b *KeyBuilder) AddBigIntField(bi *big.Int, bits int) *KeyBuilder {
-	bt := b.putFieldID()
+	b.putFieldID()
 	bytesLen := bits / 8
 	if b.estimateSizeOnly {
 		// sign + bytesLen
-		return bt.addSize(1 + bytesLen)
+		return b.addSize(1 + 1 + bytesLen)
 	}
 
 	sign := bi.Sign() + 1
-	bt.buff.WriteByte(byte(sign)) // 0 - negative, 1 - zero, 2 - positive
+	b.buff.WriteByte(byte(sign)) // 0 - negative, 1 - zero, 2 - positive
 
 	if sign == 0 {
 		bi = big.NewInt(0).Sub(big.NewInt(0), bi)
@@ -194,7 +194,7 @@ func (b *KeyBuilder) AddBigIntField(bi *big.Int, bits int) *KeyBuilder {
 		}
 	}
 
-	return bt
+	return b
 }
 
 func (b *KeyBuilder) addSize(size int) *KeyBuilder {
@@ -202,12 +202,9 @@ func (b *KeyBuilder) addSize(size int) *KeyBuilder {
 	return b
 }
 
-func (b *KeyBuilder) putFieldID() *KeyBuilder {
-	if b.estimateSizeOnly {
-		return b.addSize(1)
-	}
+func (b *KeyBuilder) putFieldID() {
 	_ = b.buff.WriteByte(b.fid)
-	return b
+	b.fid = +1
 }
 
 func (b *KeyBuilder) Bytes() []byte {
