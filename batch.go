@@ -56,6 +56,14 @@ func newBatch(db *_db) Batch {
 	}
 }
 
+func newWriteBatch(db *_db) Batch {
+	id, _ := sequenceId.Next()
+	return &_batch{
+		Batch: db.pebble.NewBatch(),
+		id:    id,
+	}
+}
+
 func (b *_batch) ID() uint64 {
 	return b.id
 }

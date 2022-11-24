@@ -302,6 +302,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		keyBatch      Batch
 		keyBatchCtx   context.Context
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexBatch    = t.db.WriteBatch()
 	)
 	if externalBatch {
 		keyBatch = optBatch[0]
@@ -353,7 +354,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			// verify whether this record should be indexed or not.
 			if idx.IndexFilterFunction(tr) {
 				size = t.indexKeySize(idx, tr)
-				set = keyBatch.SetDeferred(size, 0)
+				set = indexBatch.SetDeferred(size, 0)
 				set.Key = t.encodeKey(tr, idx.IndexID, set.Key, idx)
 				err = set.Finish()
 				if err != nil {
@@ -362,6 +363,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 		}
+	}
+
+	if err := keyBatch.Apply(indexBatch, Sync); err != nil {
+		return err
 	}
 
 	if !externalBatch {

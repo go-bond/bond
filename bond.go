@@ -47,6 +47,7 @@ type DeleterWithRange interface {
 
 type Batcher interface {
 	Batch() Batch
+	WriteBatch() Batch
 }
 
 type Iterationer interface {
@@ -167,6 +168,10 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 
 func (db *_db) Batch() Batch {
 	return newBatch(db)
+}
+
+func (db *_db) WriteBatch() Batch {
+	return newWriteBatch(db)
 }
 
 func (db *_db) Apply(b Batch, opt WriteOptions) error {
