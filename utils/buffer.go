@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// NOTE: Modifed version of bytes.Buffer. refer: https://github.com/golang/go/issues/53685
+
 package utils
 
 // Simple byte buffer for marshaling data.

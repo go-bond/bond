@@ -40,8 +40,7 @@ func (b *KeyBuilder) AddInt64Field(i int64) *KeyBuilder {
 		i = ^-i
 	}
 
-	bt.buff.Extend(8)
-	binary.BigEndian.PutUint64(bt.buff.Next(8), uint64(i))
+	binary.BigEndian.PutUint64(bt.buff.Extend(8), uint64(i))
 	return bt
 }
 
@@ -61,8 +60,7 @@ func (b *KeyBuilder) AddInt32Field(i int32) *KeyBuilder {
 		i = ^-i
 	}
 
-	bt.buff.Extend(4)
-	binary.BigEndian.PutUint32(bt.buff.Next(4), uint32(i))
+	binary.BigEndian.PutUint32(bt.buff.Extend(4), uint32(i))
 	return bt
 }
 
@@ -82,8 +80,7 @@ func (b *KeyBuilder) AddInt16Field(i int16) *KeyBuilder {
 		i = ^-i
 	}
 
-	bt.buff.Extend(2)
-	binary.BigEndian.PutUint16(bt.buff.Next(2), uint16(i))
+	binary.BigEndian.PutUint16(bt.buff.Extend(2), uint16(i))
 	return bt
 }
 
@@ -94,8 +91,7 @@ func (b *KeyBuilder) AddUint64Field(i uint64) *KeyBuilder {
 		return bt.addSize(8)
 	}
 
-	bt.buff.Extend(8)
-	binary.BigEndian.PutUint64(bt.buff.Next(8), i)
+	binary.BigEndian.PutUint64(bt.buff.Extend(8), i)
 	return bt
 }
 
@@ -106,8 +102,7 @@ func (b *KeyBuilder) AddUint32Field(i uint32) *KeyBuilder {
 		return bt.addSize(4)
 	}
 
-	bt.buff.Extend(4)
-	binary.BigEndian.PutUint32(bt.buff.Next(4), i)
+	binary.BigEndian.PutUint32(bt.buff.Extend(4), i)
 	return bt
 }
 
@@ -118,8 +113,7 @@ func (b *KeyBuilder) AddUint16Field(i uint16) *KeyBuilder {
 		return bt.addSize(2)
 	}
 
-	bt.buff.Extend(2)
-	binary.BigEndian.PutUint16(bt.buff.Next(2), i)
+	binary.BigEndian.PutUint16(bt.buff.Extend(2), i)
 	return bt
 }
 
@@ -171,8 +165,7 @@ func (b *KeyBuilder) AddBigIntField(bi *big.Int, bits int) *KeyBuilder {
 		bi = big.NewInt(0).Sub(big.NewInt(0), bi)
 	}
 
-	b.buff.Extend(bytesLen)
-	bi.FillBytes(b.buff.Next(bytesLen))
+	bi.FillBytes(b.buff.Extend(bytesLen))
 
 	if sign == 0 {
 		srcBuf := b.buff.Bytes()
