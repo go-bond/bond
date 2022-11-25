@@ -21,13 +21,13 @@ const DataKeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize + 6
 const ReindexBatchSize = 10000
 
 type TableID uint8
-type TablePrimaryKeyFunc[T any] func(builder *KeyBuilder, t T) []byte
+type TablePrimaryKeyFunc[T any] func(builder KeyBuilderSpec, t T) []byte
 
 func TableUpsertOnConflictReplace[T any](_, new T) T {
 	return new
 }
 
-func primaryIndexKey[T any](_ *KeyBuilder, _ T) []byte { return []byte{} }
+func primaryIndexKey[T any](_ KeyBuilderSpec, _ T) []byte { return []byte{} }
 
 type TableInfo interface {
 	ID() TableID
@@ -299,10 +299,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	t.mutex.RUnlock()
 
 	var (
-		keyBatch      Batch
-		keyBatchCtx   context.Context
-		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-		indexBatch    = t.db.WriteBatch()
+		keyBatch       Batch
+		keyBatchCtx    context.Context
+		externalBatch  = len(optBatch) > 0 && optBatch[0] != nil
+		indexBatch     = t.db.WriteBatch()
+		keyBuilder     = keyBuilderPool.Get().(*KeyBuilder)
+		keySizeBuilder = keySizeBuilderPool.Get().(*KeySizeBuilder)
 	)
 	if externalBatch {
 		keyBatch = optBatch[0]
@@ -330,10 +332,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			return err
 		}
 
-		size := t.keySize(tr)
+		size := t.keySize(tr, keySizeBuilder)
 		set := keyBatch.SetDeferred(size, len(data))
 		// insert key
-		set.Key = t.encodeKey(tr, PrimaryIndexID, set.Key, nil)
+		set.Key = t.encodeKey(tr, PrimaryIndexID, set.Key, keyBuilder, nil)
 		copy(set.Value, data)
 
 		// check if exist
@@ -353,9 +355,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		for _, idx := range indexes {
 			// verify whether this record should be indexed or not.
 			if idx.IndexFilterFunction(tr) {
-				size = t.indexKeySize(idx, tr)
+				size = t.indexKeySize(idx, tr, keySizeBuilder)
 				set = indexBatch.SetDeferred(size, 0)
-				set.Key = t.encodeKey(tr, idx.IndexID, set.Key, idx)
+				set.Key = t.encodeKey(tr, idx.IndexID, set.Key, keyBuilder, idx)
 				err = set.Finish()
 				if err != nil {
 					return err
@@ -873,12 +875,11 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 }
 
 // encodes `key` into the `buff` without using additional space.
-func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []byte {
+func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, builder *KeyBuilder, idx *Index[T]) []byte {
 	opt := KeyEncodeOption{
 		TableID: t.id,
 		IndexID: id,
 		EncodePrimaryKey: func(kb KeyBytes) KeyBytes {
-			builder := keyBuilderPool.Get().(*KeyBuilder)
 			builder.Reset(kb)
 			return t.primaryKeyFunc(builder, tr)
 		},
@@ -886,12 +887,10 @@ func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []by
 
 	if idx != nil {
 		opt.EncodeIndexKey = func(kb KeyBytes) KeyBytes {
-			builder := keyBuilderPool.Get().(*KeyBuilder)
 			builder.Reset(kb)
 			return idx.IndexKeyFunction(builder, tr)
 		}
 		opt.EncodeIndexOrder = func(kb KeyBytes) KeyBytes {
-			builder := keyBuilderPool.Get().(*KeyBuilder)
 			builder.Reset(kb)
 			return idx.IndexOrderFunction(
 				IndexOrder{keyBuilder: builder}, tr,
@@ -902,16 +901,14 @@ func (t *_table[T]) encodeKey(tr T, id IndexID, buff []byte, idx *Index[T]) []by
 	return KeyBytes(buff).Encode(opt)
 }
 
-func (t *_table[T]) keySize(tr T) int {
-	builder := keySizeBuilderPool.Get().(*KeyBuilder)
+func (t *_table[T]) keySize(tr T, builder *KeySizeBuilder) int {
 	builder.Reset([]byte{})
 	var primarySize = utils.SliceToInt(t.primaryKeyFunc(builder, tr))
 
 	return KeySize(int(primarySize), 0, 0)
 }
 
-func (t *_table[T]) indexKeySize(idx *Index[T], tr T) int {
-	builder := keySizeBuilderPool.Get().(*KeyBuilder)
+func (t *_table[T]) indexKeySize(idx *Index[T], tr T, builder *KeySizeBuilder) int {
 	builder.Reset([]byte{})
 	var primarySize = utils.SliceToInt(t.primaryKeyFunc(builder, tr))
 	builder.Reset([]byte{})

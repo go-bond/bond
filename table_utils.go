@@ -46,7 +46,7 @@ func TableAnyScanner[T any](scanner TableScanner[T]) TableScanner[any] {
 			iAny := NewIndex[T](IndexOptions[T]{
 				IndexID:   i.IndexID,
 				IndexName: i.IndexName,
-				IndexKeyFunc: func(keyBuilder *KeyBuilder, t T) []byte {
+				IndexKeyFunc: func(keyBuilder KeyBuilderSpec, t T) []byte {
 					return i.IndexKeyFunction(keyBuilder, t)
 				},
 				IndexOrderFunc: func(order IndexOrder, t T) IndexOrder {
@@ -87,7 +87,7 @@ func TableAnyScanner[T any](scanner TableScanner[T]) TableScanner[any] {
 			iAny := NewIndex[T](IndexOptions[T]{
 				IndexID:   i.IndexID,
 				IndexName: i.IndexName,
-				IndexKeyFunc: func(keyBuilder *KeyBuilder, t T) []byte {
+				IndexKeyFunc: func(keyBuilder KeyBuilderSpec, t T) []byte {
 					return i.IndexKeyFunction(keyBuilder, t)
 				},
 				IndexOrderFunc: func(order IndexOrder, t T) IndexOrder {

@@ -3,7 +3,7 @@ package bond
 import "math/big"
 
 type IndexID uint8
-type IndexKeyFunction[T any] func(builder *KeyBuilder, t T) []byte
+type IndexKeyFunction[T any] func(builder KeyBuilderSpec, t T) []byte
 type IndexFilterFunction[T any] func(t T) bool
 type IndexOrderFunction[T any] func(o IndexOrder, t T) IndexOrder
 type IndexOrderType bool
@@ -14,7 +14,7 @@ const (
 )
 
 type IndexOrder struct {
-	keyBuilder *KeyBuilder
+	keyBuilder KeyBuilderSpec
 }
 
 func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
@@ -22,7 +22,7 @@ func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
 		i = -i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddInt64Field(i)
+	o.keyBuilder.AddInt64Field(i)
 	return o
 }
 
@@ -31,7 +31,7 @@ func (o IndexOrder) OrderInt32(i int32, orderType IndexOrderType) IndexOrder {
 		i = -i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddInt32Field(i)
+	o.keyBuilder.AddInt32Field(i)
 	return o
 }
 
@@ -40,7 +40,7 @@ func (o IndexOrder) OrderInt16(i int16, orderType IndexOrderType) IndexOrder {
 		i = -i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddInt16Field(i)
+	o.keyBuilder.AddInt16Field(i)
 	return o
 }
 
@@ -49,7 +49,7 @@ func (o IndexOrder) OrderUint64(i uint64, orderType IndexOrderType) IndexOrder {
 		i = ^i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddUint64Field(i)
+	o.keyBuilder.AddUint64Field(i)
 	return o
 }
 
@@ -58,7 +58,7 @@ func (o IndexOrder) OrderUint32(i uint32, orderType IndexOrderType) IndexOrder {
 		i = ^i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddUint32Field(i)
+	o.keyBuilder.AddUint32Field(i)
 	return o
 }
 
@@ -67,7 +67,7 @@ func (o IndexOrder) OrderUint16(i uint16, orderType IndexOrderType) IndexOrder {
 		i = ^i
 	}
 
-	o.keyBuilder = o.keyBuilder.AddUint16Field(i)
+	o.keyBuilder.AddUint16Field(i)
 	return o
 }
 
@@ -76,7 +76,7 @@ func (o IndexOrder) OrderByte(b byte, orderType IndexOrderType) IndexOrder {
 		b = ^b
 	}
 
-	o.keyBuilder = o.keyBuilder.AddByteField(b)
+	o.keyBuilder.AddByteField(b)
 	return o
 }
 
@@ -87,7 +87,7 @@ func (o IndexOrder) OrderBytes(b []byte, orderType IndexOrderType) IndexOrder {
 		}
 	}
 
-	o.keyBuilder = o.keyBuilder.AddBytesField(b)
+	o.keyBuilder.AddBytesField(b)
 	return o
 }
 
@@ -96,7 +96,7 @@ func (o IndexOrder) OrderBigInt(b *big.Int, bits int, orderType IndexOrderType) 
 		b = big.NewInt(0).Neg(b)
 	}
 
-	o.keyBuilder = o.keyBuilder.AddBigIntField(b, bits)
+	o.keyBuilder.AddBigIntField(b, bits)
 	return o
 }
 
