@@ -125,8 +125,8 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 			entries = append(entries, &TokenBalance{
 				ID:              id,
 				AccountID:       uint32(id % 10),
-				ContractAddress: "0xtestContract" + fmt.Sprintf("%d", id),
-				AccountAddress:  "0xtestAccount" + fmt.Sprintf("%d", id%5),
+				ContractAddress: RandStringRunes(20),
+				AccountAddress:  RandStringRunes(20),
 				Balance:         uint64((id % 100) * 10),
 			})
 		}
@@ -216,4 +216,18 @@ func runBondInsert(totalTable, totalBatch, batchSize int) {
 	wg.Wait()
 	elapsed := time.Since(start)
 	fmt.Printf("Total time taken to insert %s \n", elapsed)
+}
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func RandStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
 }
