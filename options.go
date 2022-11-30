@@ -54,6 +54,11 @@ func DefaultPebbleOptions() *pebble.Options {
 		MaxConcurrentCompactions:    func() int { return DefaultMaxConcurrentCompactions },
 		MemTableSize:                64 << 20, // 64 MB
 		MemTableStopWritesThreshold: 4,
+		BlockPropertyCollectors: []func() pebble.BlockPropertyCollector{
+			func() pebble.BlockPropertyCollector {
+				return &BlockCollector{BlockMeta: NewBlockMeta()}
+			},
+		},
 	}
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
