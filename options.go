@@ -66,6 +66,7 @@ func DefaultPebbleOptions() *pebble.Options {
 
 	opts.Experimental.MinDeletionRate = 128 << 20 // 128 MB
 	opts.Experimental.MaxWriterConcurrency = DefaultMaxWriterConcurrency
+	opts.FormatMajorVersion = pebble.FormatNewest
 
 	for i := 0; i < len(opts.Levels); i++ {
 		l := &opts.Levels[i]
