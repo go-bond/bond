@@ -183,7 +183,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.IntFlag{
 				Name:  "batch_size",
-				Value: 20,
+				Value: 100,
 				Usage: "size of the batch",
 			},
 			&cli.IntFlag{
