@@ -328,7 +328,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	filter := &PrimaryKeyFilter{
-		ID: t.id,
+		ID:        t.id,
+		BlockMeta: NewBlockMeta(),
 	}
 
 	for _, tr := range trs {

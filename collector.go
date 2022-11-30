@@ -52,7 +52,6 @@ func (b *BlockMeta) Encode(buf []byte) []byte {
 		keyMetaPool.Put(property)
 		delete(b.Properties, tableID)
 	}
-
 	return buff.Bytes()
 }
 
@@ -78,7 +77,6 @@ func (b *BlockMeta) Decode(buf []byte) {
 		meta.Max = buff.Next(int(keyLen))
 		b.Properties[TableID(tableID)] = meta
 	}
-
 }
 
 type BlockCollector struct {
