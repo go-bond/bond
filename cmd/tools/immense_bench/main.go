@@ -19,15 +19,17 @@ import (
 type UniqueRand struct {
 	generated map[uint64]bool //keeps track of
 	rng       *rand.Rand      //underlying random number generator
+	ids       []uint64
 }
 
 // Generating unique rand
-func NewUniqueRand() *UniqueRand {
+func NewUniqueRand(space int) *UniqueRand {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 	return &UniqueRand{
-		generated: map[uint64]bool{},
+		generated: make(map[uint64]bool, space),
 		rng:       r1,
+		ids:       make([]uint64, 0, space),
 	}
 }
 
@@ -36,6 +38,7 @@ func (u *UniqueRand) Int() uint64 {
 		i := u.rng.Uint64()
 		if !u.generated[i] {
 			u.generated[i] = true
+			u.ids = append(u.ids, i)
 			return i
 		}
 	}
@@ -50,24 +53,19 @@ type TokenBalance struct {
 	Balance         uint64 `json:"balance"`
 }
 
-var insertedEntries uint64
+func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
+	TokenBalanceTableID := bond.TableID(tableID)
 
-// Insert records to the bond db
-// Number of entires = batchSize * totalBatch
-func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
-	idGenerator := NewUniqueRand()
-	TokenBalanceTableID := bond.TableID(idGenerator.Int())
-
-	table := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
+	table := bond.NewTable(bond.TableOptions[*TokenBalance]{
 		DB:        db,
-		TableName: fmt.Sprintf("token_balance_%d", idGenerator.Int()),
+		TableName: fmt.Sprintf("token_balance_%d", tableID),
 		TableID:   TokenBalanceTableID,
 		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 	})
 
-	accountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	accountIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 1,
 		IndexName: "account_address_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
@@ -76,7 +74,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
 	})
 
-	amountIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	amountIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 2,
 		IndexName: "account_amount_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
@@ -87,7 +85,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		},
 	})
 
-	tokenIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	tokenIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 3,
 		IndexName: "token_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
@@ -98,7 +96,7 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		},
 	})
 
-	contractIdx := bond.NewIndex[*TokenBalance](bond.IndexOptions[*TokenBalance]{
+	contractIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 4,
 		IndexName: "contract_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
@@ -117,7 +115,17 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
+	return table
+}
 
+var insertedEntries uint64
+
+var readEntries uint64
+
+// Insert records to the bond db
+// Number of entires = batchSize * totalBatch
+func insertRecords(db bond.DB, tableID, batchSize, totalBatch int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
+	table := getTable(tableID, db)
 	entries := make([]*TokenBalance, 0, batchSize)
 	for i := 0; i < totalBatch; i++ {
 		for j := 0; j < batchSize; j++ {
@@ -136,6 +144,21 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 		}
 		atomic.AddUint64(&insertedEntries, uint64(batchSize))
 		entries = entries[:0]
+	}
+	wg.Done()
+}
+
+func readRecords(db bond.DB, tableID int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
+	table := getTable(tableID, db)
+	for _, id := range idGenerator.ids {
+		token := &TokenBalance{
+			ID: id,
+		}
+		_, err := table.Get(token)
+		if err != nil {
+			panic(err.Error())
+		}
+		atomic.AddUint64(&readEntries, 1)
 	}
 	wg.Done()
 }
@@ -172,11 +195,39 @@ func main() {
 				Value: 8,
 				Usage: "number of table",
 			},
+			&cli.BoolFlag{
+				Name:  "read",
+				Value: false,
+				Usage: "run bondRead",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
-			runBondInsert(cCtx.Int("total_table"),
+			db, err := bond.Open("example", &bond.Options{})
+			if err != nil {
+				panic(err)
+			}
+
+			defer func() {
+				sz, _ := DirSize("example")
+				fmt.Printf("size of database %s \n", humanize.Bytes(sz))
+				_ = os.RemoveAll("example")
+			}()
+
+			fmt.Println("Insert Started")
+			generators, insertTime := runBondInsert(db, cCtx.Int("total_table"),
 				cCtx.Int("total_batch"),
 				cCtx.Int("batch_size"))
+
+			fmt.Printf("Total time taken to insert %s \n", insertTime)
+
+			if !cCtx.Bool("read") {
+				return nil
+			}
+			fmt.Println("Read started")
+			readTime := runBondRead(db, generators)
+
+			fmt.Printf("Total time taken to insert %s \n", insertTime)
+			fmt.Printf("Total time taken to read %s \n", readTime)
 			return nil
 		},
 	}
@@ -187,35 +238,56 @@ func main() {
 
 }
 
-func runBondInsert(totalTable, totalBatch, batchSize int) {
-	db, err := bond.Open("example", &bond.Options{})
-	if err != nil {
-		panic(err)
-	}
-
-	defer func() {
-		sz, _ := DirSize("example")
-		fmt.Printf("size of database %s \n", humanize.Bytes(sz))
-		_ = os.RemoveAll("example")
-	}()
-
+func runBondInsert(db bond.DB, totalTable, totalBatch, batchSize int) ([]*UniqueRand, time.Duration) {
 	wg := &sync.WaitGroup{}
 	start := time.Now()
+	generators := []*UniqueRand{}
+
 	for i := 0; i < totalTable; i++ {
 		wg.Add(1)
-		go insertRecords(db, batchSize, totalBatch, wg)
+		gen := NewUniqueRand(batchSize * totalBatch)
+		generators = append(generators, gen)
+		go insertRecords(db, i, batchSize, totalBatch, gen, wg)
 	}
 
+	ticker := time.NewTicker(500 * time.Millisecond)
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
 		for range ticker.C {
 			fmt.Printf("inserted records %d \n", atomic.LoadUint64(&insertedEntries))
 		}
 	}()
 
 	wg.Wait()
+	ticker.Stop()
+
 	elapsed := time.Since(start)
 	fmt.Printf("Total time taken to insert %s \n", elapsed)
+	return generators, elapsed
+}
+
+func runBondRead(db bond.DB, idGenerators []*UniqueRand) time.Duration {
+	start := time.Now()
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i < len(idGenerators); i++ {
+		wg.Add(1)
+		go func(idx int) {
+			readRecords(db, idx, idGenerators[idx], wg)
+		}(i)
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	go func() {
+		for range ticker.C {
+			fmt.Printf("read records %d \n", atomic.LoadUint64(&readEntries))
+		}
+	}()
+
+	wg.Wait()
+	ticker.Stop()
+
+	elapsed := time.Since(start)
+	return elapsed
 }
 
 func init() {
