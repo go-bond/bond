@@ -281,6 +281,10 @@ func (key KeyBytes) TableID() TableID {
 	return TableID(key[0])
 }
 
+func (key KeyBytes) PrimaryKey() []byte {
+	return key[10:]
+}
+
 func (key KeyBytes) IndexID() IndexID {
 	return IndexID(key[1])
 }
