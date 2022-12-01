@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
 
 	"github.com/cockroachdb/pebble/sstable"
 )
@@ -15,33 +16,43 @@ var (
 	BlockCollectorID = "bc"
 )
 
-type KeyMeta struct {
+type Range struct {
 	Max []byte
 	Min []byte
 }
 
-var keyMetaPool = &sync.Pool{
+var primaryFilterPool = &sync.Pool{
 	New: func() any {
-		return &KeyMeta{}
+		return &PrimaryKeyFilter{
+			KeyRange: NewKeyRange(),
+		}
 	},
 }
 
-type BlockMeta struct {
-	Properties map[TableID]*KeyMeta
+var rangePool = utils.SyncPoolWrapper[*Range]{
+	Pool: sync.Pool{
+		New: func() any {
+			return &Range{}
+		},
+	},
 }
 
-func NewBlockMeta() *BlockMeta {
-	return &BlockMeta{
-		Properties: make(map[TableID]*KeyMeta, 4),
+type KeyRange struct {
+	Ranges map[TableID]*Range
+}
+
+func NewKeyRange() *KeyRange {
+	return &KeyRange{
+		Ranges: make(map[TableID]*Range, 4),
 	}
 }
 
-func (b *BlockMeta) Encode(buf []byte) []byte {
+func (b *KeyRange) Encode(buf []byte) []byte {
 	// block meta encoded as:
 	// TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 	lenBuf := make([]byte, 4)
 	buff := bytes.NewBuffer(buf)
-	for tableID, property := range b.Properties {
+	for tableID, property := range b.Ranges {
 		buff.WriteByte(byte(tableID))
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(property.Min)))
 		buff.Write(lenBuf)
@@ -49,13 +60,11 @@ func (b *BlockMeta) Encode(buf []byte) []byte {
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(property.Max)))
 		buff.Write(lenBuf)
 		buff.Write(property.Max)
-		keyMetaPool.Put(property)
-		delete(b.Properties, tableID)
 	}
 	return buff.Bytes()
 }
 
-func (b *BlockMeta) Decode(buf []byte) {
+func (b *KeyRange) Decode(buf []byte) {
 	if len(buf) == 0 {
 		return
 	}
@@ -67,25 +76,26 @@ func (b *BlockMeta) Decode(buf []byte) {
 		if err == io.EOF {
 			return
 		}
-		meta := keyMetaPool.Get().(*KeyMeta)
+		keyRange := &Range{}
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
-		meta.Min = buff.Next(int(keyLen))
+		keyRange.Min = buff.Next(int(keyLen))
 
 		lenBuf = buff.Next(4)
 		keyLen = binary.BigEndian.Uint32(lenBuf)
-		meta.Max = buff.Next(int(keyLen))
-		b.Properties[TableID(tableID)] = meta
+		keyRange.Max = buff.Next(int(keyLen))
+		b.Ranges[TableID(tableID)] = keyRange
 	}
 }
 
 type BlockCollector struct {
-	*BlockMeta
+	blockRange *KeyRange
+	tableRange *KeyRange
 }
 
 // Add implements sstable.BlockPropertyCollector
 func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error {
-	if pebbleKey.Trailer != uint64(pebble.InternalKeyKindSet) {
+	if pebbleKey.Kind() != pebble.InternalKeyKindSet {
 		return nil
 	}
 
@@ -95,43 +105,59 @@ func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error 
 	}
 
 	tableID := key.TableID()
-	primaryKey := key.PrimaryKey()
-
-	meta, ok := b.BlockMeta.Properties[tableID]
+	keyRange, ok := b.blockRange.Ranges[tableID]
 	if !ok {
-		meta := keyMetaPool.Get().(*KeyMeta)
-		meta.Min = primaryKey
-		meta.Max = primaryKey
-		b.BlockMeta.Properties[tableID] = meta
+		keyRange := &Range{}
+		utils.Copy(keyRange.Min, pebbleKey.UserKey)
+		utils.Copy(keyRange.Max, pebbleKey.UserKey)
+		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
 
-	if bytes.Compare(meta.Min, primaryKey) < 0 {
-		meta.Max = primaryKey
+	if bytes.Compare(keyRange.Min, pebbleKey.UserKey) <= 0 {
+		keyRange.Max = utils.Copy(keyRange.Max, pebbleKey.UserKey)
+		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
-	meta.Max = meta.Min
-	meta.Min = primaryKey
-	return nil
+
+	panic("Incoming key can't be a small key, since insertion at block happens in sorted order")
 }
 
 // AddPrevDataBlockToIndexBlock implements sstable.BlockPropertyCollector
-func (*BlockCollector) AddPrevDataBlockToIndexBlock() {
+func (b *BlockCollector) AddPrevDataBlockToIndexBlock() {
+	for tableID, blockRange := range b.blockRange.Ranges {
+		tableRange, ok := b.tableRange.Ranges[tableID]
+		if !ok {
+			b.tableRange.Ranges[tableID] = blockRange
+			delete(b.blockRange.Ranges, tableID)
+			continue
+		}
+		if bytes.Compare(tableRange.Min, blockRange.Min) > 0 {
+			tableRange.Min = utils.Copy(tableRange.Min, blockRange.Min)
+		}
+
+		if bytes.Compare(tableRange.Max, blockRange.Max) < 0 {
+			tableRange.Max = utils.Copy(tableRange.Max, blockRange.Max)
+		}
+		b.tableRange.Ranges[tableID] = tableRange
+		delete(b.blockRange.Ranges, tableID)
+	}
 }
 
 // FinishDataBlock implements sstable.BlockPropertyCollector
 func (b *BlockCollector) FinishDataBlock(buf []byte) ([]byte, error) {
-	return b.Encode(buf), nil
+	return b.blockRange.Encode(buf), nil
 }
 
 // FinishIndexBlock implements sstable.BlockPropertyCollector
 func (*BlockCollector) FinishIndexBlock(buf []byte) ([]byte, error) {
+	panic("index block need to be implemeted. But, this won't be called unless we tweek the configuration")
 	return buf, nil
 }
 
 // FinishTable implements sstable.BlockPropertyCollector
-func (*BlockCollector) FinishTable(buf []byte) ([]byte, error) {
-	return buf, nil
+func (b *BlockCollector) FinishTable(buf []byte) ([]byte, error) {
+	return b.tableRange.Encode(buf), nil
 }
 
 // Name implements sstable.BlockPropertyCollector
@@ -144,18 +170,16 @@ var _ pebble.BlockPropertyCollector = &BlockCollector{}
 type PrimaryKeyFilter struct {
 	ID  TableID
 	Key []byte
-	*BlockMeta
+	*KeyRange
 }
 
 // Intersects implements base.BlockPropertyFilter
 func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 	p.Decode(prop)
-
-	meta, ok := p.Properties[p.ID]
+	meta, ok := p.Ranges[p.ID]
 	if !ok {
 		return false, nil
 	}
-
 	return (bytes.Compare(meta.Min, p.Key) <= 0 && bytes.Compare(meta.Max, p.Key) >= 0), nil
 }
 

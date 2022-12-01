@@ -328,8 +328,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	filter := &PrimaryKeyFilter{
-		ID:        t.id,
-		BlockMeta: NewBlockMeta(),
+		ID:       t.id,
+		KeyRange: NewKeyRange(),
 	}
 
 	for _, tr := range trs {
@@ -763,15 +763,33 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 }
 
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
-	data, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return utils.MakeNew[T](), fmt.Errorf("get failed: %w", err)
+	filter := primaryFilterPool.Get().(*PrimaryKeyFilter)
+	filter.ID = t.id
+	filter.Key = key
+
+	opt := &IterOptions{
+		IterOptions: pebble.IterOptions{
+			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
+			KeyTypes:        pebble.IterKeyTypePointsOnly,
+		},
 	}
 
-	defer func() { _ = closer.Close() }()
+	itr := t.db.Iter(opt, batch)
+	defer itr.Close()
 
+	seeked := itr.SeekGE(key)
+	if !seeked {
+		fmt.Println("nto seeked")
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
+
+	if !bytes.Equal(itr.Key(), key) {
+		fmt.Println("not equal")
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
+	data := itr.Value()
 	var tr T
-	err = t.serializer.Deserialize(data, &tr)
+	err := t.serializer.Deserialize(data, &tr)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
