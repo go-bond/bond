@@ -65,6 +65,7 @@ func (b *KeyRange) Encode(buf []byte) []byte {
 }
 
 func (b *KeyRange) Decode(buf []byte) {
+	b.Ranges = make(map[TableID]*Range)
 	if len(buf) == 0 {
 		return
 	}
