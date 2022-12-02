@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -200,8 +201,36 @@ func main() {
 				Value: false,
 				Usage: "run bondRead",
 			},
+			&cli.BoolFlag{
+				Name:  "pprof",
+				Value: false,
+				Usage: "run pprof",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
+
+			if cCtx.Bool("pprof") {
+				var (
+					cpuProfile *os.File
+					memProfile *os.File
+					err        error
+				)
+
+				cpuProfile, err = os.Create("cpuprofile")
+				if err != nil {
+					panic(err)
+				}
+				memProfile, err = os.Create("memprofile")
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println("Profiling started")
+				pprof.StartCPUProfile(cpuProfile)
+
+				defer pprof.StopCPUProfile()
+				defer pprof.WriteHeapProfile(memProfile)
+			}
+
 			db, err := bond.Open("example", &bond.Options{})
 			if err != nil {
 				panic(err)
