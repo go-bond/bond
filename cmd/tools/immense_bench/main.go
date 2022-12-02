@@ -188,7 +188,7 @@ func main() {
 			},
 			&cli.IntFlag{
 				Name:  "total_batch",
-				Value: 8000,
+				Value: 1000,
 				Usage: "number of batch",
 			},
 			&cli.IntFlag{
