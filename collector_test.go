@@ -9,27 +9,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCollector(t *testing.T) {
-	encodeNum := func(i uint64) []byte {
-		buf := make([]byte, 8)
-		binary.BigEndian.PutUint64(buf, i)
-		return buf
-	}
+func encodeNum(i uint64) []byte {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, i)
+	return buf
+}
 
-	key := func(tID TableID, i uint64) sstable.InternalKey {
-		buf := encodeNum(i)
-		k := KeyEncode(Key{
-			PrimaryKey: buf,
-			TableID:    tID,
-			IndexID:    PrimaryIndexID,
-			IndexKey:   []byte{},
-			IndexOrder: []byte{},
-		})
-		return sstable.InternalKey{
-			UserKey: k,
-			Trailer: (1 << 8) | uint64(pebble.InternalKeyKindSet),
-		}
+func key(tID TableID, i uint64) sstable.InternalKey {
+	buf := encodeNum(i)
+	k := KeyEncode(Key{
+		PrimaryKey: buf,
+		TableID:    tID,
+		IndexID:    PrimaryIndexID,
+		IndexKey:   []byte{},
+		IndexOrder: []byte{},
+	})
+	return sstable.InternalKey{
+		UserKey: k,
+		Trailer: (1 << 8) | uint64(pebble.InternalKeyKindSet),
 	}
+}
+
+func TestCollector(t *testing.T) {
 
 	collector := &BlockCollector{
 		tableRange: NewKeyRange(),
@@ -129,4 +130,63 @@ func TestCollector(t *testing.T) {
 	require.Equal(t, encodeNum(21), collector.tableRange.Ranges[2].Max)
 	require.Equal(t, encodeNum(1), collector.tableRange.Ranges[3].Min)
 	require.Equal(t, encodeNum(7), collector.tableRange.Ranges[3].Max)
+}
+
+func TestRange(t *testing.T) {
+	keyRange := NewKeyRange()
+	keyRange.Ranges[1] = &Range{
+		Min: encodeNum(1),
+		Max: encodeNum(2),
+	}
+	keyRange.Ranges[2] = &Range{
+		Min: encodeNum(3),
+		Max: encodeNum(4),
+	}
+
+	encoded := keyRange.Encode([]byte{})
+
+	newKeyRange := NewKeyRange()
+	newKeyRange.Decode(encoded)
+	require.Equal(t, 2, len(newKeyRange.Ranges))
+	require.Equal(t, keyRange.Ranges[1].Min, newKeyRange.Ranges[1].Min)
+	require.Equal(t, keyRange.Ranges[1].Max, newKeyRange.Ranges[1].Max)
+	require.Equal(t, keyRange.Ranges[2].Min, newKeyRange.Ranges[2].Min)
+	require.Equal(t, keyRange.Ranges[2].Max, newKeyRange.Ranges[2].Max)
+}
+
+func TestFilter(t *testing.T) {
+	keyRange := NewKeyRange()
+	keyRange.Ranges[1] = &Range{
+		Min: encodeNum(1),
+		Max: encodeNum(10),
+	}
+	keyRange.Ranges[2] = &Range{
+		Min: encodeNum(3),
+		Max: encodeNum(40),
+	}
+	encoded := keyRange.Encode([]byte{})
+
+	filter := NewPrimaryKeyFilter(1)
+	filter.Key = key(1, 3).UserKey
+	intersects, err := filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.Equal(t, true, intersects)
+
+	filter.Key = key(1, 11).UserKey
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, false, intersects)
+
+	filter = NewPrimaryKeyFilter(2)
+	filter.Key = key(2, 48).UserKey
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.Equal(t, false, intersects)
+
+	filter.Key = key(3, 40).UserKey
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, true, intersects)
 }
