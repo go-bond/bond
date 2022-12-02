@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"sync"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
@@ -14,27 +13,14 @@ import (
 
 var (
 	BlockCollectorID = "bc"
+	// Primary Key does not contain Index Key and Index Order Key. So, it's guaranteed that Primary Key
+	// begin at the index `10`.
+	PrimaryKeyStartIdx = 10
 )
 
 type Range struct {
 	Max []byte
 	Min []byte
-}
-
-var primaryFilterPool = &sync.Pool{
-	New: func() any {
-		return &PrimaryKeyFilter{
-			KeyRange: NewKeyRange(),
-		}
-	},
-}
-
-var rangePool = utils.SyncPoolWrapper[*Range]{
-	Pool: sync.Pool{
-		New: func() any {
-			return &Range{}
-		},
-	},
 }
 
 type KeyRange struct {
@@ -54,14 +40,38 @@ func (b *KeyRange) Encode(buf []byte) []byte {
 	buff := bytes.NewBuffer(buf)
 	for tableID, property := range b.Ranges {
 		buff.WriteByte(byte(tableID))
+		// minKeyLen | minKey
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(property.Min)))
 		buff.Write(lenBuf)
 		buff.Write(property.Min)
+		// maxKeyLen | maxKey
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(property.Max)))
 		buff.Write(lenBuf)
 		buff.Write(property.Max)
 	}
 	return buff.Bytes()
+}
+
+func (b *KeyRange) Merge(in *KeyRange) {
+	for tableID, keyRange := range in.Ranges {
+		localRange, ok := b.Ranges[tableID]
+		if !ok {
+			b.Ranges[tableID] = keyRange
+			delete(in.Ranges, tableID)
+			continue
+		}
+
+		if bytes.Compare(localRange.Min, keyRange.Min) > 0 {
+			localRange.Min = utils.Copy(localRange.Min, keyRange.Min)
+		}
+
+		if bytes.Compare(localRange.Max, keyRange.Max) < 0 {
+			localRange.Max = utils.Copy(localRange.Max, keyRange.Max)
+		}
+
+		b.Ranges[tableID] = localRange
+		delete(in.Ranges, tableID)
+	}
 }
 
 func (b *KeyRange) Decode(buf []byte) {
@@ -71,12 +81,12 @@ func (b *KeyRange) Decode(buf []byte) {
 	}
 
 	buff := bytes.NewBuffer(buf)
-
 	for {
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
 			return
 		}
+
 		keyRange := &Range{}
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
@@ -92,9 +102,9 @@ func (b *KeyRange) Decode(buf []byte) {
 type BlockCollector struct {
 	blockRange *KeyRange
 	tableRange *KeyRange
+	indexRange *KeyRange
 }
 
-// Add implements sstable.BlockPropertyCollector
 func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error {
 	if pebbleKey.Kind() != pebble.InternalKeyKindSet {
 		return nil
@@ -109,59 +119,39 @@ func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error 
 	keyRange, ok := b.blockRange.Ranges[tableID]
 	if !ok {
 		keyRange := &Range{}
-		keyRange.Min = utils.Copy(keyRange.Min, key.PrimaryKey())
-		keyRange.Max = utils.Copy(keyRange.Max, key.PrimaryKey())
+		keyRange.Min = utils.Copy(keyRange.Min, key[PrimaryKeyStartIdx:])
+		keyRange.Max = utils.Copy(keyRange.Max, key[PrimaryKeyStartIdx:])
 		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
 
-	if bytes.Compare(keyRange.Min, key.PrimaryKey()) <= 0 {
-		keyRange.Max = utils.Copy(keyRange.Max, key.PrimaryKey())
+	if bytes.Compare(keyRange.Min, key[PrimaryKeyStartIdx:]) <= 0 {
+		keyRange.Max = utils.Copy(keyRange.Max, key[PrimaryKeyStartIdx:])
 		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
-
 	panic("Incoming key can't be a small key, since insertion at block happens in sorted order")
 }
 
-// AddPrevDataBlockToIndexBlock implements sstable.BlockPropertyCollector
 func (b *BlockCollector) AddPrevDataBlockToIndexBlock() {
-	for tableID, blockRange := range b.blockRange.Ranges {
-		tableRange, ok := b.tableRange.Ranges[tableID]
-		if !ok {
-			b.tableRange.Ranges[tableID] = blockRange
-			delete(b.blockRange.Ranges, tableID)
-			continue
-		}
-		if bytes.Compare(tableRange.Min, blockRange.Min) > 0 {
-			tableRange.Min = utils.Copy(tableRange.Min, blockRange.Min)
-		}
-
-		if bytes.Compare(tableRange.Max, blockRange.Max) < 0 {
-			tableRange.Max = utils.Copy(tableRange.Max, blockRange.Max)
-		}
-		b.tableRange.Ranges[tableID] = tableRange
-		delete(b.blockRange.Ranges, tableID)
-	}
+	b.indexRange.Merge(b.blockRange)
 }
 
-// FinishDataBlock implements sstable.BlockPropertyCollector
 func (b *BlockCollector) FinishDataBlock(buf []byte) ([]byte, error) {
 	return b.blockRange.Encode(buf), nil
 }
 
-// FinishIndexBlock implements sstable.BlockPropertyCollector
-func (*BlockCollector) FinishIndexBlock(buf []byte) ([]byte, error) {
-	panic("index block need to be implemeted. But, this won't be called unless we tweek the configuration")
+func (b *BlockCollector) FinishIndexBlock(buf []byte) ([]byte, error) {
+	buf = b.indexRange.Encode(buf)
+	b.tableRange.Merge(b.indexRange)
 	return buf, nil
 }
 
-// FinishTable implements sstable.BlockPropertyCollector
 func (b *BlockCollector) FinishTable(buf []byte) ([]byte, error) {
+	b.tableRange.Merge(b.indexRange)
 	return b.tableRange.Encode(buf), nil
 }
 
-// Name implements sstable.BlockPropertyCollector
 func (*BlockCollector) Name() string {
 	return BlockCollectorID
 }
@@ -174,17 +164,22 @@ type PrimaryKeyFilter struct {
 	*KeyRange
 }
 
-// Intersects implements base.BlockPropertyFilter
+func NewPrimaryKeyFilter(id TableID) *PrimaryKeyFilter {
+	return &PrimaryKeyFilter{
+		KeyRange: NewKeyRange(),
+		ID:       id,
+	}
+}
+
 func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 	p.Decode(prop)
 	meta, ok := p.Ranges[p.ID]
 	if !ok {
 		return false, nil
 	}
-	return (bytes.Compare(meta.Min, p.Key) <= 0 && bytes.Compare(meta.Max, p.Key) >= 0), nil
+	return (bytes.Compare(meta.Min, p.Key[PrimaryKeyStartIdx:]) <= 0 && bytes.Compare(meta.Max, p.Key[PrimaryKeyStartIdx:]) >= 0), nil
 }
 
-// Name implements base.BlockPropertyFilter
 func (*PrimaryKeyFilter) Name() string {
 	return BlockCollectorID
 }

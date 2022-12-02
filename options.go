@@ -56,7 +56,11 @@ func DefaultPebbleOptions() *pebble.Options {
 		MemTableStopWritesThreshold: 4,
 		BlockPropertyCollectors: []func() pebble.BlockPropertyCollector{
 			func() pebble.BlockPropertyCollector {
-				return &BlockCollector{blockRange: NewKeyRange(), tableRange: NewKeyRange()}
+				return &BlockCollector{
+					blockRange: NewKeyRange(),
+					tableRange: NewKeyRange(),
+					indexRange: NewKeyRange(),
+				}
 			},
 		},
 	}
