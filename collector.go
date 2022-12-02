@@ -109,14 +109,14 @@ func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error 
 	keyRange, ok := b.blockRange.Ranges[tableID]
 	if !ok {
 		keyRange := &Range{}
-		keyRange.Min = utils.Copy(keyRange.Min, pebbleKey.UserKey)
-		keyRange.Max = utils.Copy(keyRange.Max, pebbleKey.UserKey)
+		keyRange.Min = utils.Copy(keyRange.Min, key.PrimaryKey())
+		keyRange.Max = utils.Copy(keyRange.Max, key.PrimaryKey())
 		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
 
-	if bytes.Compare(keyRange.Min, pebbleKey.UserKey) <= 0 {
-		keyRange.Max = utils.Copy(keyRange.Max, pebbleKey.UserKey)
+	if bytes.Compare(keyRange.Min, key.PrimaryKey()) <= 0 {
+		keyRange.Max = utils.Copy(keyRange.Max, key.PrimaryKey())
 		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
