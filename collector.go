@@ -80,11 +80,11 @@ func (b *KeyRange) Decode(buf []byte) {
 		keyRange := &Range{}
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
-		keyRange.Min = buff.Next(int(keyLen))
+		keyRange.Min = utils.Copy(keyRange.Min, buff.Next(int(keyLen)))
 
 		lenBuf = buff.Next(4)
 		keyLen = binary.BigEndian.Uint32(lenBuf)
-		keyRange.Max = buff.Next(int(keyLen))
+		keyRange.Max = utils.Copy(keyRange.Max, buff.Next(int(keyLen)))
 		b.Ranges[TableID(tableID)] = keyRange
 	}
 }
@@ -109,8 +109,8 @@ func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error 
 	keyRange, ok := b.blockRange.Ranges[tableID]
 	if !ok {
 		keyRange := &Range{}
-		utils.Copy(keyRange.Min, pebbleKey.UserKey)
-		utils.Copy(keyRange.Max, pebbleKey.UserKey)
+		keyRange.Min = utils.Copy(keyRange.Min, pebbleKey.UserKey)
+		keyRange.Max = utils.Copy(keyRange.Max, pebbleKey.UserKey)
 		b.blockRange.Ranges[tableID] = keyRange
 		return nil
 	}
