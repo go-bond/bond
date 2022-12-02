@@ -342,7 +342,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
 
-		filter.Key = key
 		// check if exist
 		if t.existNew(key, keyBatch, filter) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
@@ -725,6 +724,8 @@ func (t *_table[T]) existNew(key []byte, batch Batch, filter *PrimaryKeyFilter) 
 		return false
 	}
 
+	filter.Key = KeyBytes(key).PrimaryKey()
+
 	opt := &IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
@@ -765,7 +766,7 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
 	filter := primaryFilterPool.Get().(*PrimaryKeyFilter)
 	filter.ID = t.id
-	filter.Key = key
+	filter.Key = KeyBytes(key).PrimaryKey()
 
 	opt := &IterOptions{
 		IterOptions: pebble.IterOptions{
