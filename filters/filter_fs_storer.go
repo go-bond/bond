@@ -42,11 +42,10 @@ func (f *FilterFSStorer) Set(key []byte, value []byte, opt bond.WriteOptions, ba
 
 func (f *FilterFSStorer) DeleteRange(start []byte, end []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
 	startFile := []byte(f.prepareFilePath("", string(start)))
-	endFile := []byte(f.prepareFilePath("", string(end)))
 
 	dirFS := os.DirFS(f.path)
 	err := fs.WalkDir(dirFS, ".", func(filePath string, d fs.DirEntry, err error) error {
-		if bytes.Compare([]byte(filePath), startFile) >= 0 && bytes.Compare([]byte(filePath), endFile) < 0 {
+		if bytes.Compare([]byte(filePath), startFile) >= 0 {
 			return os.Remove(path.Join(f.path, filePath))
 		}
 		return nil
