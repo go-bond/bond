@@ -694,13 +694,19 @@ func (t *_table[T]) exist(key []byte, batch Batch) bool {
 		return false
 	}
 
-	_, closer, err := t.db.Get(key, batch)
-	if err != nil {
+	opt := &IterOptions{
+		IterOptions: pebble.IterOptions{
+			KeyTypes:   pebble.IterKeyTypePointsOnly,
+			LowerBound: key,
+		},
+	}
+	itr := t.db.Iter(opt, batch)
+	defer itr.Close()
+	if !itr.First() {
 		return false
 	}
 
-	_ = closer.Close()
-	return true
+	return bytes.Equal(itr.Key(), key)
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
@@ -723,15 +729,26 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 }
 
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
-	data, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return utils.MakeNew[T](), fmt.Errorf("get failed: %w", err)
+
+	opt := &IterOptions{
+		IterOptions: pebble.IterOptions{
+			KeyTypes:   pebble.IterKeyTypePointsOnly,
+			LowerBound: key,
+		},
+	}
+	itr := t.db.Iter(opt, batch)
+	defer itr.Close()
+	if !itr.First() {
+		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
-	defer func() { _ = closer.Close() }()
+	if !bytes.Equal(itr.Key(), key) {
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
 
+	data := itr.Value()
 	var tr T
-	err = t.serializer.Deserialize(data, &tr)
+	err := t.serializer.Deserialize(data, &tr)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
