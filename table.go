@@ -714,12 +714,15 @@ func (t *_table[T]) exist(key []byte, batch Batch, filter *PrimaryKeyFilter) boo
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
 			LowerBound:      key,
-			UpperBound:      key,
 		},
 	}
 
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
+	if !itr.First() {
+		return false
+	}
+
 	return bytes.Equal(itr.Key(), key)
 }
 
@@ -752,11 +755,14 @@ func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
 			LowerBound:      key,
-			UpperBound:      key,
 		},
 	}
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
+
+	if !itr.First() {
+		return utils.MakeNew[T](), fmt.Errorf("not found")
+	}
 
 	if !bytes.Equal(itr.Key(), key) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
