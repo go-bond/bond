@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewFSFilterStorer(t *testing.T) {
-	storer := NewFSFilterStorer(".db")
+	storer := NewFSFilterStorer(".")
 
 	err := storer.Set([]byte("test_1"), []byte("value1"), bond.Sync)
 	require.NoError(t, err)
