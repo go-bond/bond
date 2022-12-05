@@ -172,12 +172,30 @@ func NewPrimaryKeyFilter(id TableID) *PrimaryKeyFilter {
 }
 
 func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
-	p.Decode(prop)
-	meta, ok := p.Ranges[p.ID]
-	if !ok {
+	if len(prop) == 0 {
 		return false, nil
 	}
-	return (bytes.Compare(meta.Min, p.Key[PrimaryKeyStartIdx:]) <= 0 && bytes.Compare(meta.Max, p.Key[PrimaryKeyStartIdx:]) >= 0), nil
+
+	buff := bytes.NewBuffer(prop)
+	for {
+		tableID, err := buff.ReadByte()
+		if err == io.EOF {
+			return false, nil
+		}
+
+		lenBuf := buff.Next(4)
+		keyLen := binary.BigEndian.Uint32(lenBuf)
+		min := buff.Next(int(keyLen))
+
+		lenBuf = buff.Next(4)
+		keyLen = binary.BigEndian.Uint32(lenBuf)
+		max := buff.Next(int(keyLen))
+
+		if tableID != byte(p.ID) {
+			continue
+		}
+		return (bytes.Compare(min, p.Key[PrimaryKeyStartIdx:]) <= 0 && bytes.Compare(max, p.Key[PrimaryKeyStartIdx:]) >= 0), nil
+	}
 }
 
 func (*PrimaryKeyFilter) Name() string {
