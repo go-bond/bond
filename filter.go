@@ -35,8 +35,8 @@ func (f *FilterInitializable) MayContain(ctx context.Context, key []byte) bool {
 	}
 }
 
-func (f *FilterInitializable) Initialize(ctx context.Context, db DB, scanners []TableScanner[any]) error {
-	err := FilterInitialize(ctx, f.Filter, db, scanners)
+func (f *FilterInitializable) Initialize(ctx context.Context, filterStorer FilterStorer, scanners []TableScanner[any]) error {
+	err := FilterInitialize(ctx, f.Filter, filterStorer, scanners)
 	if err != nil {
 		return err
 	}
@@ -45,10 +45,18 @@ func (f *FilterInitializable) Initialize(ctx context.Context, db DB, scanners []
 	return nil
 }
 
-func FilterInitialize(ctx context.Context, filter Filter, db DB, scanners []TableScanner[any]) error {
-	err := filter.Load(ctx, db)
+func (f *FilterInitializable) Save(ctx context.Context, store FilterStorer) error {
+	if atomic.LoadUint64(&f.isInitialized) == 1 {
+		return f.Filter.Save(ctx, store)
+	} else {
+		return fmt.Errorf("filter not initialized")
+	}
+}
+
+func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterStorer, scanners []TableScanner[any]) error {
+	err := filter.Load(ctx, filterStorer)
 	if err != nil {
-		err = filter.Clear(ctx, db)
+		err = filter.Clear(ctx, filterStorer)
 		if err != nil {
 			return fmt.Errorf("filter initialization failed: %w", err)
 		}
@@ -62,19 +70,6 @@ func FilterInitialize(ctx context.Context, filter Filter, db DB, scanners []Tabl
 				return fmt.Errorf("filter initialization failed: %w", err)
 			}
 		}
-
-		batch := db.Batch()
-		err = filter.Save(ctx, batch)
-		if err != nil {
-			return fmt.Errorf("filter initialization failed: %w", err)
-		}
-
-		err = batch.Commit(Sync)
-		if err != nil {
-			return fmt.Errorf("filter initialization failed: %w", err)
-		}
-
-		_ = batch.Close()
 	}
 	return nil
 }
