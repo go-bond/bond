@@ -237,6 +237,7 @@ func main() {
 			}
 
 			defer func() {
+				db.Close()
 				sz, _ := DirSize("example")
 				fmt.Printf("size of database %s \n", humanize.Bytes(sz))
 				_ = os.RemoveAll("example")
