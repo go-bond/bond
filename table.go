@@ -326,6 +326,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	filter := NewPrimaryKeyFilter(t.id)
 	itr := t.db.Iter(nil, keyBatch)
+	defer itr.Close()
 	itrUsed := 0
 	opt := &pebble.IterOptions{
 		KeyTypes:        pebble.IterKeyTypePointsOnly,
@@ -339,14 +340,11 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		default:
 		}
 
-		if itrUsed%10 == 0 {
-			itr = t.db.Iter(nil, keyBatch)
-		}
-
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
 
 		filter.Key = key
+		opt.LowerBound = key
 		itr.SetOptions(opt)
 
 		// check if exist
