@@ -325,6 +325,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	)
 
 	filter := NewPrimaryKeyFilter(t.id)
+	itr := t.db.Iter(nil, keyBatch)
+	itrUsed := 0
+	opt := &pebble.IterOptions{
+		KeyTypes:        pebble.IterKeyTypePointsOnly,
+		PointKeyFilters: []pebble.BlockPropertyFilter{filter},
+	}
 
 	for _, tr := range trs {
 		select {
@@ -333,11 +339,18 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		default:
 		}
 
+		if itrUsed%10 == 0 {
+			itr = t.db.Iter(nil, keyBatch)
+		}
+
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
 
+		filter.Key = key
+		itr.SetOptions(opt)
+
 		// check if exist
-		if t.exist(key, keyBatch, filter) {
+		if t.existNew(key, keyBatch, itr) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -366,6 +379,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if t.filter != nil {
 			t.filter.Add(keyBatchCtx, key)
 		}
+		itrUsed++
 	}
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
@@ -710,6 +724,28 @@ func (t *_table[T]) exist(key []byte, batch Batch, filter *PrimaryKeyFilter) boo
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
 	if !itr.First() {
+		return false
+	}
+
+	return bytes.Equal(itr.Key(), key)
+}
+
+func (t *_table[T]) existNew(key []byte, batch Batch, itr Iterator) bool {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+		return false
+	}
+
+	// filter.Key = key
+	// opt := &IterOptions{
+	// 	IterOptions: pebble.IterOptions{
+	// 		PointKeyFilters: []pebble.BlockPropertyFilter{filter},
+	// 		KeyTypes:        pebble.IterKeyTypePointsOnly,
+	// 		LowerBound:      key,
+	// 	},
+	// }
+
+	if !itr.SeekGE(key) {
 		return false
 	}
 
