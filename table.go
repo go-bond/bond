@@ -324,6 +324,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
 
+	opt := &pebble.IterOptions{
+		KeyTypes: pebble.IterKeyTypePointsOnly,
+	}
+
+	itr := t.db.Iter(nil, keyBatch)
+
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -334,8 +340,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
 
+		opt.LowerBound = key
+		itr.SetOptions(opt)
 		// check if exist
-		if t.exist(key, keyBatch) {
+		if t.existNew(key, keyBatch, itr) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -702,6 +710,19 @@ func (t *_table[T]) exist(key []byte, batch Batch) bool {
 	}
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
+	if !itr.First() {
+		return false
+	}
+
+	return bytes.Equal(itr.Key(), key)
+}
+
+func (t *_table[T]) existNew(key []byte, batch Batch, itr Iterator) bool {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+		return false
+	}
+
 	if !itr.First() {
 		return false
 	}

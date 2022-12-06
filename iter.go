@@ -18,6 +18,8 @@ type Iterator interface {
 	SeekPrefixGE(key []byte) bool
 	SeekLT(key []byte) bool
 
+	SetOptions(o *pebble.IterOptions)
+
 	Key() []byte
 	Value() []byte
 
