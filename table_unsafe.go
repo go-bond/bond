@@ -35,9 +35,11 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	}
 
 	var (
-		keyBuffer      [DataKeyBufferSize]byte
-		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
+		keyBuffer      = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 	)
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(indexKeyBuffer)
 
 	for i := 0; i < len(trs); i++ {
 		tr := trs[i]
