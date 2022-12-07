@@ -55,7 +55,7 @@ func (b *BondIterator) Exist(key []byte) bool {
 			return false
 		}
 	}
-	if !b.SeekGE(key) {
+	if !b.SeekPrefixGE(key) {
 		return false
 	}
 	return bytes.Equal(b.Key(), key)
