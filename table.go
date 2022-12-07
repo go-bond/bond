@@ -376,7 +376,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			t.filter.Add(keyBatchCtx, key)
 		}
 		// refresh itr view.
-		itr.SetOptions(&pebbleItrOpt)
+		//itr.SetOptions(&pebbleItrOpt)
 	}
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
