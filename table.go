@@ -319,22 +319,19 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer       [DataKeyBufferSize]byte
-		sortKeyA        [DataKeyBufferSize]byte
-		sortKeyB        [DataKeyBufferSize]byte
+		keyBuffer [DataKeyBufferSize]byte
+		//sortKeyA        [DataKeyBufferSize]byte
+		//sortKeyB        [DataKeyBufferSize]byte
 		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
 
-	sort.Slice(trs, func(i, j int) bool {
-		return bytes.Compare(t.primaryKeyFunc(NewKeyBuilder(sortKeyA[:0]), trs[i]), t.primaryKeyFunc(NewKeyBuilder(sortKeyB[:0]), trs[j])) < 0
-	})
+	// sort.Slice(trs, func(i, j int) bool {
+	// 	return bytes.Compare(t.primaryKeyFunc(NewKeyBuilder(sortKeyA[:0]), trs[i]), t.primaryKeyFunc(NewKeyBuilder(sortKeyB[:0]), trs[j])) < 0
+	// })
+	filter := NewPrimaryKeyFilter(t.id)
 
-	itr := t.db.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: t.key(trs[0], keyBuffer[:0]),
-		},
-	}, keyBatch)
+	itr := t.db.Iter(nil, keyBatch)
 	defer itr.Close()
 
 	for _, tr := range trs {
@@ -346,7 +343,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
-
+		filter.Key = key
+		itr.SetOptions(&pebble.IterOptions{
+			LowerBound:      []byte{byte(t.ID()), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0},
+			KeyTypes:        pebble.IterKeyTypeRangesOnly,
+			RangeKeyFilters: []pebble.BlockPropertyFilter{filter},
+		})
 		// check if exist
 		if t.existNew(key, keyBatch, itr) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
