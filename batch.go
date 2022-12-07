@@ -77,7 +77,7 @@ func (b *_batch) ResetRetained() {
 	if data != nil {
 		data = data[:12]                             // reset to header only
 		binary.LittleEndian.PutUint64(data[:8], 0)   // put starting sequ num
-		binary.LittleEndian.PutUint32(data[8:12], 0) // count data
+		binary.LittleEndian.PutUint32(data[8:12], 0) // put count data
 
 		_ = b.Batch.SetRepr(data) // set data buffer
 	}
