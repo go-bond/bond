@@ -168,6 +168,7 @@ func NewPrimaryKeyFilter(id TableID) *PrimaryKeyFilter {
 	return &PrimaryKeyFilter{
 		KeyRange: NewKeyRange(),
 		ID:       id,
+		Key:      make([]byte, 0),
 	}
 }
 

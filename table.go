@@ -330,13 +330,22 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// 	return bytes.Compare(t.primaryKeyFunc(NewKeyBuilder(sortKeyA[:0]), trs[i]), t.primaryKeyFunc(NewKeyBuilder(sortKeyB[:0]), trs[j])) < 0
 	// })
 	//filter := NewPrimaryKeyFilter(t.id)
+	buildBlockFilters := func() []pebble.BlockPropertyFilter {
+		filters := make([]pebble.BlockPropertyFilter, 0, len(trs))
+		for _, tr := range trs {
+			filter := NewPrimaryKeyFilter(t.id)
+			filter.Key = t.key(tr, filter.Key)
+			filters = append(filters, filter)
+		}
+		return filters
+	}
 
 	itr := t.db.Iter(nil, keyBatch)
 	defer itr.Close()
 	itr.SetOptions(&pebble.IterOptions{
-		LowerBound: []byte{byte(t.ID()), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0},
-		KeyTypes:   pebble.IterKeyTypeRangesOnly,
-		//	RangeKeyFilters: []pebble.BlockPropertyFilter{filter},
+		LowerBound:      []byte{byte(t.ID()), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0},
+		KeyTypes:        pebble.IterKeyTypeRangesOnly,
+		RangeKeyFilters: buildBlockFilters(),
 	})
 	for _, tr := range trs {
 		select {
