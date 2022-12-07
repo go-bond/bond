@@ -14,10 +14,11 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-const PrimaryKeyBufferSize = 10240
-const IndexKeyBufferSize = 10240
-const DataKeyBufferSize = PrimaryKeyBufferSize + IndexKeyBufferSize + 6
+var _keyBufferPool = sync.Pool{New: func() any {
+	return make([]byte, 0, KeyBufferInitialSize)
+}}
 
+const KeyBufferInitialSize = 10240
 const ReindexBatchSize = 10000
 
 type TableID uint8
@@ -234,7 +235,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 		}
 	}
 
-	var prefixBuffer [DataKeyBufferSize]byte
+	var prefixBuffer [KeyBufferInitialSize]byte
 	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
 
 	iter := t.db.Iter(&IterOptions{
@@ -249,7 +250,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	}()
 
 	counter := 0
-	indexKeysBuffer := make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(idxs))
+	indexKeysBuffer := make([]byte, 0, (KeyBufferInitialSize)*len(idxs))
 	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
 
 	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
@@ -319,10 +320,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer       [DataKeyBufferSize]byte
-		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
+		keyBuffer       = _keyBufferPool.Get().([]byte)
+		indexKeysBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -406,9 +409,11 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer      [DataKeyBufferSize]byte
-		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
+		keyBuffer      = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 	)
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -505,10 +510,12 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer      [DataKeyBufferSize]byte
-		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes))
+		keyBuffer      = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys      = make([][]byte, len(indexes))
 	)
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -575,11 +582,13 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}()
 
 	var (
-		keyBuffer      [DataKeyBufferSize]byte
-		indexKeyBuffer = make([]byte, DataKeyBufferSize*len(indexes)*2)
+		keyBuffer      = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 
 		indexKeys = make([][]byte, 0, len(indexes))
 	)
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -683,7 +692,8 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 		batch = nil
 	}
 
-	var keyBuffer [DataKeyBufferSize]byte
+	keyBuffer := _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
 	return t.exist(key, batch)
 }
@@ -711,7 +721,8 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 		batch = nil
 	}
 
-	var keyBuffer [DataKeyBufferSize]byte
+	keyBuffer := _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
 
 	bCtx := ContextWithBatch(context.Background(), batch)
@@ -781,7 +792,8 @@ func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l
 }
 
 func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	var prefixBuffer [DataKeyBufferSize]byte
+	prefixBuffer := _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(prefixBuffer)
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
@@ -803,7 +815,8 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	}
 
 	var getValue func() (T, error)
-	var keyBuffer [DataKeyBufferSize]byte
+	var keyBuffer = _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(keyBuffer)
 	if idx.IndexID == PrimaryIndexID {
 		getValue = func() (T, error) {
 			var record T
