@@ -329,11 +329,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// sort.Slice(trs, func(i, j int) bool {
 	// 	return bytes.Compare(t.primaryKeyFunc(NewKeyBuilder(sortKeyA[:0]), trs[i]), t.primaryKeyFunc(NewKeyBuilder(sortKeyB[:0]), trs[j])) < 0
 	// })
-	filter := NewPrimaryKeyFilter(t.id)
+	//filter := NewPrimaryKeyFilter(t.id)
 
 	itr := t.db.Iter(nil, keyBatch)
 	defer itr.Close()
-
+	itr.SetOptions(&pebble.IterOptions{
+		LowerBound: []byte{byte(t.ID()), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0},
+		KeyTypes:   pebble.IterKeyTypeRangesOnly,
+		//	RangeKeyFilters: []pebble.BlockPropertyFilter{filter},
+	})
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -343,12 +347,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
-		filter.Key = key
-		itr.SetOptions(&pebble.IterOptions{
-			LowerBound:      []byte{byte(t.ID()), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0},
-			KeyTypes:        pebble.IterKeyTypeRangesOnly,
-			RangeKeyFilters: []pebble.BlockPropertyFilter{filter},
-		})
+		//filter.Key = key
+
 		// check if exist
 		if t.existNew(key, keyBatch, itr) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
