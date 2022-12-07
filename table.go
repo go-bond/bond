@@ -323,13 +323,18 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		indexKeysBuffer = make([]byte, 0, (PrimaryKeyBufferSize+IndexKeyBufferSize)*len(indexes))
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
-	opt := &IterOptions{
-		filter: t.filter,
-		IterOptions: pebble.IterOptions{
-			KeyTypes:   pebble.IterKeyTypePointsOnly,
-			LowerBound: PrimaryPrefix(t.id),
-		},
+	pebbleItrOpt := pebble.IterOptions{
+		KeyTypes:   pebble.IterKeyTypePointsOnly,
+		LowerBound: PrimaryPrefix(t.id),
 	}
+
+	opt := &IterOptions{
+		filter:      t.filter,
+		IterOptions: pebbleItrOpt,
+	}
+
+	itr := keyBatch.Iter(opt)
+	defer itr.Close()
 
 	for _, tr := range trs {
 		select {
@@ -338,12 +343,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		default:
 		}
 
-		itr := keyBatch.Iter(opt)
-		defer itr.Close()
-
 		// insert key
 		key := t.key(tr, keyBuffer[:0])
-
 		// check if exist
 		if itr.Exist(key) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
@@ -374,6 +375,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if t.filter != nil {
 			t.filter.Add(keyBatchCtx, key)
 		}
+		// refresh itr view.
+		itr.SetOptions(&pebbleItrOpt)
 	}
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)

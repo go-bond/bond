@@ -27,6 +27,8 @@ type Iterator interface {
 	Key() []byte
 	Value() []byte
 
+	SetOptions(opt *pebble.IterOptions)
+
 	Exist(key []byte) bool
 
 	Close() error
