@@ -303,3 +303,7 @@ func DefaultKeyComparer() *pebble.Comparer {
 func _KeyPrefixSplitIndex(rawKey []byte) int {
 	return 6 + int(binary.BigEndian.Uint32(rawKey[2:6]))
 }
+
+func PrimaryPrefix(tid TableID) []byte {
+	return []byte{byte(tid), byte(PrimaryIndexID), 0, 0, 0, 0, 0, 0, 0, 0}
+}
