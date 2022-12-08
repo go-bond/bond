@@ -328,13 +328,11 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	keys := make([][]byte, len(trs))
-	bufIdx := 0
 	for i, tr := range trs {
 		keyBuffer := _keyBufferPool.Get().([]byte)
 		defer _keyBufferPool.Put(keyBuffer)
-		key := t.key(tr, keyBuffer[:0])
+		key := t.key(tr, keyBuffer[:])
 		keys[i] = key
-		bufIdx += len(key)
 	}
 
 	sort.Slice(trs, func(i, j int) bool {
