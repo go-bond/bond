@@ -792,13 +792,12 @@ func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
-			LowerBound:      key,
 		},
 	}
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
 
-	if !itr.First() {
+	if !itr.SeekGE(key) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
