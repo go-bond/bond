@@ -32,17 +32,17 @@ type _bucket struct {
 type BloomFilter struct {
 	hasher *sync.Pool
 
-	keyPrefix    string
+	keyPrefix    []byte
 	numOfBuckets int
 	buckets      []*_bucket
 
 	mutex sync.RWMutex
 }
 
-func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...string) *BloomFilter {
+func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte) *BloomFilter {
 	hasher := &sync.Pool{
 		New: func() any {
-			return jump.New(numOfBuckets, jump.NewCRC32())
+			return jump.NewCRC32()
 		},
 	}
 
@@ -56,13 +56,13 @@ func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...string)
 		})
 	}
 
-	keyPrefix := string(bond.KeyEncode(bond.Key{
+	keyPrefix := bond.KeyEncode(bond.Key{
 		TableID:    0,
 		IndexID:    0,
 		IndexKey:   []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: []byte("bf_"),
-	}))
+	})
 	if len(keyPrefixes) > 0 {
 		keyPrefix = keyPrefixes[0]
 	}
@@ -187,25 +187,35 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 }
 
 func (b *BloomFilter) Clear(_ context.Context, store bond.FilterStorer) error {
-	end := []byte(b.keyPrefix)
+	end := make([]byte, len(b.keyPrefix))
+	copy(end, b.keyPrefix)
 	end[len(end)-1]++
-	return store.DeleteRange([]byte(b.keyPrefix), end, bond.Sync)
+	return store.DeleteRange(b.keyPrefix, end, bond.Sync)
 }
 
 func (b *BloomFilter) hash(key []byte) int {
-	hasher := b.hasher.Get().(*jump.Hasher)
+	hasher := b.hasher.Get().(jump.KeyHasher)
 	defer b.hasher.Put(hasher)
-	return hasher.Hash(string(key))
+	return int(HashBytes(key, int32(b.numOfBuckets), hasher))
 }
 
-func buildKey(buff []byte, keyPrefix string, bucketNo int) []byte {
+func buildKey(buff []byte, keyPrefix []byte, bucketNo int) []byte {
 	buffer := bytes.NewBuffer(buff)
-	_, _ = fmt.Fprintf(buffer, "%s%d", keyPrefix, bucketNo)
+	_, _ = buffer.Write(append(keyPrefix, []byte(fmt.Sprintf("%d", bucketNo))...))
 	return buffer.Bytes()
 }
 
-func buildBucketNumKey(buff []byte, keyPrefix string) []byte {
+func buildBucketNumKey(buff []byte, keyPrefix []byte) []byte {
 	buffer := bytes.NewBuffer(buff)
-	_, _ = fmt.Fprintf(buffer, "%sbn", keyPrefix)
+	_, _ = buffer.Write(append(keyPrefix, []byte("bn")...))
 	return buffer.Bytes()
+}
+
+func HashBytes(key []byte, buckets int32, h jump.KeyHasher) int32 {
+	h.Reset()
+	_, err := h.Write(key)
+	if err != nil {
+		panic(err)
+	}
+	return jump.Hash(h.Sum64(), buckets)
 }
