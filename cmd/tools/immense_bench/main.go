@@ -206,6 +206,11 @@ func main() {
 				Value: false,
 				Usage: "run pprof",
 			},
+			&cli.IntFlag{
+				Name:  "n",
+				Value: 1,
+				Usage: "number of iteration",
+			},
 		},
 		Action: func(cCtx *cli.Context) error {
 
@@ -231,33 +236,48 @@ func main() {
 				defer pprof.WriteHeapProfile(memProfile)
 			}
 
-			db, err := bond.Open("example", &bond.Options{})
-			if err != nil {
-				panic(err)
+			timeTaken := map[string][]time.Duration{"insert": []time.Duration{}, "read": []time.Duration{}}
+
+			for i := 0; i < cCtx.Int("n"); i++ {
+				db, err := bond.Open("example", &bond.Options{})
+				if err != nil {
+					panic(err)
+				}
+				close := func() {
+					db.Close()
+					sz, _ := DirSize("example")
+					fmt.Printf("size of database %s \n", humanize.Bytes(sz))
+					_ = os.RemoveAll("example")
+				}
+
+				fmt.Println("Insert Started")
+				generators, insertTime := runBondInsert(db, cCtx.Int("total_table"),
+					cCtx.Int("total_batch"),
+					cCtx.Int("batch_size"))
+
+				fmt.Printf("Total time taken to insert %s \n", insertTime)
+				timeTaken["insert"] = append(timeTaken["insert"], insertTime)
+
+				if !cCtx.Bool("read") {
+					close()
+					continue
+				}
+				fmt.Println("Read started")
+				readTime := runBondRead(db, generators)
+
+				fmt.Printf("Total time taken to insert %s \n", insertTime)
+				fmt.Printf("Total time taken to read %s \n", readTime)
+				timeTaken["read"] = append(timeTaken["read"], readTime)
+				close()
 			}
 
-			defer func() {
-				db.Close()
-				sz, _ := DirSize("example")
-				fmt.Printf("size of database %s \n", humanize.Bytes(sz))
-				_ = os.RemoveAll("example")
-			}()
-
-			fmt.Println("Insert Started")
-			generators, insertTime := runBondInsert(db, cCtx.Int("total_table"),
-				cCtx.Int("total_batch"),
-				cCtx.Int("batch_size"))
-
-			fmt.Printf("Total time taken to insert %s \n", insertTime)
-
-			if !cCtx.Bool("read") {
-				return nil
+			fmt.Printf("Results: \n\n")
+			for _, insertTime := range timeTaken["insert"] {
+				fmt.Printf("Total time taken to insert %s \n", insertTime)
 			}
-			fmt.Println("Read started")
-			readTime := runBondRead(db, generators)
-
-			fmt.Printf("Total time taken to insert %s \n", insertTime)
-			fmt.Printf("Total time taken to read %s \n", readTime)
+			for _, readTime := range timeTaken["read"] {
+				fmt.Printf("Total time taken to read %s \n", readTime)
+			}
 			return nil
 		},
 	}
@@ -291,7 +311,6 @@ func runBondInsert(db bond.DB, totalTable, totalBatch, batchSize int) ([]*Unique
 	ticker.Stop()
 
 	elapsed := time.Since(start)
-	fmt.Printf("Total time taken to insert %s \n", elapsed)
 	return generators, elapsed
 }
 
