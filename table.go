@@ -324,8 +324,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		indexKeysBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeysBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
+	defer _keyBufferPool.Put(&indexKeysBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -412,8 +412,8 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		keyBuffer      = _keyBufferPool.Get().([]byte)
 		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
+	defer _keyBufferPool.Put(&indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -514,8 +514,8 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		indexKeyBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys      = make([][]byte, len(indexes))
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
+	defer _keyBufferPool.Put(&indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -587,8 +587,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		indexKeys = make([][]byte, 0, len(indexes))
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
+	defer _keyBufferPool.Put(&indexKeyBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -693,7 +693,7 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	}
 
 	keyBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
 	return t.exist(key, batch)
 }
@@ -722,7 +722,7 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 	}
 
 	keyBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
 
 	bCtx := ContextWithBatch(context.Background(), batch)
@@ -793,7 +793,7 @@ func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l
 
 func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(prefixBuffer)
+	defer _keyBufferPool.Put(&prefixBuffer)
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
@@ -816,7 +816,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 
 	var getValue func() (T, error)
 	var keyBuffer = _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(&keyBuffer)
 	if idx.IndexID == PrimaryIndexID {
 		getValue = func() (T, error) {
 			var record T
