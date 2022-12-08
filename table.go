@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/internal/base"
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
 )
@@ -327,9 +328,29 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
-	filter := NewPrimaryKeyFilter(t.id)
+	keys := make([][]byte, len(trs))
+	bufIdx := 0
+	for i, tr := range trs {
+		key := t.key(tr, keyBuffer[bufIdx:][:0])
+		keys[i] = key
+		bufIdx += len(key)
+	}
 
-	for _, tr := range trs {
+	sort.Slice(keys, func(i, j int) bool {
+		return bytes.Compare(keys[i], keys[j]) < 0
+	})
+
+	filter := NewPrimaryKeyFilter(t.id)
+	filter.Keys = keys
+	itr := t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			KeyTypes:        pebble.IterKeyTypePointsOnly,
+			PointKeyFilters: []base.BlockPropertyFilter{filter},
+		},
+	})
+	defer itr.Close()
+
+	for i, tr := range trs {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -337,10 +358,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		// insert key
-		key := t.key(tr, keyBuffer[:0])
+		key := keys[i]
 
 		// check if exist
-		if t.exist(key, keyBatch, filter) {
+		if t.existNew(key, itr, keyBatch) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -610,7 +631,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		filter.Key = key
+		filter.Keys = [][]byte{key}
 		if t.exist(key, keyBatch, filter) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
@@ -708,7 +729,7 @@ func (t *_table[T]) exist(key []byte, batch Batch, filter *PrimaryKeyFilter) boo
 		return false
 	}
 
-	filter.Key = key
+	filter.Keys = [][]byte{key}
 	opt := &IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
@@ -720,6 +741,19 @@ func (t *_table[T]) exist(key []byte, batch Batch, filter *PrimaryKeyFilter) boo
 	itr := t.db.Iter(opt, batch)
 	defer itr.Close()
 	if !itr.First() {
+		return false
+	}
+
+	return bytes.Equal(itr.Key(), key)
+}
+
+func (t *_table[T]) existNew(key []byte, itr Iterator, batch Batch) bool {
+	bCtx := ContextWithBatch(context.Background(), batch)
+	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+		return false
+	}
+
+	if !itr.SeekGE(key) {
 		return false
 	}
 
@@ -748,7 +782,7 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
 	filter := NewPrimaryKeyFilter(t.id)
-	filter.Key = key
+	filter.Keys = [][]byte{key}
 
 	opt := &IterOptions{
 		IterOptions: pebble.IterOptions{
