@@ -321,17 +321,18 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		keyBuffer       = _keyBufferPool.Get().([]byte)
 		indexKeysBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
-	defer _keyBufferPool.Put(keyBuffer)
+
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	keys := make([][]byte, len(trs))
 	bufIdx := 0
 	for i, tr := range trs {
-		key := t.key(tr, keyBuffer[bufIdx:][:0])
+		keyBuffer := _keyBufferPool.Get().([]byte)
+		defer _keyBufferPool.Put(keyBuffer)
+		key := t.key(tr, keyBuffer[:0])
 		keys[i] = key
 		bufIdx += len(key)
 	}
@@ -351,7 +352,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 		},
-	})
+	}, keyBatch)
 	defer itr.Close()
 
 	for i, tr := range trs {
