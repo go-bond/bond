@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/internal/base"
+
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
 )
@@ -345,7 +345,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	itr := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
-			PointKeyFilters: []base.BlockPropertyFilter{filter},
+			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 		},
 	})
 	defer itr.Close()
