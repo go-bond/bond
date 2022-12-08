@@ -189,4 +189,29 @@ func TestFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, err)
 	require.Equal(t, true, intersects)
+
+	filter.Keys = [][]byte{key(2, 1).UserKey, key(2, 34).UserKey, key(2, 42).UserKey}
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, true, intersects)
+
+	filter.Keys = [][]byte{key(2, 1).UserKey, key(2, 42).UserKey}
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, false, intersects)
+
+	filter.Keys = [][]byte{key(2, 3).UserKey, key(2, 42).UserKey}
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, true, intersects)
+
+	filter.Keys = [][]byte{key(3, 40).UserKey}
+	filter.ID = 3
+	intersects, err = filter.Intersects(encoded)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	require.Equal(t, false, intersects)
 }
