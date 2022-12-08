@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"sort"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
@@ -159,8 +160,8 @@ func (*BlockCollector) Name() string {
 var _ pebble.BlockPropertyCollector = &BlockCollector{}
 
 type PrimaryKeyFilter struct {
-	ID  TableID
-	Key []byte
+	ID   TableID
+	Keys [][]byte
 	*KeyRange
 }
 
@@ -194,7 +195,20 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 		if tableID != byte(p.ID) {
 			continue
 		}
-		return (bytes.Compare(min, p.Key[PrimaryKeyStartIdx:]) <= 0 && bytes.Compare(max, p.Key[PrimaryKeyStartIdx:]) >= 0), nil
+
+		minIdx, found := sort.Find(len(p.Keys), func(i int) int {
+			return bytes.Compare(min, p.Keys[i][PrimaryKeyStartIdx:])
+		})
+		if found {
+			return true, nil
+		}
+		maxIdx, found := sort.Find(len(p.Keys), func(i int) int {
+			return bytes.Compare(max, p.Keys[i][PrimaryKeyStartIdx:])
+		})
+		if found {
+			return true, nil
+		}
+		return minIdx != maxIdx, nil
 	}
 }
 
