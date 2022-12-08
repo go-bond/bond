@@ -336,6 +336,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		bufIdx += len(key)
 	}
 
+	sort.Slice(trs, func(i, j int) bool {
+		return bytes.Compare(keys[i], keys[j]) < 0
+	})
+
 	sort.Slice(keys, func(i, j int) bool {
 		return bytes.Compare(keys[i], keys[j]) < 0
 	})
