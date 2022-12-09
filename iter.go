@@ -1,9 +1,15 @@
 package bond
 
-import "github.com/cockroachdb/pebble"
+import (
+	"bytes"
+	"context"
+
+	"github.com/cockroachdb/pebble"
+)
 
 type IterOptions struct {
 	pebble.IterOptions
+	Filter Filter
 }
 
 type Iterator interface {
@@ -18,6 +24,8 @@ type Iterator interface {
 	SeekPrefixGE(key []byte) bool
 	SeekLT(key []byte) bool
 
+	Exist(key []byte) bool
+
 	Key() []byte
 	Value() []byte
 
@@ -30,4 +38,22 @@ func pebbleIterOptions(opt *IterOptions) *pebble.IterOptions {
 	} else {
 		return &opt.IterOptions
 	}
+}
+
+type BondIterator struct {
+	*pebble.Iterator
+	filter Filter
+	batch  Batch
+}
+
+func (b *BondIterator) Exist(key []byte) bool {
+	bCtx := ContextWithBatch(context.Background(), b.batch)
+	if b.filter != nil && !b.filter.MayContain(bCtx, key) {
+		return false
+	}
+
+	if !b.SeekGE(key) {
+		return false
+	}
+	return bytes.Equal(b.Key(), key)
 }

@@ -9,3 +9,21 @@ func Copy(dst []byte, src []byte) []byte {
 	copy(dst, src)
 	return dst
 }
+
+type SortShim struct {
+	SwapFn func(i, j int)
+	Length int
+	LessFn func(i, j int) bool
+}
+
+func (s *SortShim) Len() int {
+	return s.Length
+}
+
+func (s *SortShim) Swap(i, j int) {
+	s.SwapFn(i, j)
+}
+
+func (s *SortShim) Less(i, j int) bool {
+	return s.LessFn(i, j)
+}

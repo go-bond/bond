@@ -335,12 +335,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		keys[i] = key
 	}
 
-	sort.Slice(trs, func(i, j int) bool {
-		return bytes.Compare(keys[i], keys[j]) < 0
-	})
-
-	sort.Slice(keys, func(i, j int) bool {
-		return bytes.Compare(keys[i], keys[j]) < 0
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			trs[i], trs[j] = trs[j], trs[i]
+			keys[i], keys[j] = keys[j], keys[i]
+		},
+		LessFn: func(i, j int) bool {
+			return bytes.Compare(keys[i], keys[j]) < 0
+		},
 	})
 
 	filter := NewPrimaryKeyFilter(t.id)
@@ -350,6 +353,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 		},
+		Filter: t.filter,
 	}, keyBatch)
 	defer itr.Close()
 
@@ -364,7 +368,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		key := keys[i]
 
 		// check if exist
-		if t.existNew(key, itr, keyBatch) {
+		if itr.Exist(key) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
