@@ -107,7 +107,11 @@ func (b *_batch) DeleteRange(start []byte, end []byte, opt WriteOptions, _ ...Ba
 }
 
 func (b *_batch) Iter(opt *IterOptions, _ ...Batch) Iterator {
-	return b.NewIter(pebbleIterOptions(opt))
+	return &BondIterator{
+		Iterator: b.NewIter(pebbleIterOptions(opt)),
+		batch:    b,
+		filter:   opt.Filter,
+	}
 }
 
 func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
