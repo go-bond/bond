@@ -162,13 +162,12 @@ var _ pebble.BlockPropertyCollector = &BlockCollector{}
 type PrimaryKeyFilter struct {
 	ID   TableID
 	Keys [][]byte
-	*KeyRange
 }
 
-func NewPrimaryKeyFilter(id TableID) *PrimaryKeyFilter {
+func NewPrimaryKeyFilter(id TableID, keys [][]byte) *PrimaryKeyFilter {
 	return &PrimaryKeyFilter{
-		KeyRange: NewKeyRange(),
-		ID:       id,
+		ID:   id,
+		Keys: keys,
 	}
 }
 
