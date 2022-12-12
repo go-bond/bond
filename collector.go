@@ -15,7 +15,7 @@ import (
 var (
 	BlockCollectorID = "bc"
 	// Primary Key does not contain Index Key and Index Order Key. So, it's guaranteed that Primary Key
-	// begin at the index `10`.
+	// begins at the index `10`.
 	PrimaryKeyStartIdx = 10
 )
 
@@ -24,7 +24,7 @@ type Range struct {
 	Min []byte
 }
 
-// key ranges of a particular SST table's block. It's encoded as block property for pebble to
+// key ranges of a particular SST table's block. It's encoded as a block property for pebble to
 // store it along with the SST table, by following the given raw byte scheme:
 // TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 type KeyRange struct {
@@ -179,7 +179,7 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 		return false, nil
 	}
 	// It's efficient to use raw bytes while intersecting `KeyRange` instead
-	// using `KeyRange.Decode`
+	// of using `KeyRange.Decode`
 	buff := bytes.NewBuffer(prop)
 	for {
 		// TableID
