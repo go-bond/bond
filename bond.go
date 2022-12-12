@@ -160,6 +160,7 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 		return &BondIterator{
 			Iterator: db.pebble.NewIter(pebbleIterOptions(opt)),
 			filter:   opt.Filter,
+			opt:      opt,
 		}
 	}
 }

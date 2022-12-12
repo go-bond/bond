@@ -44,12 +44,22 @@ type BondIterator struct {
 	*pebble.Iterator
 	filter Filter
 	batch  Batch
+	opt    *IterOptions
 }
 
 func (b *BondIterator) Exist(key []byte) bool {
 	bCtx := ContextWithBatch(context.Background(), b.batch)
 	if b.filter != nil && !b.filter.MayContain(bCtx, key) {
 		return false
+	}
+
+	if b.batch != nil {
+		itr := b.batch.Iter(b.opt)
+		defer itr.Close()
+
+		if itr.SeekGE(key) && bytes.Equal(itr.Key(), key) {
+			return true
+		}
 	}
 
 	if !b.SeekGE(key) {
