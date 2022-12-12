@@ -166,8 +166,7 @@ func TestFilter(t *testing.T) {
 	}
 	encoded := keyRange.Encode([]byte{})
 
-	filter := NewPrimaryKeyFilter(1)
-	filter.Keys = [][]byte{key(1, 3).UserKey}
+	filter := NewPrimaryKeyFilter(1, [][]byte{key(1, 3).UserKey})
 	intersects, err := filter.Intersects(encoded)
 	require.NoError(t, err)
 	require.Equal(t, true, intersects)
@@ -178,8 +177,7 @@ func TestFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, false, intersects)
 
-	filter = NewPrimaryKeyFilter(2)
-	filter.Keys = [][]byte{key(2, 48).UserKey}
+	filter = NewPrimaryKeyFilter(2, [][]byte{key(2, 48).UserKey})
 	intersects, err = filter.Intersects(encoded)
 	require.NoError(t, err)
 	require.Equal(t, false, intersects)

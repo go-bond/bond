@@ -294,6 +294,40 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
+func (t *_table[T]) getBlockFilter(trs []T) ([]T, [][]byte, *PrimaryKeyFilter, func()) {
+	keys := make([][]byte, len(trs))
+	keyBuffers := make([][]byte, len(trs))
+	for i, tr := range trs {
+		keyBuffer := _keyBufferPool.Get().([]byte)
+		keyBuffers[i] = keyBuffer
+		key := t.key(tr, keyBuffer[:])
+		keys[i] = key
+	}
+
+	bufferCloser := func() {
+		for _, keyBuffer := range keyBuffers {
+			_keyBufferPool.Put(keyBuffer)
+		}
+	}
+
+	// sort the records since filter needs keys in sorted order
+	// for it's to intersect with block metadata.
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			trs[i], trs[j] = trs[j], trs[i]
+			keys[i], keys[j] = keys[j], keys[i]
+		},
+		LessFn: func(i, j int) bool {
+			return bytes.Compare(keys[i], keys[j]) < 0
+		},
+	})
+
+	filter := NewPrimaryKeyFilter(t.id, keys)
+	filter.Keys = keys
+	return trs, keys, filter, bufferCloser
+}
+
 func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
@@ -327,27 +361,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
-	keys := make([][]byte, len(trs))
-	for i, tr := range trs {
-		keyBuffer := _keyBufferPool.Get().([]byte)
-		defer _keyBufferPool.Put(keyBuffer)
-		key := t.key(tr, keyBuffer[:])
-		keys[i] = key
-	}
-
-	sort.Sort(&utils.SortShim{
-		Length: len(keys),
-		SwapFn: func(i, j int) {
-			trs[i], trs[j] = trs[j], trs[i]
-			keys[i], keys[j] = keys[j], keys[i]
-		},
-		LessFn: func(i, j int) bool {
-			return bytes.Compare(keys[i], keys[j]) < 0
-		},
-	})
-
-	filter := NewPrimaryKeyFilter(t.id)
-	filter.Keys = keys
+	trs, keys, filter, keyBufferCloser := t.getBlockFilter(trs)
+	defer keyBufferCloser()
 	itr := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
@@ -620,7 +635,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeyBuffer)
 
-	filter := NewPrimaryKeyFilter(t.id)
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -638,8 +652,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		filter.Keys = [][]byte{key}
-		if t.exist(key, keyBatch, filter) {
+		if t.exist(key, keyBatch) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
@@ -727,44 +740,22 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	keyBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
-	return t.exist(key, batch, NewPrimaryKeyFilter(t.id))
+	return t.exist(key, batch)
 }
 
-func (t *_table[T]) exist(key []byte, batch Batch, filter *PrimaryKeyFilter) bool {
+func (t *_table[T]) exist(key []byte, batch Batch) bool {
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return false
 	}
 
-	filter.Keys = [][]byte{key}
-	opt := &IterOptions{
-		IterOptions: pebble.IterOptions{
-			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
-			KeyTypes:        pebble.IterKeyTypePointsOnly,
-			LowerBound:      key,
-		},
-	}
-
-	itr := t.db.Iter(opt, batch)
-	defer itr.Close()
-	if !itr.First() {
+	_, closer, err := t.db.Get(key, batch)
+	if err != nil {
 		return false
 	}
 
-	return bytes.Equal(itr.Key(), key)
-}
-
-func (t *_table[T]) existNew(key []byte, itr Iterator, batch Batch) bool {
-	bCtx := ContextWithBatch(context.Background(), batch)
-	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
-		return false
-	}
-
-	if !itr.SeekGE(key) {
-		return false
-	}
-
-	return bytes.Equal(itr.Key(), key)
+	_ = closer.Close()
+	return true
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
@@ -788,8 +779,7 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 }
 
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
-	filter := NewPrimaryKeyFilter(t.id)
-	filter.Keys = [][]byte{key}
+	filter := NewPrimaryKeyFilter(t.id, [][]byte{key})
 
 	opt := &IterOptions{
 		IterOptions: pebble.IterOptions{
