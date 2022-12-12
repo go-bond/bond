@@ -24,6 +24,9 @@ type Range struct {
 	Min []byte
 }
 
+// key ranges of a particular block. It's encoded as block property for pebble to
+// store it along with the SST table, by following the given raw byte scheme:
+// TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 type KeyRange struct {
 	Ranges map[TableID]*Range
 }
@@ -35,11 +38,10 @@ func NewKeyRange() *KeyRange {
 }
 
 func (b *KeyRange) Encode(buf []byte) []byte {
-	// block meta encoded as:
-	// TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 	lenBuf := make([]byte, 4)
 	buff := bytes.NewBuffer(buf)
 	for tableID, property := range b.Ranges {
+		// TableID
 		buff.WriteByte(byte(tableID))
 		// minKeyLen | minKey
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(property.Min)))
@@ -83,16 +85,17 @@ func (b *KeyRange) Decode(buf []byte) {
 
 	buff := bytes.NewBuffer(buf)
 	for {
+		// TableID
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
 			return
 		}
-
+		// minKeyLen | minKey
 		keyRange := &Range{}
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
 		keyRange.Min = utils.Copy(keyRange.Min, buff.Next(int(keyLen)))
-
+		// maxKeyLen | maxKey
 		lenBuf = buff.Next(4)
 		keyLen = binary.BigEndian.Uint32(lenBuf)
 		keyRange.Max = utils.Copy(keyRange.Max, buff.Next(int(keyLen)))
@@ -175,18 +178,20 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 	if len(prop) == 0 {
 		return false, nil
 	}
-
+	// It's efficient to use raw bytes while intersecting `KeyRange` instead
+	// using `KeyRange.Decode`
 	buff := bytes.NewBuffer(prop)
 	for {
+		// TableID
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
 			return false, nil
 		}
-
+		// minKeyLen | minKey
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
 		min := buff.Next(int(keyLen))
-
+		// maxKeyLen | maxKey
 		lenBuf = buff.Next(4)
 		keyLen = binary.BigEndian.Uint32(lenBuf)
 		max := buff.Next(int(keyLen))
