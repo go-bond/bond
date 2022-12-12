@@ -363,6 +363,12 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	trs, keys, filter, keyBufferCloser := t.getBlockFilter(trs)
 	defer keyBufferCloser()
+
+	idx, exist := utils.Duplicate(keys)
+	if exist {
+		return fmt.Errorf("record: %x already exist", keys[idx][_KeyPrefixSplitIndex(keys[idx]):])
+	}
+
 	itr := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes:        pebble.IterKeyTypePointsOnly,
