@@ -53,15 +53,6 @@ func (b *BondIterator) Exist(key []byte) bool {
 		return false
 	}
 
-	if b.batch != nil {
-		itr := b.batch.Iter(b.opt)
-		defer itr.Close()
-
-		if itr.SeekGE(key) && bytes.Equal(itr.Key(), key) {
-			return true
-		}
-	}
-
 	if !b.SeekGE(key) {
 		return false
 	}
