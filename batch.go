@@ -111,6 +111,7 @@ func (b *_batch) Iter(opt *IterOptions, _ ...Batch) Iterator {
 		Iterator: b.NewIter(pebbleIterOptions(opt)),
 		batch:    b,
 		filter:   opt.Filter,
+		opt:      opt,
 	}
 }
 
