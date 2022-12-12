@@ -24,7 +24,7 @@ type Range struct {
 	Min []byte
 }
 
-// key ranges of a particular block. It's encoded as block property for pebble to
+// key ranges of a particular SST table's block. It's encoded as block property for pebble to
 // store it along with the SST table, by following the given raw byte scheme:
 // TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 type KeyRange struct {

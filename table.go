@@ -311,7 +311,7 @@ func (t *_table[T]) getBlockFilter(trs []T) ([]T, [][]byte, *PrimaryKeyFilter, f
 	}
 
 	// sort the records since filter needs keys in sorted order
-	// for it's to intersect with block metadata.
+	// to intersect with block metadata.
 	sort.Sort(&utils.SortShim{
 		Length: len(keys),
 		SwapFn: func(i, j int) {
