@@ -316,7 +316,7 @@ func (t *_table[T]) getBlockFilter(trs []T, keys [][]byte) ([]T, [][]byte, *Prim
 }
 
 func (t *_table[T]) keys(trs []T) ([][]byte, bool, func()) {
-	// The number of elements are predefined, so the cuckoo filter is efficient
+	// The total number of elements is predefined, so the cuckoo filter is efficient
 	// to check the possibility of key duplicate.
 	filter := cuckoo.NewFilter(uint(len(trs)))
 	duplicate := false
@@ -394,8 +394,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 		},
 		Filter: t.filter,
-		Batch:  keyBatch,
-	})
+	}, keyBatch)
 	defer itr.Close()
 
 	for i, tr := range trs {
