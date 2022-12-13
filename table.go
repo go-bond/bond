@@ -316,15 +316,19 @@ func (t *_table[T]) getBlockFilter(trs []T, keys [][]byte) ([]T, [][]byte, *Prim
 }
 
 func (t *_table[T]) keys(trs []T) ([][]byte, bool, func()) {
-	keys := make([][]byte, len(trs))
-	keyBuffers := make([][]byte, len(trs))
+	// The number of elements are predefined, so the cuckoo filter is efficient
+	// to check the possibility of key duplicate.
 	filter := cuckoo.NewFilter(uint(len(trs)))
 	duplicate := false
+
+	keys := make([][]byte, len(trs))
+	keyBuffers := make([][]byte, len(trs))
 	for i, tr := range trs {
 		keyBuffer := _keyBufferPool.Get().([]byte)
 		keyBuffers[i] = keyBuffer
 		key := t.key(tr, keyBuffer[:])
 		keys[i] = key
+
 		if filter.Lookup(key) {
 			duplicate = true
 			continue
