@@ -296,7 +296,6 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 }
 
 func (t *_table[T]) getBlockFilter(trs []T, keys [][]byte) ([]T, [][]byte, *PrimaryKeyFilter) {
-
 	// sort the records since the filter needs keys in sorted order
 	// to intersect with block metadata.
 	sort.Sort(&utils.SortShim{
