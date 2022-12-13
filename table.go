@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
+	cuckoo "github.com/panmari/cuckoofilter"
 
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
@@ -294,21 +295,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *_table[T]) getBlockFilter(trs []T) ([]T, [][]byte, *PrimaryKeyFilter, func()) {
-	keys := make([][]byte, len(trs))
-	keyBuffers := make([][]byte, len(trs))
-	for i, tr := range trs {
-		keyBuffer := _keyBufferPool.Get().([]byte)
-		keyBuffers[i] = keyBuffer
-		key := t.key(tr, keyBuffer[:])
-		keys[i] = key
-	}
-
-	bufferCloser := func() {
-		for _, keyBuffer := range keyBuffers {
-			_keyBufferPool.Put(keyBuffer)
-		}
-	}
+func (t *_table[T]) getBlockFilter(trs []T, keys [][]byte) ([]T, [][]byte, *PrimaryKeyFilter) {
 
 	// sort the records since the filter needs keys in sorted order
 	// to intersect with block metadata.
@@ -325,7 +312,32 @@ func (t *_table[T]) getBlockFilter(trs []T) ([]T, [][]byte, *PrimaryKeyFilter, f
 
 	filter := NewPrimaryKeyFilter(t.id, keys)
 	filter.Keys = keys
-	return trs, keys, filter, bufferCloser
+	return trs, keys, filter
+}
+
+func (t *_table[T]) keys(trs []T) ([][]byte, bool, func()) {
+	keys := make([][]byte, len(trs))
+	keyBuffers := make([][]byte, len(trs))
+	filter := cuckoo.NewFilter(uint(len(trs)))
+	duplicate := false
+	for i, tr := range trs {
+		keyBuffer := _keyBufferPool.Get().([]byte)
+		keyBuffers[i] = keyBuffer
+		key := t.key(tr, keyBuffer[:])
+		keys[i] = key
+		if filter.Lookup(key) {
+			duplicate = true
+			continue
+		}
+		filter.Insert(key)
+	}
+
+	bufferCloser := func() {
+		for _, keyBuffer := range keyBuffers {
+			_keyBufferPool.Put(keyBuffer)
+		}
+	}
+	return keys, duplicate, bufferCloser
 }
 
 func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) error {
@@ -361,12 +373,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
-	trs, keys, filter, keyBufferCloser := t.getBlockFilter(trs)
+	keys, duplicate, keyBufferCloser := t.keys(trs)
 	defer keyBufferCloser()
+	trs, keys, filter := t.getBlockFilter(trs, keys)
 
-	idx, exist := utils.Duplicate(keys)
-	if exist {
-		return fmt.Errorf("record: %x already exist", keys[idx][_KeyPrefixSplitIndex(keys[idx]):])
+	if duplicate {
+		idx, exist := utils.Duplicate(keys)
+		if exist {
+			return fmt.Errorf("record: %x already exist", keys[idx][_KeyPrefixSplitIndex(keys[idx]):])
+		}
 	}
 
 	itr := t.db.Iter(&IterOptions{
