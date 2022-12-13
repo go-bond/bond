@@ -390,7 +390,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
 		},
 		Filter: t.filter,
-	}, keyBatch)
+		Batch:  keyBatch,
+	})
 	defer itr.Close()
 
 	for i, tr := range trs {

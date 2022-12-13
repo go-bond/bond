@@ -10,6 +10,7 @@ import (
 type IterOptions struct {
 	pebble.IterOptions
 	Filter Filter
+	Batch  Batch
 }
 
 type Iterator interface {
@@ -43,12 +44,11 @@ func pebbleIterOptions(opt *IterOptions) *pebble.IterOptions {
 type BondIterator struct {
 	*pebble.Iterator
 	filter Filter
-	batch  Batch
 	opt    *IterOptions
 }
 
 func (b *BondIterator) Exist(key []byte) bool {
-	bCtx := ContextWithBatch(context.Background(), b.batch)
+	bCtx := ContextWithBatch(context.Background(), b.opt.Batch)
 	if b.filter != nil && !b.filter.MayContain(bCtx, key) {
 		return false
 	}
