@@ -370,33 +370,20 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
+		keyBuffer       = _keyBufferPool.Get().([]byte)
 		indexKeysBuffer = _keyBufferPool.Get().([]byte)
 		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
 	)
-
+	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
-	keys, duplicate, keyBufferCloser := t.keys(trs)
-	defer keyBufferCloser()
-	trs, keys, filter := t.getBlockFilter(trs, keys)
+	primaryKeyFilter := &PrimaryKeyFilter{ID: t.id}
+	iter := keyBatch.Iter(&IterOptions{IterOptions: pebble.IterOptions{
+		PointKeyFilters: []pebble.BlockPropertyFilter{primaryKeyFilter},
+	}})
+	defer func() { _ = iter.Close() }()
 
-	if duplicate {
-		idx, exist := utils.Duplicate(keys)
-		if exist {
-			return fmt.Errorf("record: %x already exist", keys[idx][_KeyPrefixSplitIndex(keys[idx]):])
-		}
-	}
-
-	itr := t.db.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			KeyTypes:        pebble.IterKeyTypePointsOnly,
-			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
-		},
-		Filter: t.filter,
-	}, keyBatch)
-	defer itr.Close()
-
-	for i, tr := range trs {
+	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -404,10 +391,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		// insert key
-		key := keys[i]
+		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if itr.Exist(key) {
+		if t.exist(key, iter, primaryKeyFilter, keyBatch) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -676,7 +663,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		if t.exist(key, keyBatch) {
+		if t.exist(key, nil, nil, keyBatch) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
@@ -764,22 +751,29 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	keyBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
-	return t.exist(key, batch)
+	return t.exist(key, nil, nil, batch)
 }
 
-func (t *_table[T]) exist(key []byte, batch Batch) bool {
+func (t *_table[T]) exist(key []byte, iter Iterator, f *PrimaryKeyFilter, batch Batch) bool {
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return false
 	}
 
-	_, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return false
+	if iter == nil {
+		iter = batch.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				PointKeyFilters: []pebble.BlockPropertyFilter{&PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}}},
+			},
+		})
+		defer func() { _ = iter.Close() }()
 	}
 
-	_ = closer.Close()
-	return true
+	if f != nil {
+		f.Keys = [][]byte{key}
+	}
+
+	return iter.SeekGE(key) && bytes.Compare(iter.Key(), key) == 0
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
