@@ -327,6 +327,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
+	iter := keyBatch.Iter(&IterOptions{})
+	defer func() { _ = iter.Close() }()
+
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -338,7 +341,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if t.exist(key, keyBatch) {
+		if t.exist(key, iter, keyBatch) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -590,6 +593,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeyBuffer)
 
+	iter := keyBatch.Iter(&IterOptions{})
+	defer func() { _ = iter.Close() }()
+
 	for _, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -607,7 +613,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		if t.exist(key, keyBatch) {
+		if t.exist(key, iter, keyBatch) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
@@ -695,22 +701,21 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	keyBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
-	return t.exist(key, batch)
+	return t.exist(key, nil, batch)
 }
 
-func (t *_table[T]) exist(key []byte, batch Batch) bool {
+func (t *_table[T]) exist(key []byte, iter Iterator, batch Batch) bool {
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return false
 	}
 
-	_, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return false
+	if iter == nil {
+		iter = batch.Iter(&IterOptions{})
+		defer func() { _ = iter.Close() }()
 	}
 
-	_ = closer.Close()
-	return true
+	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
