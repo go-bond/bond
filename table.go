@@ -926,7 +926,7 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 		IndexKey:   []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: primaryKey,
-	}, buff[len(primaryKey):len(primaryKey)])
+	}, primaryKey[len(primaryKey):])
 }
 
 func (t *_table[T]) keys(trs []T) ([][]byte, func()) {
