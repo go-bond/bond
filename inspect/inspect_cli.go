@@ -93,7 +93,7 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 
 				headers := make(map[string]string)
 				for _, s := range headersStr {
-					header := strings.Split(s, "=")
+					header := strings.SplitN(s, "=", 2)
 					if len(header) != 2 {
 						return fmt.Errorf("invalid header: %s", s)
 					}
