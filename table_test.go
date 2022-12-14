@@ -174,6 +174,9 @@ func TestBondTable_Insert(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
+	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.Error(t, err)
+
 	it := tokenBalanceTable.Iter(nil)
 
 	for it.First(); it.Valid(); it.Next() {
@@ -243,7 +246,10 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 		Balance:         5,
 	}
 
-	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1, tokenBalanceAccount1})
+	require.Error(t, err)
+
+	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
