@@ -10,14 +10,16 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/pebble"
-	cuckoo "github.com/panmari/cuckoofilter"
-
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
 )
 
 var _keyBufferPool = sync.Pool{New: func() any {
 	return make([]byte, 0, KeyBufferInitialSize)
+}}
+
+var _multiKeyBufferPool = sync.Pool{New: func() any {
+	return make([]byte, 0, KeyBufferInitialSize*1000)
 }}
 
 const KeyBufferInitialSize = 10240
@@ -295,60 +297,13 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	return nil
 }
 
-func (t *_table[T]) getBlockFilter(trs []T, keys [][]byte) ([]T, [][]byte, *PrimaryKeyFilter) {
-	// sort the records since the filter needs keys in sorted order
-	// to intersect with block metadata.
-	sort.Sort(&utils.SortShim{
-		Length: len(keys),
-		SwapFn: func(i, j int) {
-			trs[i], trs[j] = trs[j], trs[i]
-			keys[i], keys[j] = keys[j], keys[i]
-		},
-		LessFn: func(i, j int) bool {
-			return bytes.Compare(keys[i], keys[j]) < 0
-		},
-	})
-
-	filter := NewPrimaryKeyFilter(t.id, keys)
-	filter.Keys = keys
-	return trs, keys, filter
-}
-
-func (t *_table[T]) keys(trs []T) ([][]byte, bool, func()) {
-	// The total number of elements is predefined, so the cuckoo filter is efficient
-	// to check the possibility of key duplicate.
-	filter := cuckoo.NewFilter(uint(len(trs)))
-	duplicate := false
-
-	keys := make([][]byte, len(trs))
-	keyBuffers := make([][]byte, len(trs))
-	for i, tr := range trs {
-		keyBuffer := _keyBufferPool.Get().([]byte)
-		keyBuffers[i] = keyBuffer
-		key := t.key(tr, keyBuffer[:])
-		keys[i] = key
-
-		if filter.Lookup(key) {
-			duplicate = true
-			continue
-		}
-		filter.Insert(key)
-	}
-
-	bufferCloser := func() {
-		for _, keyBuffer := range keyBuffers {
-			_keyBufferPool.Put(keyBuffer)
-		}
-	}
-	return keys, duplicate, bufferCloser
-}
-
 func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) error {
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
 	t.mutex.RUnlock()
 
+	// batch
 	var (
 		keyBatch      Batch
 		keyBatchCtx   context.Context
@@ -369,33 +324,28 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		_ = indexKeyBatch.Close()
 	}()
 
+	// keys
 	var (
-		indexKeysBuffer = _keyBufferPool.Get().([]byte)
-		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
+		keys, keysCloser = t.keys(trs)
+		indexKeysBuffer  = _keyBufferPool.Get().([]byte)
+		indexKeys        = make([][]byte, 0, len(t.secondaryIndexes))
 	)
-
+	defer keysCloser()
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
-	keys, duplicate, keyBufferCloser := t.keys(trs)
-	defer keyBufferCloser()
-	trs, keys, filter := t.getBlockFilter(trs, keys)
-
-	if duplicate {
-		idx, exist := utils.Duplicate(keys)
-		if exist {
-			return fmt.Errorf("record: %x already exist", keys[idx][_KeyPrefixSplitIndex(keys[idx]):])
-		}
-	}
-
-	itr := t.db.Iter(&IterOptions{
+	// exist iter
+	t.sortKeysAndRows(keys, trs)
+	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
-			KeyTypes:        pebble.IterKeyTypePointsOnly,
-			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
+			KeyTypes: pebble.IterKeyTypePointsOnly,
+			PointKeyFilters: []pebble.BlockPropertyFilter{
+				&PrimaryKeyFilter{ID: t.id, Keys: keys},
+			},
 		},
-		Filter: t.filter,
 	}, keyBatch)
-	defer itr.Close()
+	defer func() { _ = iter.Close() }()
 
+	// process rows
 	for i, tr := range trs {
 		select {
 		case <-ctx.Done():
@@ -407,7 +357,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		key := keys[i]
 
 		// check if exist
-		if itr.Exist(key) {
+		if t.keyDuplicate(i, keys) || t.exist(key, keyBatch, iter) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -676,7 +626,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		if t.exist(key, keyBatch) {
+		if t.exist(key, keyBatch, nil) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
@@ -764,22 +714,26 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	keyBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
-	return t.exist(key, batch)
+	return t.exist(key, batch, nil)
 }
 
-func (t *_table[T]) exist(key []byte, batch Batch) bool {
+func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 		return false
 	}
 
-	_, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return false
+	if iter == nil {
+		blockFilter := &PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}}
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				KeyTypes:        pebble.IterKeyTypePointsOnly,
+				PointKeyFilters: []pebble.BlockPropertyFilter{blockFilter},
+			},
+		}, batch)
 	}
 
-	_ = closer.Close()
-	return true
+	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
@@ -803,28 +757,22 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 }
 
 func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
-	filter := NewPrimaryKeyFilter(t.id, [][]byte{key})
-
-	opt := &IterOptions{
+	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
-			PointKeyFilters: []pebble.BlockPropertyFilter{filter},
-			KeyTypes:        pebble.IterKeyTypePointsOnly,
+			PointKeyFilters: []pebble.BlockPropertyFilter{
+				&PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}},
+			},
+			KeyTypes: pebble.IterKeyTypePointsOnly,
 		},
-	}
-	itr := t.db.Iter(opt, batch)
-	defer itr.Close()
+	}, batch)
+	defer func() { _ = iter.Close() }()
 
-	if !itr.SeekGE(key) {
+	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
-	if !bytes.Equal(itr.Key(), key) {
-		return utils.MakeNew[T](), fmt.Errorf("not found")
-	}
-
-	data := itr.Value()
 	var tr T
-	err := t.serializer.Deserialize(data, &tr)
+	err := t.serializer.Deserialize(iter.Value(), &tr)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
@@ -956,6 +904,19 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	return nil
 }
 
+func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			trs[i], trs[j] = trs[j], trs[i]
+			keys[i], keys[j] = keys[j], keys[i]
+		},
+		LessFn: func(i, j int) bool {
+			return bytes.Compare(keys[i], keys[j]) < 0
+		},
+	})
+}
+
 func (t *_table[T]) key(tr T, buff []byte) []byte {
 	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(buff[:0]), tr)
 
@@ -966,6 +927,28 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 		IndexOrder: []byte{},
 		PrimaryKey: primaryKey,
 	}, buff[len(primaryKey):len(primaryKey)])
+}
+
+func (t *_table[T]) keys(trs []T) ([][]byte, func()) {
+	keys := make([][]byte, len(trs))
+	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
+
+	next := multiKeyBuffer
+	for i, tr := range trs {
+		key := t.key(tr, next)
+		keys[i] = key
+
+		next = key[len(key):]
+	}
+
+	closer := func() {
+		_multiKeyBufferPool.Put(multiKeyBuffer)
+	}
+	return keys, closer
+}
+
+func (t *_table[T]) keyDuplicate(index int, keys [][]byte) bool {
+	return index > 0 && bytes.Equal(keys[index], keys[index-1])
 }
 
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
