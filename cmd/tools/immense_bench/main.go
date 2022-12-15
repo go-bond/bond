@@ -239,7 +239,7 @@ func main() {
 			timeTaken := map[string][]time.Duration{"insert": []time.Duration{}, "read": []time.Duration{}}
 
 			for i := 0; i < cCtx.Int("n"); i++ {
-				db, err := bond.Open("example", &bond.Options{})
+				db, err := bond.Open("example", bond.DefaultOptions())
 				if err != nil {
 					panic(err)
 				}

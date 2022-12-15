@@ -89,6 +89,11 @@ func Open(dirname string, opts *Options) (DB, error) {
 		opts.PebbleOptions = DefaultPebbleOptions()
 	}
 
+	if opts.PropertyCollectorsDisabled {
+		opts.PebbleOptions.TablePropertyCollectors = nil
+		opts.PebbleOptions.BlockPropertyCollectors = nil
+	}
+
 	opts.PebbleOptions.Comparer = DefaultKeyComparer()
 
 	pdb, err := pebble.Open(dirname, opts.PebbleOptions)

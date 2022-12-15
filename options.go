@@ -16,12 +16,15 @@ const DefaultMaxWriterConcurrency = 8
 type Options struct {
 	PebbleOptions *pebble.Options
 
+	PropertyCollectorsDisabled bool
+
 	Serializer Serializer[any]
 }
 
 func DefaultOptions() *Options {
 	opts := Options{
-		Serializer: &serializers.CBORSerializer{},
+		PropertyCollectorsDisabled: true,
+		Serializer:                 &serializers.CBORSerializer{},
 	}
 
 	if opts.PebbleOptions == nil {
