@@ -871,9 +871,16 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	}
 
 	var getValue func() (T, error)
+	var bufferValue func() error
+	var emitValues func() ([]T, error)
+
+	values := make([]T, 0)
+	tableKeys := make([][]byte, 0)
+
 	var keyBuffer = _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	if idx.IndexID == PrimaryIndexID {
+
 		getValue = func() (T, error) {
 			var record T
 			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
@@ -882,31 +889,76 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 				return utils.MakeNew[T](), err
 			}
 		}
+
+		bufferValue = func() error {
+			value, err := getValue()
+			if err != nil {
+				return err
+			}
+			values = append(values, value)
+			return nil
+		}
+
+		emitValues = func() ([]T, error) {
+			var bufferedValues []T
+			bufferedValues, values = values, make([]T, 0)
+			return bufferedValues, nil
+		}
+
 	} else {
-		recordIter := t.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: selector,
-				KeyTypes:   pebble.IterKeyTypePointsOnly,
-				PointKeyFilters: []pebble.BlockPropertyFilter{
-					&PrimaryKeyFilter{ID: t.id},
+
+		getValues := func() ([]T, error) {
+			sort.Slice(tableKeys, func(i, j int) bool {
+				return bytes.Compare(tableKeys[i], tableKeys[j]) < 0
+			})
+			recordIter := t.db.Iter(&IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: selector,
+					KeyTypes:   pebble.IterKeyTypePointsOnly,
+					PointKeyFilters: []pebble.BlockPropertyFilter{
+						&PrimaryKeyFilter{ID: t.id, Keys: tableKeys},
+					},
 				},
-			},
-		})
-		defer func() {
-			_ = recordIter.Close()
-		}()
-		getValue = func() (T, error) {
-			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
-			if !recordIter.SeekGE(tableKey) || !bytes.Equal(iter.Key(), tableKey) {
-				return utils.MakeNew[T](), fmt.Errorf("record: %x not found", tableKey[_KeyPrefixSplitIndex(tableKey):])
+			})
+			defer func() {
+				_ = recordIter.Close()
+			}()
+
+			records := make([]T, 0)
+			for _, tableKey := range tableKeys {
+				if !recordIter.SeekGE(tableKey) || bytes.Equal(recordIter.Key(), tableKey) {
+					return records, fmt.Errorf("record: %x not found", tableKey[_KeyPrefixSplitIndex(tableKey):])
+				}
 			}
+
 			var record T
-			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
-				return record, nil
-			} else {
+			if err := t.serializer.Deserialize(iter.Value(), &record); err != nil {
+				return records, err
+			}
+
+			records = append(records, record)
+			tableKeys = tableKeys[:0]
+			return records, nil
+		}
+
+		getValue = func() (T, error) {
+			if err := bufferValue(); err != nil {
 				return utils.MakeNew[T](), err
 			}
+
+			values, err := getValues()
+			if err != nil {
+				return utils.MakeNew[T](), err
+			}
+			return values[0], nil
 		}
+
+		bufferValue = func() error {
+			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
+			tableKeys = append(tableKeys, utils.Copy([]byte{}, tableKey))
+			return nil
+		}
+
 	}
 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
@@ -916,7 +968,8 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		default:
 		}
 
-		if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
+		cont, err := f(iter.Key(), Lazy[T]{GetFunc: getValue, BufferFunc: bufferValue, EmitFunc: emitValues})
+		if !cont || err != nil {
 			break
 		} else {
 			if err != nil {

@@ -140,6 +140,8 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	for _, query := range q.queries {
 		count := uint64(0)
 		skippedFirstRow := false
+		bufferedRecords := make([]R, 0)
+		var buffered uint64
 		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
 			if q.isAfter && !skippedFirstRow {
 				skippedFirstRow = true
@@ -152,21 +154,41 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 				return true, nil
 			}
 
-			// get and deserialize
-			record, err := lazy.Get()
-			if err != nil {
-				return false, err
+			if query.Index.IndexID != PrimaryIndexID {
+				if err := lazy.Buffer(); err != nil {
+					return false, err
+				}
+				buffered++
+				if !q.shouldSort() && q.shouldLimit() {
+					remaining := q.offset + q.limit
+					if remaining > buffered && buffered < 100 {
+						return true, nil
+					}
+				}
+				lazyRecords, err := lazy.Emit()
+				if err != nil {
+					return false, nil
+				}
+				bufferedRecords = append(bufferedRecords, lazyRecords...)
+			} else {
+				lazyRecord, err := lazy.Get()
+				if err != nil {
+					return false, nil
+				}
+				bufferedRecords = append(bufferedRecords, lazyRecord)
 			}
 
-			// filter if filter available
-			if q.shouldFilter(query) {
-				if query.FilterFunc(record) {
+			for _, record := range bufferedRecords {
+				// filter if filter available
+				if q.shouldFilter(query) {
+					if query.FilterFunc(record) {
+						records = append(records, record)
+						count++
+					}
+				} else {
 					records = append(records, record)
 					count++
 				}
-			} else {
-				records = append(records, record)
-				count++
 			}
 
 			next := true
@@ -174,7 +196,7 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 			if !q.shouldSort() && q.shouldLimit() {
 				next = count < q.offset+q.limit
 			}
-
+			bufferedRecords = bufferedRecords[:0]
 			return next, nil
 		}, optBatch...)
 		if err != nil {
