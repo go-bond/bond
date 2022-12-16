@@ -141,8 +141,9 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		count := uint64(0)
 		skippedFirstRow := false
 		bufferedRecords := make([]R, 0)
+		maxBuffer := 100
 		var buffered uint64
-		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
+		bufferedRecords, err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
 			if q.isAfter && !skippedFirstRow {
 				skippedFirstRow = true
 				return true, nil
@@ -160,35 +161,31 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 				}
 				buffered++
 				if !q.shouldSort() && q.shouldLimit() {
-					remaining := q.offset + q.limit
-					if remaining > buffered && buffered < 100 {
+					if (buffered+count) < (q.offset+q.limit) && buffered < uint64(maxBuffer) {
 						return true, nil
 					}
 				}
 				lazyRecords, err := lazy.Emit()
 				if err != nil {
-					return false, nil
+					return false, err
 				}
 				bufferedRecords = append(bufferedRecords, lazyRecords...)
+				buffered = 0
 			} else {
 				lazyRecord, err := lazy.Get()
 				if err != nil {
-					return false, nil
+					return false, err
 				}
 				bufferedRecords = append(bufferedRecords, lazyRecord)
 			}
 
 			for _, record := range bufferedRecords {
 				// filter if filter available
-				if q.shouldFilter(query) {
-					if query.FilterFunc(record) {
-						records = append(records, record)
-						count++
-					}
-				} else {
-					records = append(records, record)
-					count++
+				if q.shouldFilter(query) && !query.FilterFunc(record) {
+					continue
 				}
+				records = append(records, record)
+				count++
 			}
 
 			next := true
@@ -202,6 +199,16 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		if err != nil {
 			return err
 		}
+
+		if q.shouldFilter(query) {
+			for _, record := range bufferedRecords {
+				if query.FilterFunc(record) {
+					records = append(records, record)
+				}
+			}
+			continue
+		}
+		records = append(records, bufferedRecords...)
 	}
 
 	// sorting

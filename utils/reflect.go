@@ -1,6 +1,8 @@
 package utils
 
-import "reflect"
+import (
+	"reflect"
+)
 
 func MakeNew[T any]() T {
 	var v T
@@ -40,4 +42,12 @@ func FindRootInterface(v reflect.Value) any {
 	} else {
 		return v.Interface()
 	}
+}
+
+func ToSliceAny[T any](in []T) []any {
+	out := make([]any, len(in))
+	for i, data := range in {
+		out[i] = data
+	}
+	return out
 }

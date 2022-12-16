@@ -62,7 +62,7 @@ func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterSto
 		}
 
 		for _, scanner := range scanners {
-			err = scanner.ScanForEach(ctx, func(keyBytes KeyBytes, lazy Lazy[any]) (bool, error) {
+			_, err = scanner.ScanForEach(ctx, func(keyBytes KeyBytes, lazy Lazy[any]) (bool, error) {
 				filter.Add(ctx, keyBytes)
 				return true, nil
 			})

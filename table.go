@@ -55,8 +55,8 @@ type TableQuerier[T any] interface {
 type TableScanner[T any] interface {
 	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
 	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
-	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error)
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error)
 }
 
 type TableIterationer[T any] interface {
@@ -632,7 +632,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}, keyBatch)
 	defer func() { _ = iter.Close() }()
 
-	for i, tr := range trs {
+	for i := 0; i < len(trs); {
+		tr := trs[i]
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -641,12 +642,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		// update key
 		key := keys[i]
-
-		// skip this records since the next record updating the
-		// same primary key.
-		if i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
-			continue
-		}
 
 		// old record
 		var (
@@ -665,6 +660,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		// handle upsert
 		if isUpdate {
 			tr = onConflict(oldTr, tr)
+		}
+
+		// apply conficts recursively if duplicate exist
+		for i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
+			oldTr = tr
+			i++
+			tr = onConflict(oldTr, trs[i])
+			continue
 		}
 
 		// serialize
@@ -709,6 +712,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		if t.filter != nil && !isUpdate {
 			t.filter.Add(keyBatchCtx, key)
 		}
+		i++
 	}
 
 	err := keyBatch.Apply(indexKeyBatch, Sync)
@@ -829,7 +833,7 @@ func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error 
 }
 
 func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error {
-	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
+	_, err := t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
 			return true, nil
@@ -837,13 +841,14 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 			return false, err
 		}
 	}, optBatch...)
+	return err
 }
 
-func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error) {
 	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error) {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
@@ -907,36 +912,33 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 
 	} else {
 
-		getValues := func() ([]T, error) {
+		emitValues = func() ([]T, error) {
 			sort.Slice(tableKeys, func(i, j int) bool {
 				return bytes.Compare(tableKeys[i], tableKeys[j]) < 0
 			})
 			recordIter := t.db.Iter(&IterOptions{
 				IterOptions: pebble.IterOptions{
-					LowerBound: selector,
-					KeyTypes:   pebble.IterKeyTypePointsOnly,
+					KeyTypes: pebble.IterKeyTypePointsOnly,
 					PointKeyFilters: []pebble.BlockPropertyFilter{
 						&PrimaryKeyFilter{ID: t.id, Keys: tableKeys},
 					},
 				},
-			})
+			}, batch)
 			defer func() {
 				_ = recordIter.Close()
 			}()
 
 			records := make([]T, 0)
 			for _, tableKey := range tableKeys {
-				if !recordIter.SeekGE(tableKey) || bytes.Equal(recordIter.Key(), tableKey) {
+				if !recordIter.SeekGE(tableKey) || !bytes.Equal(recordIter.Key(), tableKey) {
 					return records, fmt.Errorf("record: %x not found", tableKey[_KeyPrefixSplitIndex(tableKey):])
 				}
+				var record T
+				if err := t.serializer.Deserialize(recordIter.Value(), &record); err != nil {
+					return records, err
+				}
+				records = append(records, record)
 			}
-
-			var record T
-			if err := t.serializer.Deserialize(iter.Value(), &record); err != nil {
-				return records, err
-			}
-
-			records = append(records, record)
 			tableKeys = tableKeys[:0]
 			return records, nil
 		}
@@ -946,7 +948,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 				return utils.MakeNew[T](), err
 			}
 
-			values, err := getValues()
+			values, err := emitValues()
 			if err != nil {
 				return utils.MakeNew[T](), err
 			}
@@ -964,31 +966,28 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
+			return nil, fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
 		cont, err := f(iter.Key(), Lazy[T]{GetFunc: getValue, BufferFunc: bufferValue, EmitFunc: emitValues})
-		if !cont || err != nil {
-			break
-		} else {
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
+		if err != nil {
+			_ = iter.Close()
+			return nil, err
+		}
 
-			if !cont {
-				break
-			}
+		if !cont {
+			break
 		}
 	}
 
 	err := iter.Close()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	buffer, err := emitValues()
+	return buffer, err
 }
 
 func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
