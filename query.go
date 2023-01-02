@@ -155,16 +155,16 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 				return true, nil
 			}
 
-			if query.Index.IndexID != PrimaryIndexID {
+			if query.Index.IndexID != PrimaryIndexID && !q.shouldSort() && q.shouldLimit() {
 				if err := lazy.Buffer(); err != nil {
 					return false, err
 				}
 				buffered++
-				if !q.shouldSort() && q.shouldLimit() {
-					if (buffered+count) < (q.offset+q.limit) && buffered < uint64(maxBuffer) {
-						return true, nil
-					}
+
+				if (buffered+count) < (q.offset+q.limit) && buffered < uint64(maxBuffer) {
+					return true, nil
 				}
+
 				lazyRecords, err := lazy.Emit()
 				if err != nil {
 					return false, err
