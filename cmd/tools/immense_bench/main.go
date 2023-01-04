@@ -464,7 +464,7 @@ func runBondUpdate(db bond.DB, bactchSize int, idGenerators []*UniqueRand) time.
 	ticker := time.NewTicker(500 * time.Millisecond)
 	go func() {
 		for range ticker.C {
-			fmt.Printf("update records %d \n", atomic.LoadUint64(&readEntries))
+			fmt.Printf("update records %d \n", atomic.LoadUint64(&updatedEntries))
 		}
 	}()
 
