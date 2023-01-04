@@ -149,6 +149,82 @@ func insertRecords(db bond.DB, tableID, batchSize, totalBatch int, idGenerator *
 	wg.Done()
 }
 
+func upsertRecords(db bond.DB, tableID, batchSize int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
+	table := getTable(tableID, db)
+	entries := make([]*TokenBalance, 0, batchSize)
+	ids := idGenerator.ids
+	count := 0
+
+	for _, id := range ids {
+		token := &TokenBalance{}
+		if count%2 == 0 {
+			token.ID = id
+			_, err := table.Get(token)
+			if err != nil {
+				panic(err.Error())
+			}
+			token.Balance++
+			entries = append(entries, token)
+		} else {
+			id := idGenerator.Int()
+			entries = append(entries, &TokenBalance{
+				ID:              id,
+				AccountID:       uint32(id % 10),
+				ContractAddress: RandStringRunes(20),
+				AccountAddress:  RandStringRunes(20),
+				Balance:         uint64((id % 100) * 10),
+			})
+		}
+		count++
+
+		if count < batchSize {
+			continue
+		}
+
+		err := table.Upsert(context.TODO(), entries, func(old, new *TokenBalance) *TokenBalance {
+			return new
+		})
+		if err != nil {
+			panic(err)
+		}
+		atomic.AddUint64(&upsertEntries, uint64(batchSize))
+		entries = entries[:0]
+		count = 0
+	}
+	wg.Done()
+}
+
+var updatedEntries uint64
+
+func updateRecords(db bond.DB, tableId, batchSize int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
+	table := getTable(tableId, db)
+	entries := make([]*TokenBalance, 0, batchSize)
+	count := 0
+
+	for _, id := range idGenerator.ids {
+		token := &TokenBalance{
+			ID: id,
+		}
+		_, err := table.Get(token)
+		if err != nil {
+			panic(err.Error())
+		}
+		token.Balance++
+		entries = append(entries, token)
+		count++
+		if count < batchSize {
+			continue
+		}
+		if err := table.Update(context.TODO(), entries); err != nil {
+			panic(err.Error())
+		}
+		atomic.AddUint64(&updatedEntries, uint64(batchSize))
+		entries = entries[:0]
+		count = 0
+	}
+	wg.Done()
+}
+
 func readRecords(db bond.DB, tableID int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
 	table := getTable(tableID, db)
 	for _, id := range idGenerator.ids {
@@ -200,6 +276,21 @@ func main() {
 				Name:  "read",
 				Value: false,
 				Usage: "run bondRead",
+			},
+			&cli.BoolFlag{
+				Name:  "update",
+				Value: false,
+				Usage: "run bondUpdate",
+			},
+			&cli.BoolFlag{
+				Name:  "upsert",
+				Value: false,
+				Usage: "run bondUpsert",
+			},
+			&cli.BoolFlag{
+				Name:  "all",
+				Value: false,
+				Usage: "run bondUpdate",
 			},
 			&cli.BoolFlag{
 				Name:  "pprof",
@@ -258,16 +349,30 @@ func main() {
 				fmt.Printf("Total time taken to insert %s \n", insertTime)
 				timeTaken["insert"] = append(timeTaken["insert"], insertTime)
 
-				if !cCtx.Bool("read") {
-					close()
-					continue
-				}
-				fmt.Println("Read started")
-				readTime := runBondRead(db, generators)
+				if cCtx.Bool("read") || cCtx.Bool("all") {
+					fmt.Println("Read started")
+					readTime := runBondRead(db, generators)
 
-				fmt.Printf("Total time taken to insert %s \n", insertTime)
-				fmt.Printf("Total time taken to read %s \n", readTime)
-				timeTaken["read"] = append(timeTaken["read"], readTime)
+					fmt.Printf("Total time taken to read %s \n", readTime)
+					timeTaken["read"] = append(timeTaken["read"], readTime)
+				}
+
+				if cCtx.Bool("update") || cCtx.Bool("all") {
+					fmt.Println("Update started")
+					updateTime := runBondUpdate(db, cCtx.Int("total_batch"), generators)
+
+					fmt.Printf("Total time taken to update %s \n", updateTime)
+					timeTaken["update"] = append(timeTaken["update"], updateTime)
+				}
+
+				if cCtx.Bool("upsert") || cCtx.Bool("all") {
+					fmt.Println("Upsert started")
+					upsertTime := runBondUpsert(db, cCtx.Int("total_batch"), generators)
+
+					fmt.Printf("Total time taken to update %s \n", upsertTime)
+					timeTaken["upsert"] = append(timeTaken["upsert"], upsertTime)
+				}
+
 				close()
 			}
 
@@ -277,6 +382,12 @@ func main() {
 			}
 			for _, readTime := range timeTaken["read"] {
 				fmt.Printf("Total time taken to read %s \n", readTime)
+			}
+			for _, updateTime := range timeTaken["update"] {
+				fmt.Printf("Total time taken to update %s \n", updateTime)
+			}
+			for _, upsertTime := range timeTaken["upsert"] {
+				fmt.Printf("Total time taken to upsert %s \n", upsertTime)
 			}
 			return nil
 		},
@@ -329,6 +440,58 @@ func runBondRead(db bond.DB, idGenerators []*UniqueRand) time.Duration {
 	go func() {
 		for range ticker.C {
 			fmt.Printf("read records %d \n", atomic.LoadUint64(&readEntries))
+		}
+	}()
+
+	wg.Wait()
+	ticker.Stop()
+
+	elapsed := time.Since(start)
+	return elapsed
+}
+
+func runBondUpdate(db bond.DB, bactchSize int, idGenerators []*UniqueRand) time.Duration {
+	start := time.Now()
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i < len(idGenerators); i++ {
+		wg.Add(1)
+		go func(idx int) {
+			updateRecords(db, idx, bactchSize, idGenerators[idx], wg)
+		}(i)
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	go func() {
+		for range ticker.C {
+			fmt.Printf("update records %d \n", atomic.LoadUint64(&readEntries))
+		}
+	}()
+
+	wg.Wait()
+	ticker.Stop()
+
+	elapsed := time.Since(start)
+	return elapsed
+}
+
+var upsertEntries uint64
+
+func runBondUpsert(db bond.DB, batchSize int, idGenerators []*UniqueRand) time.Duration {
+	start := time.Now()
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i < len(idGenerators); i++ {
+		wg.Add(1)
+		go func(idx int) {
+			upsertRecords(db, idx, batchSize, idGenerators[idx], wg)
+		}(i)
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	go func() {
+		for range ticker.C {
+			fmt.Printf("upsert records %d \n", atomic.LoadUint64(&upsertEntries))
 		}
 	}()
 
