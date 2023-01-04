@@ -55,8 +55,8 @@ type TableQuerier[T any] interface {
 type TableScanner[T any] interface {
 	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
 	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
-	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error)
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error)
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
 }
 
 type TableIterationer[T any] interface {
@@ -833,7 +833,7 @@ func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error 
 }
 
 func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error {
-	_, err := t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
+	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
 			return true, nil
@@ -841,14 +841,13 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 			return false, err
 		}
 	}, optBatch...)
-	return err
 }
 
-func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error) {
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
 	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) ([]T, error) {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
@@ -856,36 +855,25 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 
 	var iter Iterator
 	var batch Batch
-	iterOpt := &IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: selector,
-			KeyTypes:   pebble.IterKeyTypePointsOnly,
-		},
-	}
-	if idx.IndexID == PrimaryIndexID {
-		iterOpt.IterOptions.PointKeyFilters = []pebble.BlockPropertyFilter{
-			&PrimaryKeyFilter{ID: t.id},
-		}
-	}
-
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
-		iter = batch.Iter(iterOpt)
+		iter = batch.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
+		})
 	} else {
-		iter = t.db.Iter(iterOpt)
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
+		})
 	}
 
 	var getValue func() (T, error)
-	var bufferValue func() error
-	var emitValues func() ([]T, error)
-
-	values := make([]T, 0)
-	tableKeys := make([][]byte, 0)
-
 	var keyBuffer = _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 	if idx.IndexID == PrimaryIndexID {
-
 		getValue = func() (T, error) {
 			var record T
 			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
@@ -894,100 +882,53 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 				return utils.MakeNew[T](), err
 			}
 		}
-
-		bufferValue = func() error {
-			value, err := getValue()
-			if err != nil {
-				return err
-			}
-			values = append(values, value)
-			return nil
-		}
-
-		emitValues = func() ([]T, error) {
-			var bufferedValues []T
-			bufferedValues, values = values, make([]T, 0)
-			return bufferedValues, nil
-		}
-
 	} else {
-
-		emitValues = func() ([]T, error) {
-			sort.Slice(tableKeys, func(i, j int) bool {
-				return bytes.Compare(tableKeys[i], tableKeys[j]) < 0
-			})
-			recordIter := t.db.Iter(&IterOptions{
-				IterOptions: pebble.IterOptions{
-					KeyTypes: pebble.IterKeyTypePointsOnly,
-					PointKeyFilters: []pebble.BlockPropertyFilter{
-						&PrimaryKeyFilter{ID: t.id, Keys: tableKeys},
-					},
-				},
-			}, batch)
-			defer func() {
-				_ = recordIter.Close()
-			}()
-
-			records := make([]T, 0)
-			for _, tableKey := range tableKeys {
-				if !recordIter.SeekGE(tableKey) || !bytes.Equal(recordIter.Key(), tableKey) {
-					return records, fmt.Errorf("record: %x not found", tableKey[_KeyPrefixSplitIndex(tableKey):])
-				}
-				var record T
-				if err := t.serializer.Deserialize(recordIter.Value(), &record); err != nil {
-					return records, err
-				}
-				records = append(records, record)
-			}
-			tableKeys = tableKeys[:0]
-			return records, nil
-		}
-
 		getValue = func() (T, error) {
-			if err := bufferValue(); err != nil {
-				return utils.MakeNew[T](), err
-			}
+			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
 
-			values, err := emitValues()
+			valueData, closer, err := t.db.Get(tableKey, batch)
 			if err != nil {
 				return utils.MakeNew[T](), err
 			}
-			return values[0], nil
-		}
 
-		bufferValue = func() error {
-			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
-			tableKeys = append(tableKeys, utils.Copy([]byte{}, tableKey))
-			return nil
-		}
+			defer func() { _ = closer.Close() }()
 
+			var record T
+			if err = t.serializer.Deserialize(valueData, &record); err == nil {
+				return record, nil
+			} else {
+				return utils.MakeNew[T](), err
+			}
+		}
 	}
 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("context done: %w", ctx.Err())
+			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: getValue, BufferFunc: bufferValue, EmitFunc: emitValues})
-		if err != nil {
-			_ = iter.Close()
-			return nil, err
-		}
-
-		if !cont {
+		if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
 			break
+		} else {
+			if err != nil {
+				_ = iter.Close()
+				return err
+			}
+
+			if !cont {
+				break
+			}
 		}
 	}
 
 	err := iter.Close()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	buffer, err := emitValues()
-	return buffer, err
+	return nil
 }
 
 func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
