@@ -615,6 +615,14 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		Balance:         12,
 	}
 
+	duplicateExpectedTokenBalanceAccountUpdated := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         22,
+	}
+
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
@@ -663,6 +671,16 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	require.Equal(t, 2, len(tokenBalances))
 	assert.Equal(t, expectedTokenBalanceAccountUpdated, tokenBalances[0])
 	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
+
+	err = tokenBalanceTable.Upsert(
+		context.Background(),
+		[]*TokenBalance{tokenBalanceAccount, tokenBalanceAccount}, onConflictAddBalance)
+	require.NoError(t, err)
+
+	balanceFromDb, err := tokenBalanceTable.Get(tokenBalanceAccount)
+	require.NoError(t, err)
+	assert.Equal(t, balanceFromDb, duplicateExpectedTokenBalanceAccountUpdated)
+
 }
 
 func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
