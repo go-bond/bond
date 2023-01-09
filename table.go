@@ -731,6 +731,9 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 				PointKeyFilters: []pebble.BlockPropertyFilter{blockFilter},
 			},
 		}, batch)
+		defer func() {
+			_ = iter.Close()
+		}()
 	}
 
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
