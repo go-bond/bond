@@ -327,7 +327,7 @@ func main() {
 				defer pprof.WriteHeapProfile(memProfile)
 			}
 
-			timeTaken := map[string][]time.Duration{"insert": []time.Duration{}, "read": []time.Duration{}}
+			timeTaken := map[string][]time.Duration{"insert": {}, "read": {}}
 
 			for i := 0; i < cCtx.Int("n"); i++ {
 				db, err := bond.Open("example", &bond.Options{})
@@ -335,7 +335,9 @@ func main() {
 					panic(err)
 				}
 				close := func() {
-					db.Close()
+					if err := db.Close(); err != nil {
+						panic(err.Error())
+					}
 					sz, _ := DirSize("example")
 					fmt.Printf("size of database %s \n", humanize.Bytes(sz))
 					_ = os.RemoveAll("example")
