@@ -43,11 +43,3 @@ func FindRootInterface(v reflect.Value) any {
 		return v.Interface()
 	}
 }
-
-func ToSliceAny[T any](in []T) []any {
-	out := make([]any, len(in))
-	for i, data := range in {
-		out[i] = data
-	}
-	return out
-}
