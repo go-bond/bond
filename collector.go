@@ -200,6 +200,11 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 			continue
 		}
 
+		// It's a valid block since no keys are given to further filter
+		if len(p.Keys) == 0 {
+			return true, nil
+		}
+
 		minIdx, found := sort.Find(len(p.Keys), func(i int) int {
 			return bytes.Compare(min, p.Keys[i][PrimaryKeyStartIdx:])
 		})
