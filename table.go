@@ -108,6 +108,26 @@ type Table[T any] interface {
 	TableWriter[T]
 }
 
+type _indexIter[T any] struct {
+	Iterator
+	serializer Serializer[*T]
+}
+
+func (r *_indexIter[T]) Skip(n uint64) bool {
+	for i := uint64(0); i < n; i++ {
+		if !r.Next() {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *_indexIter[T]) Deserialize(val []byte) (T, error) {
+	var record T
+	err := r.serializer.Deserialize(val, &record)
+	return record, err
+}
+
 type TableOptions[T any] struct {
 	DB DB
 
@@ -783,30 +803,38 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
-	return t.get(key, batch)
+	records, err := t.get([][]byte{key}, batch)
+	if err != nil {
+		return utils.MakeNew[T](), err
+	}
+	return records[0], nil
 }
 
-func (t *_table[T]) get(key []byte, batch Batch) (T, error) {
+func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}},
+				&PrimaryKeyFilter{ID: t.id, Keys: keys},
 			},
 			KeyTypes: pebble.IterKeyTypePointsOnly,
 		},
 	}, batch)
 	defer func() { _ = iter.Close() }()
 
-	if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
-		return utils.MakeNew[T](), fmt.Errorf("not found")
+	records := make([]T, 0, len(keys))
+	for i := 0; i < len(keys); i++ {
+		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+			return nil, fmt.Errorf("not found")
+		}
+		var tr T
+		err := t.serializer.Deserialize(iter.Value(), &tr)
+		if err != nil {
+			return nil, fmt.Errorf("get failed to deserialize: %w", err)
+		}
+		records = append(records, tr)
 	}
 
-	var tr T
-	err := t.serializer.Deserialize(iter.Value(), &tr)
-	if err != nil {
-		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
-	}
-	return tr, nil
+	return records, nil
 }
 
 func (t *_table[T]) Iter(opt *IterOptions, optBatch ...Batch) Iterator {
@@ -932,6 +960,34 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	}
 
 	return nil
+}
+
+func (t *_table[T]) indexIter(ctx context.Context, prefix []byte, optBatch ...Batch) (*_indexIter[T], bool) {
+	var iter Iterator
+	var batch Batch
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch = optBatch[0]
+		iter = batch.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: prefix,
+			},
+		})
+	} else {
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: prefix,
+			},
+		})
+	}
+
+	if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
+		return nil, false
+	}
+
+	return &_indexIter[T]{
+		Iterator:   iter,
+		serializer: t.serializer,
+	}, true
 }
 
 func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
