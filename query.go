@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
 )
 
@@ -173,19 +174,18 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 
 		prefix := q.table.indexKey(query.IndexSelector, query.Index, prefixBuffer[:0])
 
-		iter, exist := q.table.indexIter(ctx, prefix)
-		if !exist {
+		iter := q.table.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: prefix,
+			},
+		})
+
+		if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
+			_ = iter.Close()
 			continue
 		}
 
-		limit := math.MaxInt
-		if !q.shouldSort() && q.shouldLimit() {
-			limit = int(q.limit)
-			if !q.shouldApplyOffsetEarly() {
-				limit += int(q.offset)
-			}
-		}
-
+		// check if can apply offset in here
 		skip := uint64(0)
 		if q.shouldApplyOffsetEarly() {
 			skip = q.offset
@@ -195,11 +195,20 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 			skip++
 		}
 
-		if !iter.Skip(skip) {
-			if err := iter.Close(); err != nil {
-				return err
+		for skip > 0 {
+			if !iter.Next() {
+				break
 			}
-			continue
+			skip--
+		}
+
+		// calculate the number of records needs to be scanned.
+		limit := math.MaxInt
+		if !q.shouldSort() && q.shouldLimit() {
+			limit = int(q.limit)
+			if !q.shouldApplyOffsetEarly() {
+				limit += int(q.offset)
+			}
 		}
 
 		for ; iter.Valid() && len(records) < limit; iter.Next() {
@@ -213,7 +222,7 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 					return err
 				}
 			} else {
-				r, err := iter.Deserialize(iter.Value())
+				r, err := q.table.Deserialize(iter.Value())
 				if err != nil {
 					_ = iter.Close()
 					return err
@@ -237,47 +246,6 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		if err := iter.Close(); err != nil {
 			return err
 		}
-
-		// err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
-		// 	if q.isAfter && !skippedFirstRow {
-		// 		skippedFirstRow = true
-		// 		return true, nil
-		// 	}
-
-		// 	// check if can apply offset in here
-		// 	if q.shouldApplyOffsetEarly() && q.offset > count {
-		// 		count++
-		// 		return true, nil
-		// 	}
-
-		// 	// get and deserialize
-		// 	record, err := lazy.Get()
-		// 	if err != nil {
-		// 		return false, err
-		// 	}
-
-		// 	// filter if filter available
-		// 	if q.shouldFilter(query) {
-		// 		if query.FilterFunc(record) {
-		// 			records = append(records, record)
-		// 			count++
-		// 		}
-		// 	} else {
-		// 		records = append(records, record)
-		// 		count++
-		// 	}
-
-		// 	next := true
-		// 	// check if we need to iterate further
-		// 	if !q.shouldSort() && q.shouldLimit() {
-		// 		next = count < q.offset+q.limit
-		// 	}
-
-		// 	return next, nil
-		// }, optBatch...)
-		// if err != nil {
-		// 	return err
-		// }
 	}
 
 	// sorting

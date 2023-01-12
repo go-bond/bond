@@ -107,27 +107,6 @@ type Table[T any] interface {
 	TableReader[T]
 	TableWriter[T]
 }
-
-type _indexIter[T any] struct {
-	Iterator
-	serializer Serializer[*T]
-}
-
-func (r *_indexIter[T]) Skip(n uint64) bool {
-	for i := uint64(0); i < n; i++ {
-		if !r.Next() {
-			return false
-		}
-	}
-	return true
-}
-
-func (r *_indexIter[T]) Deserialize(val []byte) (T, error) {
-	var record T
-	err := r.serializer.Deserialize(val, &record)
-	return record, err
-}
-
 type TableOptions[T any] struct {
 	DB DB
 
@@ -962,34 +941,6 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	return nil
 }
 
-func (t *_table[T]) indexIter(ctx context.Context, prefix []byte, optBatch ...Batch) (*_indexIter[T], bool) {
-	var iter Iterator
-	var batch Batch
-	if len(optBatch) > 0 && optBatch[0] != nil {
-		batch = optBatch[0]
-		iter = batch.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: prefix,
-			},
-		})
-	} else {
-		iter = t.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: prefix,
-			},
-		})
-	}
-
-	if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
-		return nil, false
-	}
-
-	return &_indexIter[T]{
-		Iterator:   iter,
-		serializer: t.serializer,
-	}, true
-}
-
 func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
 	sort.Sort(&utils.SortShim{
 		Length: len(keys),
@@ -1114,4 +1065,10 @@ func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], 
 	}
 
 	return
+}
+
+func (t *_table[T]) Deserialize(val []byte) (T, error) {
+	var record T
+	err := t.serializer.Deserialize(val, &record)
+	return record, err
 }
