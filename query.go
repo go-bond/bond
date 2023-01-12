@@ -161,13 +161,16 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		return nil
 	}
 
+	prefixBuffer := _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(prefixBuffer)
+
 	for _, query := range q.queries {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
-		prefixBuffer := _keyBufferPool.Get().([]byte)
+
 		prefix := q.table.indexKey(query.IndexSelector, query.Index, prefixBuffer[:0])
 
 		iter, exist := q.table.indexIter(ctx, prefix)
@@ -202,7 +205,7 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		for ; iter.Valid() && len(records) < limit; iter.Next() {
 			if query.Index.IndexID != PrimaryIndexID {
 				batchedKeys = append(batchedKeys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
-				if len(batchedKeys) < 10 && len(batchedKeys)+len(records) <= int(q.limit) {
+				if len(batchedKeys) < 10 && len(batchedKeys)+len(records) <= int(limit) {
 					continue
 				}
 				if err := updateBatchedRecords(query); err != nil {
@@ -234,8 +237,6 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		if err := iter.Close(); err != nil {
 			return err
 		}
-
-		_keyBufferPool.Put(prefixBuffer)
 
 		// err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
 		// 	if q.isAfter && !skippedFirstRow {
