@@ -138,6 +138,8 @@ type _table[T any] struct {
 
 	filter Filter
 
+	scanBatchSize int
+
 	mutex sync.RWMutex
 }
 
@@ -164,6 +166,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		serializer:       serializer,
 		filter:           opt.Filter,
 		mutex:            sync.RWMutex{},
+		scanBatchSize:    DefaultScanBatchSize,
 	}
 
 	return table
@@ -798,33 +801,24 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 	if len(keys) == 0 {
 		return make([]T, 0), nil
 	}
-	// todo: copy keys, sort them, get values returen in original order
-	index := make([]float32, len(keys))
-	index[0] = 0.1
-	tmpKeys := make([][]byte, 0, len(keys))
-	tmpKeys = append(tmpKeys, keys...)
+
+	keyOrder := utils.ArrayN(len(keys))
 
 	sort.Sort(&utils.SortShim{
-		Length: len(tmpKeys),
+		Length: len(keys),
 		SwapFn: func(i, j int) {
-			tmpKeys[i], tmpKeys[j] = tmpKeys[j], tmpKeys[i]
-			if index[i] == 0 {
-				index[i] = float32(i)
-			}
-			if index[j] == 0 {
-				index[j] = float32(j)
-			}
-			index[i], index[j] = index[j], index[i]
+			keys[i], keys[j] = keys[j], keys[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
 		},
 		LessFn: func(i, j int) bool {
-			return bytes.Compare(tmpKeys[i], tmpKeys[j]) < 0
+			return bytes.Compare(keys[i], keys[j]) < 0
 		},
 	})
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&PrimaryKeyFilter{ID: t.id, Keys: tmpKeys},
+				&PrimaryKeyFilter{ID: t.id, Keys: keys},
 			},
 			KeyTypes: pebble.IterKeyTypePointsOnly,
 		},
@@ -832,8 +826,8 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 	defer func() { _ = iter.Close() }()
 
 	records := make([]T, len(keys))
-	for i := 0; i < len(tmpKeys); i++ {
-		if !iter.SeekGE(tmpKeys[i]) || !bytes.Equal(iter.Key(), tmpKeys[i]) {
+	for i := 0; i < len(keys); i++ {
+		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			return nil, fmt.Errorf("not found")
 		}
 		var record T
@@ -841,12 +835,20 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
-		idx := i
-		if index[i] != 0 {
-			idx = int(index[i])
-		}
-		records[idx] = record
+		records[keyOrder[i]] = record
 	}
+
+	// reverts the keys to the original order.
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			keys[i], keys[j] = keys[j], keys[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
+		},
+		LessFn: func(i, j int) bool {
+			return keyOrder[i] < keyOrder[j]
+		},
+	})
 
 	return records, nil
 }
@@ -893,13 +895,14 @@ func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l
 }
 
 func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	// if idx.IndexID == PrimaryIndexID {
-	// 	// todo: implement scan for each for primary index
-	// 	return t.scanForEachPrimaryIndex(ctx, s, f, optBatch...)
-	// } else {
-	// 	// todo: implement scan for each for secondary indexes
-	// 	return t.scanForEachSecondaryIndex(ctx, idx, s, f, optBatch...)
-	// }
+	if idx.IndexID == PrimaryIndexID {
+		return t.scanForEachPrimaryIndex(ctx, idx, s, f, optBatch...)
+	} else {
+		return t.scanForEachSecondaryIndex(ctx, idx, s, f, optBatch...)
+	}
+}
+
+func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
@@ -922,38 +925,14 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 		})
 	}
 
-	var getValue func() (T, error)
-	var keyBuffer = _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
-	if idx.IndexID == PrimaryIndexID {
-		getValue = func() (T, error) {
-			var record T
-			if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
-				return record, nil
-			} else {
-				return utils.MakeNew[T](), err
-			}
-		}
-	} else {
-		getValue = func() (T, error) {
-			tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
-
-			valueData, closer, err := t.db.Get(tableKey, batch)
-			if err != nil {
-				return utils.MakeNew[T](), err
-			}
-
-			defer func() { _ = closer.Close() }()
-
-			var record T
-			if err = t.serializer.Deserialize(valueData, &record); err == nil {
-				return record, nil
-			} else {
-				return utils.MakeNew[T](), err
-			}
+	getValue := func() (T, error) {
+		var record T
+		if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
+			return record, nil
+		} else {
+			return utils.MakeNew[T](), err
 		}
 	}
-
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
@@ -982,126 +961,54 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	return nil
 }
 
-/*prefixBuffer := _keyBufferPool.Get().([]byte)
-defer _keyBufferPool.Put(prefixBuffer)
-
-selector := t.indexKey(s, idx, prefixBuffer[:0])
-
-var iter Iterator
-var batch Batch
-if len(optBatch) > 0 && optBatch[0] != nil {
-	batch = optBatch[0]
-	iter = batch.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: selector,
-		},
-	})
-} else {
-	iter = t.db.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: selector,
-		},
-	})
-}
-
-var getValue func() (T, error)
-var keyBuffer = _keyBufferPool.Get().([]byte)
-defer _keyBufferPool.Put(keyBuffer)
-if idx.IndexID == PrimaryIndexID {
-	getValue = func() (T, error) {
-		var record T
-		if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
-			return record, nil
-		} else {
-			return utils.MakeNew[T](), err
-		}
-	}
-} else {
-	getValue = func() (T, error) {
-		tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
-
-		valueData, closer, err := t.db.Get(tableKey, batch)
-		if err != nil {
-			return utils.MakeNew[T](), err
-		}
-
-		defer func() { _ = closer.Close() }()
-
-		var record T
-		if err = t.serializer.Deserialize(valueData, &record); err == nil {
-			return record, nil
-		} else {
-			return utils.MakeNew[T](), err
-		}
-	}
-}
-
-for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("context done: %w", ctx.Err())
-	default:
-	}
-
-	if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
-		break
-	} else {
-		if err != nil {
-			_ = iter.Close()
-			return err
-		}
-
-		if !cont {
-			break
-		}
-	}
-}
-
-err := iter.Close()
-if err != nil {
-	return err
-}
-*/
-
-func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	return nil
-}
-
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
-	prefix := t.indexKey(s, idx, prefixBuffer[:0])
+	selector := t.indexKey(s, idx, prefixBuffer[:0])
 
-	iter := t.db.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: prefix,
-		},
-	})
+	var iter Iterator
+	var batch Batch
+	if len(optBatch) > 0 && optBatch[0] != nil {
+		batch = optBatch[0]
+		iter = batch.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
+		})
+	} else {
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: selector,
+			},
+		})
+	}
 
 	var prefetchedBatch []T
 	var prefetchedBatchIndex int
+	var keyBuffer = _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(keyBuffer)
 
 	getValueAndPrefetch := func() (T, error) {
-		// todo: prefetch: iterete to fill batch
-		// 1) iterate over index iterator to fill key array
-		// 2) get values for keys
-
-		// reteurn first elemnt
-		prefetchedBatchIndex++
-		return prefetchedBatch[0], nil
+		if len(prefetchedBatch) == prefetchedBatchIndex {
+			// prefetch records.
+			prefetchedBatch = prefetchedBatch[:0]
+			keys := make([][]byte, 0, t.scanBatchSize)
+			for ; iter.Valid() && len(prefetchedBatch) < t.scanBatchSize; iter.Next() {
+				keys = append(keys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
+			}
+			var err error
+			prefetchedBatch, err = t.get(keys, batch)
+			if err != nil {
+				return utils.MakeNew[T](), err
+			}
+			prefetchedBatchIndex++
+			return prefetchedBatch[0], nil
+		}
+		return prefetchedBatch[prefetchedBatchIndex], nil
 	}
 
-	// if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
-	// 	_ = iter.Close()
-	// }
-	// batched key.
-	// two questions that needs to be answered:
-	// 1) how do we skip initial rows
-	// 2) how do we batch it and return the value.
-	// prefetch 100 keys sort and load them. is it fine to prefetch it.
-
-	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
+	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -1121,9 +1028,8 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 				prefetchedBatchIndex++
 			}
-
-			prefetchedBatch = nil
 			prefetchedBatchIndex = 0
+			prefetchedBatch = nil
 		}
 	}
 
