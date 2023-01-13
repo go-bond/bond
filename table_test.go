@@ -1138,3 +1138,52 @@ func TestBond_Batch(t *testing.T) {
 		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
 }
+
+func TestTableMultiGet(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	}).(*_table[*TokenBalance])
+
+	for i := 0; i < 200; i++ {
+		err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{&TokenBalance{
+			ID:              uint64(i),
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		}})
+		require.NoError(t, err)
+	}
+
+	// retrive all the inserted in reverse order.
+	keys := [][]byte{}
+	for i := 199; i >= 0; i-- {
+		keys = append(keys, tokenBalanceTable.key(&TokenBalance{
+			ID:              uint64(i),
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		}, []byte{}))
+	}
+
+	records, err := tokenBalanceTable.get(keys, nil)
+	require.NoError(t, err)
+	id := uint64(199)
+	for _, record := range records {
+		require.Equal(t, record.ID, id)
+		id--
+	}
+}

@@ -24,6 +24,8 @@ var _multiKeyBufferPool = sync.Pool{New: func() any {
 const KeyBufferInitialSize = 10240
 const ReindexBatchSize = 10000
 
+const DefaultScanBatchSize = 100
+
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
@@ -114,6 +116,9 @@ type TableOptions[T any] struct {
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
+
+	// todo: provide docs
+	ScanBatchSize int
 
 	Filter Filter
 }
@@ -790,27 +795,57 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 }
 
 func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
+	if len(keys) == 0 {
+		return make([]T, 0), nil
+	}
+	// todo: copy keys, sort them, get values returen in original order
+	index := make([]float32, len(keys))
+	index[0] = 0.1
+	tmpKeys := make([][]byte, 0, len(keys))
+	tmpKeys = append(tmpKeys, keys...)
+
+	sort.Sort(&utils.SortShim{
+		Length: len(tmpKeys),
+		SwapFn: func(i, j int) {
+			tmpKeys[i], tmpKeys[j] = tmpKeys[j], tmpKeys[i]
+			if index[i] == 0 {
+				index[i] = float32(i)
+			}
+			if index[j] == 0 {
+				index[j] = float32(j)
+			}
+			index[i], index[j] = index[j], index[i]
+		},
+		LessFn: func(i, j int) bool {
+			return bytes.Compare(tmpKeys[i], tmpKeys[j]) < 0
+		},
+	})
+
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&PrimaryKeyFilter{ID: t.id, Keys: keys},
+				&PrimaryKeyFilter{ID: t.id, Keys: tmpKeys},
 			},
 			KeyTypes: pebble.IterKeyTypePointsOnly,
 		},
 	}, batch)
 	defer func() { _ = iter.Close() }()
 
-	records := make([]T, 0, len(keys))
-	for i := 0; i < len(keys); i++ {
-		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+	records := make([]T, len(keys))
+	for i := 0; i < len(tmpKeys); i++ {
+		if !iter.SeekGE(tmpKeys[i]) || !bytes.Equal(iter.Key(), tmpKeys[i]) {
 			return nil, fmt.Errorf("not found")
 		}
-		var tr T
-		err := t.serializer.Deserialize(iter.Value(), &tr)
+		var record T
+		err := t.serializer.Deserialize(iter.Value(), &record)
 		if err != nil {
 			return nil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
-		records = append(records, tr)
+		idx := i
+		if index[i] != 0 {
+			idx = int(index[i])
+		}
+		records[idx] = record
 	}
 
 	return records, nil
@@ -858,6 +893,13 @@ func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l
 }
 
 func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+	// if idx.IndexID == PrimaryIndexID {
+	// 	// todo: implement scan for each for primary index
+	// 	return t.scanForEachPrimaryIndex(ctx, s, f, optBatch...)
+	// } else {
+	// 	// todo: implement scan for each for secondary indexes
+	// 	return t.scanForEachSecondaryIndex(ctx, idx, s, f, optBatch...)
+	// }
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
@@ -936,6 +978,153 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	err := iter.Close()
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+/*prefixBuffer := _keyBufferPool.Get().([]byte)
+defer _keyBufferPool.Put(prefixBuffer)
+
+selector := t.indexKey(s, idx, prefixBuffer[:0])
+
+var iter Iterator
+var batch Batch
+if len(optBatch) > 0 && optBatch[0] != nil {
+	batch = optBatch[0]
+	iter = batch.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: selector,
+		},
+	})
+} else {
+	iter = t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: selector,
+		},
+	})
+}
+
+var getValue func() (T, error)
+var keyBuffer = _keyBufferPool.Get().([]byte)
+defer _keyBufferPool.Put(keyBuffer)
+if idx.IndexID == PrimaryIndexID {
+	getValue = func() (T, error) {
+		var record T
+		if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
+			return record, nil
+		} else {
+			return utils.MakeNew[T](), err
+		}
+	}
+} else {
+	getValue = func() (T, error) {
+		tableKey := KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])
+
+		valueData, closer, err := t.db.Get(tableKey, batch)
+		if err != nil {
+			return utils.MakeNew[T](), err
+		}
+
+		defer func() { _ = closer.Close() }()
+
+		var record T
+		if err = t.serializer.Deserialize(valueData, &record); err == nil {
+			return record, nil
+		} else {
+			return utils.MakeNew[T](), err
+		}
+	}
+}
+
+for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("context done: %w", ctx.Err())
+	default:
+	}
+
+	if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
+		break
+	} else {
+		if err != nil {
+			_ = iter.Close()
+			return err
+		}
+
+		if !cont {
+			break
+		}
+	}
+}
+
+err := iter.Close()
+if err != nil {
+	return err
+}
+*/
+
+func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+	return nil
+}
+
+func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+	prefixBuffer := _keyBufferPool.Get().([]byte)
+	defer _keyBufferPool.Put(prefixBuffer)
+
+	prefix := t.indexKey(s, idx, prefixBuffer[:0])
+
+	iter := t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: prefix,
+		},
+	})
+
+	var prefetchedBatch []T
+	var prefetchedBatchIndex int
+
+	getValueAndPrefetch := func() (T, error) {
+		// todo: prefetch: iterete to fill batch
+		// 1) iterate over index iterator to fill key array
+		// 2) get values for keys
+
+		// reteurn first elemnt
+		prefetchedBatchIndex++
+		return prefetchedBatch[0], nil
+	}
+
+	// if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
+	// 	_ = iter.Close()
+	// }
+	// batched key.
+	// two questions that needs to be answered:
+	// 1) how do we skip initial rows
+	// 2) how do we batch it and return the value.
+	// prefetch 100 keys sort and load them. is it fine to prefetch it.
+
+	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
+		if cont, err := f(iter.Key(), Lazy[T]{getValueAndPrefetch}); !cont || err != nil {
+			_ = iter.Close()
+			return err
+		} else {
+			for prefetchedBatchIndex < len(prefetchedBatch) {
+				cont, err := f(iter.Key(), Lazy[T]{getValueAndPrefetch})
+				if !cont || err != nil {
+					_ = iter.Close()
+					return err
+				}
+
+				prefetchedBatchIndex++
+			}
+
+			prefetchedBatch = nil
+			prefetchedBatchIndex = 0
+		}
 	}
 
 	return nil

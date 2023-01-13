@@ -27,3 +27,11 @@ func (s *SortShim) Swap(i, j int) {
 func (s *SortShim) Less(i, j int) bool {
 	return s.LessFn(i, j)
 }
+
+func ArrayN(n int) []int {
+	arr := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		arr = append(arr, i)
+	}
+	return arr
+}
