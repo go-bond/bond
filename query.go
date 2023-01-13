@@ -3,10 +3,8 @@ package bond
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
 )
 
@@ -139,111 +137,47 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	}
 
 	var records []R
-	var batchedKeys [][]byte
-	var keyBuffer = _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
-
-	updateBatchedRecords := func(query FilterAndIndex[R]) error {
-		batchedRecords, err := q.table.get(batchedKeys, nil)
-		if err != nil {
-			return err
-		}
-		for _, r := range batchedRecords {
-			if !q.shouldFilter(query) {
-				records = append(records, r)
-				continue
-			}
-
-			if query.FilterFunc(r) {
-				records = append(records, r)
-			}
-		}
-		batchedKeys = batchedKeys[:0]
-		return nil
-	}
-
-	prefixBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(prefixBuffer)
-
 	for _, query := range q.queries {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
-		default:
-		}
-
-		prefix := q.table.indexKey(query.IndexSelector, query.Index, prefixBuffer[:0])
-
-		iter := q.table.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: prefix,
-			},
-		})
-
-		if !iter.SeekPrefixGE(prefix) || !iter.Valid() {
-			_ = iter.Close()
-			continue
-		}
-
-		// check if can apply offset in here
-		skip := uint64(0)
-		if q.shouldApplyOffsetEarly() {
-			skip = q.offset
-		}
-
-		if q.isAfter {
-			skip++
-		}
-
-		for skip > 0 {
-			if !iter.Next() {
-				break
+		count := uint64(0)
+		skippedFirstRow := false
+		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
+			if q.isAfter && !skippedFirstRow {
+				skippedFirstRow = true
+				return true, nil
 			}
-			skip--
-		}
 
-		// calculate the number of records needs to be scanned.
-		limit := math.MaxInt
-		if !q.shouldSort() && q.shouldLimit() {
-			limit = int(q.limit)
-			if !q.shouldApplyOffsetEarly() {
-				limit += int(q.offset)
+			// check if can apply offset in here
+			if q.shouldApplyOffsetEarly() && q.offset > count {
+				count++
+				return true, nil
 			}
-		}
 
-		for ; iter.Valid() && len(records) < limit; iter.Next() {
-			if query.Index.IndexID != PrimaryIndexID {
-				batchedKeys = append(batchedKeys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
-				if len(batchedKeys) < 10 && len(batchedKeys)+len(records) <= int(limit) {
-					continue
-				}
-				if err := updateBatchedRecords(query); err != nil {
-					_ = iter.Close()
-					return err
+			// get and deserialize
+			record, err := lazy.Get()
+			if err != nil {
+				return false, err
+			}
+
+			// filter if filter available
+			if q.shouldFilter(query) {
+				if query.FilterFunc(record) {
+					records = append(records, record)
+					count++
 				}
 			} else {
-				r, err := q.table.Deserialize(iter.Value())
-				if err != nil {
-					_ = iter.Close()
-					return err
-				}
-				if !q.shouldFilter(query) {
-					records = append(records, r)
-					continue
-				}
-
-				if query.FilterFunc(r) {
-					records = append(records, r)
-				}
+				records = append(records, record)
+				count++
 			}
-		}
 
-		if err := updateBatchedRecords(query); err != nil {
-			_ = iter.Close()
-			return err
-		}
+			next := true
+			// check if we need to iterate further
+			if !q.shouldSort() && q.shouldLimit() {
+				next = count < q.offset+q.limit
+			}
 
-		if err := iter.Close(); err != nil {
+			return next, nil
+		}, optBatch...)
+		if err != nil {
 			return err
 		}
 	}

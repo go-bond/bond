@@ -1039,7 +1039,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		}
 	}
 
-	return nil
+	return iter.Close()
 }
 
 func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
