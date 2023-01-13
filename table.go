@@ -117,7 +117,8 @@ type TableOptions[T any] struct {
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
 
-	// todo: provide docs
+	// TableScanner speeds up the scanning speed by prefetching the batch of records.
+	// ScanBatchSize is used to configure the batch size.
 	ScanBatchSize int
 
 	Filter Filter
@@ -149,6 +150,11 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		serializer = opt.Serializer
 	}
 
+	scanBatchSize := opt.ScanBatchSize
+	if scanBatchSize == 0 {
+		scanBatchSize = DefaultScanBatchSize
+	}
+
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
 
 	table := &_table[T]{
@@ -166,7 +172,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		serializer:       serializer,
 		filter:           opt.Filter,
 		mutex:            sync.RWMutex{},
-		scanBatchSize:    DefaultScanBatchSize,
+		scanBatchSize:    scanBatchSize,
 	}
 
 	return table
