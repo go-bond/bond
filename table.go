@@ -117,7 +117,7 @@ type TableOptions[T any] struct {
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
 
-	// TableScanner speeds up the scanning speed by prefetching the batch of records.
+	// TableScanner speeds up the scanning speed by prefetching records in batches.
 	// ScanBatchSize is used to configure the batch size.
 	ScanBatchSize int
 
@@ -1003,11 +1003,13 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			for ; iter.Valid() && len(prefetchedBatch) < t.scanBatchSize; iter.Next() {
 				keys = append(keys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
 			}
+
 			var err error
 			prefetchedBatch, err = t.get(keys, batch)
 			if err != nil {
 				return utils.MakeNew[T](), err
 			}
+
 			prefetchedBatchIndex++
 			return prefetchedBatch[0], nil
 		}
