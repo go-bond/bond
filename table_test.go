@@ -1121,7 +1121,7 @@ func TestScanIndexForEachSecondary(t *testing.T) {
 		TokenBalanceAccountAddressIndex,
 	})
 
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 2000; i++ {
 		tokenBalanceTable.Insert(context.Background(), []*TokenBalance{&TokenBalance{
 			ID:              uint64(i),
 			AccountID:       1,
@@ -1134,7 +1134,7 @@ func TestScanIndexForEachSecondary(t *testing.T) {
 	count := uint64(0)
 	err := tokenBalanceTable.ScanIndexForEach(context.Background(), TokenBalanceAccountAddressIndex,
 		&TokenBalance{AccountAddress: "0xtestAccount"}, func(keyBytes KeyBytes, l Lazy[*TokenBalance]) (bool, error) {
-			if count < 50 {
+			if count < 300 {
 				count++
 				return true, nil
 			}
@@ -1151,7 +1151,7 @@ func TestScanIndexForEachSecondary(t *testing.T) {
 			return true, nil
 		})
 	require.NoError(t, err)
-	require.Equal(t, count, uint64(200))
+	require.Equal(t, count, uint64(2000))
 }
 
 func TestTableScanPrimary(t *testing.T) {

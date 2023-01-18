@@ -984,51 +984,48 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	var prefetchedBatchIndex int
 	var keyBuffer = _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
+	keys := make([][]byte, 0, t.scanBatchSize)
+	indexKeys := make([][]byte, 0, t.scanBatchSize)
 
-	getValueAndPrefetch := func() (T, error) {
-		if len(prefetchedBatch) == prefetchedBatchIndex {
-			// prefetch records.
-			prefetchedBatch = prefetchedBatch[:0]
-			keys := make([][]byte, 0, t.scanBatchSize)
-			for ; iter.Valid() && len(prefetchedBatch) < t.scanBatchSize; iter.Next() {
-				keys = append(keys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
-			}
-
-			var err error
-			prefetchedBatch, err = t.get(keys, batch)
-			if err != nil {
-				return utils.MakeNew[T](), err
-			}
-
-			prefetchedBatchIndex++
-			return prefetchedBatch[0], nil
+	prefetch := func() error {
+		prefetchedBatch = prefetchedBatch[:0]
+		for ; iter.Valid() && len(keys) < t.scanBatchSize; iter.Next() {
+			keys = append(keys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
+			indexKeys = append(indexKeys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
 		}
-		return prefetchedBatch[prefetchedBatchIndex], nil
+		var err error
+		prefetchedBatch, err = t.get(keys, batch)
+		return err
 	}
 
-	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+	iter.SeekPrefixGE(selector)
+	for iter.Valid() {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
-		if cont, err := f(iter.Key(), Lazy[T]{getValueAndPrefetch}); !cont || err != nil {
+		if err := prefetch(); err != nil {
 			_ = iter.Close()
 			return err
-		} else {
-			for prefetchedBatchIndex < len(prefetchedBatch) {
-				cont, err := f(iter.Key(), Lazy[T]{getValueAndPrefetch})
-				if !cont || err != nil {
-					_ = iter.Close()
-					return err
-				}
-
-				prefetchedBatchIndex++
-			}
-			prefetchedBatchIndex = 0
-			prefetchedBatch = nil
 		}
+
+		for prefetchedBatchIndex < len(prefetchedBatch) {
+			cont, err := f(indexKeys[prefetchedBatchIndex], Lazy[T]{GetFunc: func() (T, error) {
+				return prefetchedBatch[prefetchedBatchIndex], nil
+			}})
+			if !cont || err != nil {
+				_ = iter.Close()
+				return err
+			}
+			prefetchedBatchIndex++
+		}
+
+		prefetchedBatchIndex = 0
+		prefetchedBatch = nil
+		keys = nil
+		indexKeys = nil
 	}
 
 	return iter.Close()
