@@ -346,7 +346,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _keyBufferPool.Put(indexKeysBuffer)
 
 	// exist iter
-	t.sortKeysAndRows(keys, trs)
+	keyOrder := t.sortKeys(keys)
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes: pebble.IterKeyTypePointsOnly,
@@ -358,21 +358,19 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer func() { _ = iter.Close() }()
 
 	// process rows
-	for i, tr := range trs {
+	for i, key := range keys {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
-		// insert key
-		key := keys[i]
-
 		// check if exist
 		if t.keyDuplicate(i, keys) || t.exist(key, keyBatch, iter) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
+		tr := trs[keyOrder[i]]
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
 		if err != nil {
@@ -446,7 +444,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer keysCloser()
 	defer _keyBufferPool.Put(indexKeyBuffer)
 
-	t.sortKeysAndRows(keys, trs)
+	keyOrder := t.sortKeys(keys)
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes: pebble.IterKeyTypePointsOnly,
@@ -457,15 +455,12 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}, keyBatch)
 	defer func() { _ = iter.Close() }()
 
-	for i, tr := range trs {
+	for i, key := range keys {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
-
-		// update key
-		key := keys[i]
 
 		// skip this records since the next record updating the
 		// same primary key.
@@ -482,6 +477,8 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if err != nil {
 			return err
 		}
+
+		tr := trs[keyOrder[i]]
 
 		// serialize
 		data, err := t.serializer.Serialize(&tr)
@@ -538,7 +535,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	var (
 		keyBatch      Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
-		indexKeyBatch = t.db.Batch()
 	)
 	if externalBatch {
 		keyBatch = optBatch[0]
@@ -550,7 +546,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
-		_ = indexKeyBatch.Close()
 	}()
 
 	var (
@@ -584,13 +579,8 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 	}
 
-	err := keyBatch.Apply(indexKeyBatch, Sync)
-	if err != nil {
-		return err
-	}
-
 	if !externalBatch {
-		err = keyBatch.Commit(Sync)
+		err := keyBatch.Commit(Sync)
 		if err != nil {
 			return err
 		}
@@ -634,7 +624,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	defer keysCloser()
 	defer _keyBufferPool.Put(indexKeyBuffer)
 
-	t.sortKeysAndRows(keys, trs)
+	keyOrder := t.sortKeys(keys)
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			KeyTypes: pebble.IterKeyTypePointsOnly,
@@ -645,8 +635,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}, keyBatch)
 	defer func() { _ = iter.Close() }()
 
-	for i := 0; i < len(trs); {
-		tr := trs[i]
+	for i := 0; i < len(keys); {
+		tr := trs[keyOrder[i]]
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("context done: %w", ctx.Err())
@@ -1044,17 +1034,19 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	return iter.Close()
 }
 
-func (t *_table[T]) sortKeysAndRows(keys [][]byte, trs []T) {
+func (t *_table[T]) sortKeys(keys [][]byte) []int {
+	keyOrder := utils.ArrayN(len(keys))
 	sort.Sort(&utils.SortShim{
 		Length: len(keys),
 		SwapFn: func(i, j int) {
-			trs[i], trs[j] = trs[j], trs[i]
 			keys[i], keys[j] = keys[j], keys[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
 		},
 		LessFn: func(i, j int) bool {
 			return bytes.Compare(keys[i], keys[j]) < 0
 		},
 	})
+	return keyOrder
 }
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
