@@ -984,14 +984,28 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	var prefetchedBatchIndex int
 	var keyBuffer = _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
+
 	keys := make([][]byte, 0, t.scanBatchSize)
+	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
+	defer _multiKeyBufferPool.Put(multiKeyBuffer)
+
 	indexKeys := make([][]byte, 0, t.scanBatchSize)
+	multiIndexBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
+	defer _multiKeyBufferPool.Put(multiIndexBuffer)
 
 	prefetch := func() error {
+		next := multiIndexBuffer
+		nextIndex := multiIndexBuffer
 		prefetchedBatch = prefetchedBatch[:0]
+
 		for ; iter.Valid() && len(keys) < t.scanBatchSize; iter.Next() {
-			keys = append(keys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
-			indexKeys = append(indexKeys, utils.Copy([]byte{}, KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0])))
+			key := KeyBytes(iter.Key()).ToDataKeyBytes(next[:0])
+			keys = append(keys, key)
+			next = key[len(key):]
+
+			indexKey := utils.Copy(nextIndex[:0], iter.Key())
+			indexKeys = append(indexKeys, indexKey)
+			nextIndex = indexKey[len(nextIndex):]
 		}
 		var err error
 		prefetchedBatch, err = t.get(keys, batch)
