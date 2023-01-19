@@ -1179,9 +1179,3 @@ func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], 
 
 	return
 }
-
-func (t *_table[T]) Deserialize(val []byte) (T, error) {
-	var record T
-	err := t.serializer.Deserialize(val, &record)
-	return record, err
-}
