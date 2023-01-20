@@ -806,7 +806,6 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 	}
 
 	keyOrder := t.sortKeys(keys)
-
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			PointKeyFilters: []pebble.BlockPropertyFilter{
