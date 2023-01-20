@@ -535,6 +535,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	var (
 		keyBatch      Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		indexKeyBatch = t.db.Batch()
 	)
 	if externalBatch {
 		keyBatch = optBatch[0]
@@ -546,6 +547,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		if !externalBatch {
 			_ = keyBatch.Close()
 		}
+		_ = indexKeyBatch.Close()
 	}()
 
 	var (
@@ -579,8 +581,13 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 	}
 
+	err := keyBatch.Apply(indexKeyBatch, Sync)
+	if err != nil {
+		return err
+	}
+
 	if !externalBatch {
-		err := keyBatch.Commit(Sync)
+		err = keyBatch.Commit(Sync)
 		if err != nil {
 			return err
 		}
