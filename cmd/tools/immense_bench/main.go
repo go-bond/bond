@@ -54,19 +54,8 @@ type TokenBalance struct {
 	Balance         uint64 `json:"balance"`
 }
 
-func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
-	TokenBalanceTableID := bond.TableID(tableID)
-
-	table := bond.NewTable(bond.TableOptions[*TokenBalance]{
-		DB:        db,
-		TableName: fmt.Sprintf("token_balance_%d", tableID),
-		TableID:   TokenBalanceTableID,
-		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddUint64Field(tb.ID).Bytes()
-		},
-	})
-
-	accountIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
+var (
+	accountIdx = bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 1,
 		IndexName: "account_address_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
@@ -75,7 +64,7 @@ func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
 		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
 	})
 
-	amountIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
+	amountIdx = bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 2,
 		IndexName: "account_amount_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
@@ -86,7 +75,7 @@ func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
 		},
 	})
 
-	tokenIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
+	tokenIdx = bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 3,
 		IndexName: "token_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, t *TokenBalance) []byte {
@@ -97,13 +86,26 @@ func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
 		},
 	})
 
-	contractIdx := bond.NewIndex(bond.IndexOptions[*TokenBalance]{
+	contractIdx = bond.NewIndex(bond.IndexOptions[*TokenBalance]{
 		IndexID:   bond.PrimaryIndexID + 4,
 		IndexName: "contract_idx",
 		IndexKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddStringField(tb.ContractAddress).Bytes()
 		},
 		IndexOrderFunc: bond.IndexOrderDefault[*TokenBalance],
+	})
+)
+
+func getTable(tableID int, db bond.DB) bond.Table[*TokenBalance] {
+	TokenBalanceTableID := bond.TableID(tableID)
+
+	table := bond.NewTable(bond.TableOptions[*TokenBalance]{
+		DB:        db,
+		TableName: fmt.Sprintf("token_balance_%d", tableID),
+		TableID:   TokenBalanceTableID,
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
 	})
 
 	err := table.AddIndex([]*bond.Index[*TokenBalance]{
@@ -134,7 +136,7 @@ func insertRecords(db bond.DB, tableID, batchSize, totalBatch int, idGenerator *
 			entries = append(entries, &TokenBalance{
 				ID:              id,
 				AccountID:       uint32(id % 10),
-				ContractAddress: RandStringRunes(20),
+				ContractAddress: "0xtestContractAddress",
 				AccountAddress:  RandStringRunes(20),
 				Balance:         uint64((id % 100) * 10),
 			})
@@ -225,6 +227,18 @@ func updateRecords(db bond.DB, tableId, batchSize int, idGenerator *UniqueRand, 
 	wg.Done()
 }
 
+func queryRecords(db bond.DB, tableID int, wg *sync.WaitGroup) {
+	table := getTable(tableID, db)
+	var records []*TokenBalance
+	err := table.Query().With(contractIdx, &TokenBalance{
+		ContractAddress: "0xtestContractAddress",
+	}).Execute(context.TODO(), &records)
+	if err != nil {
+		panic(err.Error())
+	}
+	wg.Done()
+}
+
 func readRecords(db bond.DB, tableID int, idGenerator *UniqueRand, wg *sync.WaitGroup) {
 	table := getTable(tableID, db)
 	for _, id := range idGenerator.ids {
@@ -286,6 +300,11 @@ func main() {
 				Name:  "upsert",
 				Value: false,
 				Usage: "run bondUpsert",
+			},
+			&cli.BoolFlag{
+				Name:  "query",
+				Value: false,
+				Usage: "run query",
 			},
 			&cli.BoolFlag{
 				Name:  "all",
@@ -375,6 +394,13 @@ func main() {
 					timeTaken["upsert"] = append(timeTaken["upsert"], upsertTime)
 				}
 
+				if cCtx.Bool("query") || cCtx.Bool("all") {
+					fmt.Println("query started")
+					queryTime := runBondQuery(db, cCtx.Int("total_table"))
+					fmt.Printf("Total Time Taken to query %s \n", queryTime)
+					timeTaken["query"] = append(timeTaken["query"], queryTime)
+				}
+
 				close()
 			}
 
@@ -390,6 +416,9 @@ func main() {
 			}
 			for _, upsertTime := range timeTaken["upsert"] {
 				fmt.Printf("Total time taken to upsert %s \n", upsertTime)
+			}
+			for _, queryTime := range timeTaken["query"] {
+				fmt.Printf("Total time taken to query %s \n", queryTime)
 			}
 			return nil
 		},
@@ -473,6 +502,19 @@ func runBondUpdate(db bond.DB, bactchSize int, idGenerators []*UniqueRand) time.
 	wg.Wait()
 	ticker.Stop()
 
+	elapsed := time.Since(start)
+	return elapsed
+}
+
+func runBondQuery(db bond.DB, totalTable int) time.Duration {
+	start := time.Now()
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i < totalTable; i++ {
+		wg.Add(1)
+		go queryRecords(db, i, wg)
+	}
+	wg.Wait()
 	elapsed := time.Since(start)
 	return elapsed
 }
