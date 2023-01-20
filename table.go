@@ -798,18 +798,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 		return make([]T, 0), nil
 	}
 
-	keyOrder := utils.ArrayN(len(keys))
-
-	sort.Sort(&utils.SortShim{
-		Length: len(keys),
-		SwapFn: func(i, j int) {
-			keys[i], keys[j] = keys[j], keys[i]
-			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
-		},
-		LessFn: func(i, j int) bool {
-			return bytes.Compare(keys[i], keys[j]) < 0
-		},
-	})
+	keyOrder := t.sortKeys(keys)
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
@@ -834,18 +823,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 		records[keyOrder[i]] = record
 	}
 
-	// reverts the keys to the original order.
-	sort.Sort(&utils.SortShim{
-		Length: len(keys),
-		SwapFn: func(i, j int) {
-			keys[i], keys[j] = keys[j], keys[i]
-			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
-		},
-		LessFn: func(i, j int) bool {
-			return keyOrder[i] < keyOrder[j]
-		},
-	})
-
+	t.reorderKeys(keys, keyOrder)
 	return records, nil
 }
 
@@ -1025,8 +1003,8 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchGetValue})
-
+		cont, err := f(KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0]),
+			Lazy[T]{GetFunc: prefetchGetValue})
 		if !cont || err != nil {
 			_ = iter.Close()
 			return err
@@ -1034,7 +1012,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		// iterate from prefetched entires if exist.
 		for prefetchedBatchIndex < len(prefetchedBatch) {
-			cont, err := f(t.indexKey(prefetchedBatch[prefetchedBatchIndex], idx, keyBuffer[:0]), Lazy[T]{GetFunc: getValue})
+			cont, err := f(keys[prefetchedBatchIndex], Lazy[T]{GetFunc: getValue})
 			if !cont || err != nil {
 				_ = iter.Close()
 				return err
@@ -1063,6 +1041,19 @@ func (t *_table[T]) sortKeys(keys [][]byte) []int {
 		},
 	})
 	return keyOrder
+}
+
+func (t *_table[T]) reorderKeys(keys [][]byte, keyOrder []int) {
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			keys[i], keys[j] = keys[j], keys[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
+		},
+		LessFn: func(i, j int) bool {
+			return keyOrder[i] < keyOrder[j]
+		},
+	})
 }
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
