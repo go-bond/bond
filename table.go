@@ -967,7 +967,12 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
 	defer _multiKeyBufferPool.Put(multiKeyBuffer)
 
-	prefetchRecords := func() error {
+	getPrefetchedValue := func() (T, error) {
+		return prefetchedBatch[prefetchedBatchIndex], nil
+	}
+
+	prefetchGetValue := func() (T, error) {
+		// prefetch the required data keys.
 		next := multiKeyBuffer
 		for iter.Valid() {
 			key := KeyBytes(iter.Key()).ToDataKeyBytes(next[:0])
@@ -979,17 +984,10 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			}
 			break
 		}
+
 		var err error
 		prefetchedBatch, err = t.get(keys, batch)
-		return err
-	}
-
-	getValue := func() (T, error) {
-		return prefetchedBatch[prefetchedBatchIndex], nil
-	}
-
-	prefetchGetValue := func() (T, error) {
-		if err := prefetchRecords(); err != nil {
+		if err != nil {
 			return utils.MakeNew[T](), err
 		}
 		prefetchedBatchIndex++
@@ -1012,7 +1010,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		// iterate from prefetched entires if exist.
 		for prefetchedBatchIndex < len(prefetchedBatch) {
-			cont, err := f(keys[prefetchedBatchIndex], Lazy[T]{GetFunc: getValue})
+			cont, err := f(keys[prefetchedBatchIndex], Lazy[T]{GetFunc: getPrefetchedValue})
 			if !cont || err != nil {
 				_ = iter.Close()
 				return err

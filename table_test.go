@@ -1278,7 +1278,7 @@ func TestBondTable_MultiGet(t *testing.T) {
 	}
 }
 
-func TestMultiGetRandom(t *testing.T) {
+func TestBond_MultiGetRandom(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
 
