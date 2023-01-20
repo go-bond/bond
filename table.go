@@ -1006,6 +1006,18 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		return err
 	}
 
+	getValue := func() (T, error) {
+		return prefetchedBatch[prefetchedBatchIndex], nil
+	}
+
+	prefetchGetValue := func() (T, error) {
+		if err := prefetchRecords(); err != nil {
+			return utils.MakeNew[T](), err
+		}
+		prefetchedBatchIndex++
+		return prefetchedBatch[prefetchedBatchIndex-1], nil
+	}
+
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
@@ -1013,13 +1025,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: func() (T, error) {
-			if err := prefetchRecords(); err != nil {
-				return utils.MakeNew[T](), err
-			}
-			prefetchedBatchIndex++
-			return prefetchedBatch[prefetchedBatchIndex-1], nil
-		}})
+		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchGetValue})
 
 		if !cont || err != nil {
 			_ = iter.Close()
@@ -1028,9 +1034,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		// iterate from prefetched entires if exist.
 		for prefetchedBatchIndex < len(prefetchedBatch) {
-			cont, err := f(t.indexKey(prefetchedBatch[prefetchedBatchIndex], idx, keyBuffer[:0]), Lazy[T]{GetFunc: func() (T, error) {
-				return prefetchedBatch[prefetchedBatchIndex], nil
-			}})
+			cont, err := f(t.indexKey(prefetchedBatch[prefetchedBatchIndex], idx, keyBuffer[:0]), Lazy[T]{GetFunc: getValue})
 			if !cont || err != nil {
 				_ = iter.Close()
 				return err
