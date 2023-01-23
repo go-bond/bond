@@ -176,7 +176,7 @@ func NewPrimaryKeyFilter(id TableID, keys [][]byte) *PrimaryKeyFilter {
 
 func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 	if len(prop) == 0 {
-		return false, nil
+		return true, nil
 	}
 	// It's efficient to use raw bytes while intersecting `KeyRange` instead
 	// of using `KeyRange.Decode`
@@ -185,7 +185,7 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 		// TableID
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
-			return false, nil
+			return false, err
 		}
 		// minKeyLen | minKey
 		lenBuf := buff.Next(4)
