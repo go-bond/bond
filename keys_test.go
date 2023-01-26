@@ -168,7 +168,7 @@ func TestKey_Encode_Decode(t *testing.T) {
 	key := Key{
 		TableID:    1,
 		IndexID:    1,
-		IndexKey:   []byte("indexKey"),
+		Index:      []byte("indexKey"),
 		IndexOrder: []byte{},
 		PrimaryKey: []byte("recordKey"),
 	}
@@ -183,7 +183,7 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 	key := Key{
 		TableID:    1,
 		IndexID:    1,
-		IndexKey:   []byte("indexKey"),
+		Index:      []byte("indexKey"),
 		IndexOrder: []byte("orderKey"),
 		PrimaryKey: []byte("recordKey"),
 	}
@@ -191,7 +191,7 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 	expectedPrefixKey := Key{
 		TableID:    1,
 		IndexID:    1,
-		IndexKey:   []byte("indexKey"),
+		Index:      []byte("indexKey"),
 		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}
@@ -211,7 +211,7 @@ func TestKey_ToDataKey(t *testing.T) {
 	key := Key{
 		TableID:    1,
 		IndexID:    1,
-		IndexKey:   []byte("indexKey"),
+		Index:      []byte("indexKey"),
 		IndexOrder: []byte("orderKey"),
 		PrimaryKey: []byte("recordKey"),
 	}
@@ -219,7 +219,7 @@ func TestKey_ToDataKey(t *testing.T) {
 	expectedTableKey := Key{
 		TableID:    1,
 		IndexID:    PrimaryIndexID,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: []byte("recordKey"),
 	}
@@ -239,7 +239,7 @@ func TestKeyBytes(t *testing.T) {
 	keyStruct := Key{
 		TableID:    1,
 		IndexID:    2,
-		IndexKey:   []byte{0x01, 0x02},
+		Index:      []byte{0x01, 0x02},
 		IndexOrder: []byte{},
 		PrimaryKey: []byte{0x02, 0x01},
 	}
@@ -248,7 +248,7 @@ func TestKeyBytes(t *testing.T) {
 
 	assert.Equal(t, TableID(1), keyBytes.TableID())
 	assert.Equal(t, IndexID(2), keyBytes.IndexID())
-	assert.Equal(t, []byte{0x01, 0x02}, keyBytes.IndexKey())
+	assert.Equal(t, []byte{0x01, 0x02}, keyBytes.Index())
 }
 
 func Benchmark_KeyBuilder(b *testing.B) {

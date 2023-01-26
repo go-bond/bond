@@ -881,7 +881,7 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: primaryKey,
 	}, buff[len(primaryKey):len(primaryKey)])
@@ -893,7 +893,7 @@ func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
-		IndexKey:   indexKey,
+		Index:      indexKey,
 		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}, indexKey[len(indexKey):])
@@ -909,7 +909,7 @@ func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
 	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
-		IndexKey:   indexKeyPart,
+		Index:      indexKeyPart,
 		IndexOrder: orderKeyPart,
 		PrimaryKey: primaryKey,
 	}, orderKeyPart[len(orderKeyPart):])
