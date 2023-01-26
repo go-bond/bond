@@ -277,6 +277,12 @@ func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	return buff.Bytes()
 }
 
+func (key KeyBytes) PrimaryKey() []byte {
+	indexKeyLen := int(binary.BigEndian.Uint32(key[2:6]))
+	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexKeyLen : 10+indexKeyLen]))
+	return key[10+indexKeyLen+indexOrderLen:]
+}
+
 func (key KeyBytes) TableID() TableID {
 	return TableID(key[0])
 }

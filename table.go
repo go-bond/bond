@@ -968,6 +968,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	var prefetchedBatchIndex int
 	var keyBuffer = _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
+	if len(keyBuffer) < 10 {
+		keyBuffer = make([]byte, KeyBufferInitialSize)
+	}
+	utils.ClearBytes(keyBuffer, 10)
+	keyBuffer[0] = byte(t.ID())
 
 	keys := make([][]byte, 0, t.scanBatchSize)
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
@@ -1007,7 +1012,15 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		default:
 		}
 
-		cont, err := f(KeyBytes(iter.Key()).ToDataKeyBytes(keyBuffer[:0]),
+		// construct data key.
+		primaryKey := KeyBytes(iter.Key()).PrimaryKey()
+		// resize the buffer if needed.
+		if len(keyBuffer) < len(primaryKey)+10 {
+			needed := len(primaryKey) + 10 - len(keyBuffer)
+			keyBuffer = append(keyBuffer, make([]byte, needed)...)
+		}
+		copy(keyBuffer[10:], primaryKey)
+		cont, err := f(keyBuffer[:10+len(primaryKey)],
 			Lazy[T]{GetFunc: prefetchGetValue})
 		if !cont || err != nil {
 			_ = iter.Close()
