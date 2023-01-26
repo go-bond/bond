@@ -59,7 +59,7 @@ func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte)
 	keyPrefix := bond.KeyEncode(bond.Key{
 		TableID:    0,
 		IndexID:    0,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: []byte("bf_"),
 	})

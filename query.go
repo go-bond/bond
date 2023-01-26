@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -140,10 +141,16 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	for _, query := range q.queries {
 		count := uint64(0)
 		skippedFirstRow := false
-		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
+		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(key KeyBytes, lazy Lazy[R]) (bool, error) {
 			if q.isAfter && !skippedFirstRow {
 				skippedFirstRow = true
-				return true, nil
+
+				rowIdxKey := key.ToKey()
+				selIdxKey := KeyBytes(q.table.indexKey(q.indexSelector, query.Index, []byte{})).ToKey()
+				if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
+					bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 {
+					return true, nil
+				}
 			}
 
 			// check if can apply offset in here

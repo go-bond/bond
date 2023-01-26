@@ -147,7 +147,7 @@ func (b KeyBuilder) Bytes() []byte {
 type Key struct {
 	TableID    TableID
 	IndexID    IndexID
-	IndexKey   []byte
+	Index      []byte
 	IndexOrder []byte
 	PrimaryKey []byte
 }
@@ -156,7 +156,7 @@ func NewUserKey(key string) KeyBytes {
 	return KeyEncode(Key{
 		TableID:    BOND_DB_DATA_TABLE_ID,
 		IndexID:    BOND_DB_DATA_USER_SPACE_INDEX_ID,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: []byte(key),
 	})
@@ -166,7 +166,7 @@ func (k Key) ToDataKey() Key {
 	return Key{
 		TableID:    k.TableID,
 		IndexID:    PrimaryIndexID,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 		PrimaryKey: k.PrimaryKey,
 	}
@@ -176,18 +176,18 @@ func (k Key) ToKeyPrefix() Key {
 	return Key{
 		TableID:    k.TableID,
 		IndexID:    k.IndexID,
-		IndexKey:   k.IndexKey,
+		Index:      k.Index,
 		IndexOrder: []byte{},
 		PrimaryKey: []byte{},
 	}
 }
 
 func (k Key) IsDataKey() bool {
-	return k.IndexID == PrimaryIndexID && len(k.IndexKey) == 0
+	return k.IndexID == PrimaryIndexID && len(k.Index) == 0
 }
 
 func (k Key) IsIndexKey() bool {
-	return k.IndexID != PrimaryIndexID && len(k.IndexKey) != 0
+	return k.IndexID != PrimaryIndexID && len(k.Index) != 0
 }
 
 func (k Key) IsKeyPrefix() bool {
@@ -205,9 +205,9 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	buff.Write([]byte{byte(key.IndexID)})
 
 	var indexLenBuff [4]byte
-	binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexKey)))
+	binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.Index)))
 	buff.Write(indexLenBuff[:4])
-	buff.Write(key.IndexKey)
+	buff.Write(key.Index)
 
 	if !key.IsKeyPrefix() {
 		binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexOrder)))
@@ -230,8 +230,8 @@ func KeyDecode(keyBytes []byte) Key {
 	_, _ = buff.Read(indexLenBuff)
 	indexLen := binary.BigEndian.Uint32(indexLenBuff)
 
-	indexKey := make([]byte, indexLen)
-	_, _ = buff.Read(indexKey)
+	index := make([]byte, indexLen)
+	_, _ = buff.Read(index)
 
 	indexOrderLenBuff := make([]byte, 4)
 	_, _ = buff.Read(indexOrderLenBuff)
@@ -247,7 +247,7 @@ func KeyDecode(keyBytes []byte) Key {
 	return Key{
 		TableID:    TableID(tableID),
 		IndexID:    IndexID(indexID),
-		IndexKey:   indexKey,
+		Index:      index,
 		IndexOrder: indexOrder,
 		PrimaryKey: primaryKey,
 	}
@@ -269,10 +269,10 @@ func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	buff.Write([]byte{0, 0, 0, 0})
 	buff.Write([]byte{0, 0, 0, 0})
 
-	indexKeyLen := int(binary.BigEndian.Uint32(key[2:6]))
-	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexKeyLen : 10+indexKeyLen]))
+	indexLen := int(binary.BigEndian.Uint32(key[2:6]))
+	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexLen : 10+indexLen]))
 
-	buff.Write(key[10+indexKeyLen+indexOrderLen:])
+	buff.Write(key[10+indexLen+indexOrderLen:])
 
 	return buff.Bytes()
 }
@@ -285,9 +285,17 @@ func (key KeyBytes) IndexID() IndexID {
 	return IndexID(key[1])
 }
 
-func (key KeyBytes) IndexKey() []byte {
+func (key KeyBytes) Index() []byte {
 	keyLen := binary.BigEndian.Uint32(key[2:6])
 	return key[6 : 6+keyLen]
+}
+
+func (key KeyBytes) IsDataKey() bool {
+	return key.IndexID() == PrimaryIndexID
+}
+
+func (key KeyBytes) IsIndexKey() bool {
+	return key.IndexID() != PrimaryIndexID
 }
 
 func (key KeyBytes) ToKey() Key {
