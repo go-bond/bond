@@ -1020,7 +1020,6 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		default:
 		}
 
-		// construct data key.
 		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchGetValue})
 		if !cont || err != nil {
 			_ = iter.Close()
