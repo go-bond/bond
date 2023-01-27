@@ -110,7 +110,8 @@ type BlockCollector struct {
 }
 
 func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error {
-	if pebbleKey.Kind() != pebble.InternalKeyKindSet && pebbleKey.Kind() != pebble.InternalKeyKindDelete && pebbleKey.Kind() != pebble.InternalKeyKindSetWithDelete {
+	kind := pebbleKey.Kind()
+	if kind != pebble.InternalKeyKindSet && kind != pebble.InternalKeyKindDelete && kind != pebble.InternalKeyKindSetWithDelete {
 		return nil
 	}
 

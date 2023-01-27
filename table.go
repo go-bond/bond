@@ -975,6 +975,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	keyBuffer[0] = byte(t.ID())
 
 	keys := make([][]byte, 0, t.scanBatchSize)
+	indexKeys := make([][]byte, 0, t.scanBatchSize)
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
 	defer _multiKeyBufferPool.Put(multiKeyBuffer)
 
@@ -986,8 +987,15 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		// prefetch the required data keys.
 		next := multiKeyBuffer
 		for iter.Valid() {
+			iterKey := iter.Key()
+
+			indexKey := append(next[:0], iterKey...)
+			indexKeys = append(indexKeys, indexKey)
+			next = indexKey[len(indexKey):]
+
 			key := KeyBytes(iter.Key()).ToDataKeyBytes(next[:0])
 			keys = append(keys, key)
+
 			next = key[len(key):]
 			if len(keys) <= t.scanBatchSize {
 				iter.Next()
@@ -1013,15 +1021,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		}
 
 		// construct data key.
-		primaryKey := KeyBytes(iter.Key()).PrimaryKey()
-		// resize the buffer if needed.
-		if len(keyBuffer) < len(primaryKey)+10 {
-			needed := len(primaryKey) + 10 - len(keyBuffer)
-			keyBuffer = append(keyBuffer, make([]byte, needed)...)
-		}
-		copy(keyBuffer[10:], primaryKey)
-		cont, err := f(keyBuffer[:10+len(primaryKey)],
-			Lazy[T]{GetFunc: prefetchGetValue})
+		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchGetValue})
 		if !cont || err != nil {
 			_ = iter.Close()
 			return err
@@ -1029,7 +1029,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		// iterate from prefetched entires if exist.
 		for prefetchedBatchIndex < len(prefetchedBatch) {
-			cont, err := f(keys[prefetchedBatchIndex], Lazy[T]{GetFunc: getPrefetchedValue})
+			cont, err = f(indexKeys[prefetchedBatchIndex], Lazy[T]{GetFunc: getPrefetchedValue})
 			if !cont || err != nil {
 				_ = iter.Close()
 				return err
@@ -1040,6 +1040,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		prefetchedBatchIndex = 0
 		prefetchedBatch = nil
 		keys = nil
+		indexKeys = nil
 	}
 
 	return iter.Close()
