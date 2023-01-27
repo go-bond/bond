@@ -993,7 +993,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			indexKeys = append(indexKeys, indexKey)
 			next = indexKey[len(indexKey):]
 
-			key := KeyBytes(iter.Key()).ToDataKeyBytes(next[:0])
+			key := KeyBytes(iterKey).ToDataKeyBytes(next[:0])
 			keys = append(keys, key)
 
 			next = key[len(key):]
