@@ -186,7 +186,7 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 		// TableID
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
-			return false, err
+			return false, nil
 		}
 		// minKeyLen | minKey
 		lenBuf := buff.Next(4)
