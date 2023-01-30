@@ -761,13 +761,16 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	}
 
 	if iter == nil {
-		blockFilter := &PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}}
-		iter = t.db.Iter(&IterOptions{
+		blockFilter := PrimaryKeyFilter{ID: t.id, Keys: [][]byte{key}}
+		pointKeyFilters := []pebble.BlockPropertyFilter{&blockFilter}
+		iterOptions := IterOptions{
 			IterOptions: pebble.IterOptions{
 				KeyTypes:        pebble.IterKeyTypePointsOnly,
-				PointKeyFilters: []pebble.BlockPropertyFilter{blockFilter},
+				PointKeyFilters: pointKeyFilters,
 			},
-		}, batch)
+		}
+
+		iter = t.db.Iter(&iterOptions, batch)
 		defer func() {
 			_ = iter.Close()
 		}()
@@ -806,14 +809,16 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([]T, error) {
 	}
 
 	keyOrder := t.sortKeys(keys)
-	iter := t.db.Iter(&IterOptions{
+	blockFilter := PrimaryKeyFilter{ID: t.id, Keys: keys}
+	pointKeyFilters := []pebble.BlockPropertyFilter{&blockFilter}
+	iterOptions := IterOptions{
 		IterOptions: pebble.IterOptions{
-			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&PrimaryKeyFilter{ID: t.id, Keys: keys},
-			},
-			KeyTypes: pebble.IterKeyTypePointsOnly,
+			KeyTypes:        pebble.IterKeyTypePointsOnly,
+			PointKeyFilters: pointKeyFilters,
 		},
-	}, batch)
+	}
+
+	iter := t.db.Iter(&iterOptions, batch)
 	defer func() { _ = iter.Close() }()
 
 	records := make([]T, len(keys))

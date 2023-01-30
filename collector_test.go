@@ -134,11 +134,11 @@ func TestCollector(t *testing.T) {
 
 func TestRange(t *testing.T) {
 	keyRange := NewKeyRange()
-	keyRange.Ranges[1] = &Range{
+	keyRange.Ranges[1] = Range{
 		Min: encodeNum(1),
 		Max: encodeNum(2),
 	}
-	keyRange.Ranges[2] = &Range{
+	keyRange.Ranges[2] = Range{
 		Min: encodeNum(3),
 		Max: encodeNum(4),
 	}
@@ -156,11 +156,11 @@ func TestRange(t *testing.T) {
 
 func TestFilter(t *testing.T) {
 	keyRange := NewKeyRange()
-	keyRange.Ranges[1] = &Range{
+	keyRange.Ranges[1] = Range{
 		Min: encodeNum(1),
 		Max: encodeNum(10),
 	}
-	keyRange.Ranges[2] = &Range{
+	keyRange.Ranges[2] = Range{
 		Min: encodeNum(3),
 		Max: encodeNum(40),
 	}

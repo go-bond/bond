@@ -28,12 +28,12 @@ type Range struct {
 // store it along with the SST table, by following the given raw byte scheme:
 // TableID | minKeyLen | minKey | maxKeyLen | maxKey | TableID | ...
 type KeyRange struct {
-	Ranges map[TableID]*Range
+	Ranges map[TableID]Range
 }
 
-func NewKeyRange() *KeyRange {
-	return &KeyRange{
-		Ranges: make(map[TableID]*Range, 4),
+func NewKeyRange() KeyRange {
+	return KeyRange{
+		Ranges: make(map[TableID]Range, 10),
 	}
 }
 
@@ -55,7 +55,7 @@ func (b *KeyRange) Encode(buf []byte) []byte {
 	return buff.Bytes()
 }
 
-func (b *KeyRange) Merge(in *KeyRange) {
+func (b *KeyRange) Merge(in KeyRange) {
 	for tableID, keyRange := range in.Ranges {
 		localRange, ok := b.Ranges[tableID]
 		if !ok {
@@ -78,7 +78,7 @@ func (b *KeyRange) Merge(in *KeyRange) {
 }
 
 func (b *KeyRange) Decode(buf []byte) {
-	b.Ranges = make(map[TableID]*Range)
+	b.Ranges = make(map[TableID]Range, 10)
 	if len(buf) == 0 {
 		return
 	}
@@ -91,7 +91,7 @@ func (b *KeyRange) Decode(buf []byte) {
 			return
 		}
 		// minKeyLen | minKey
-		keyRange := &Range{}
+		keyRange := Range{}
 		lenBuf := buff.Next(4)
 		keyLen := binary.BigEndian.Uint32(lenBuf)
 		keyRange.Min = utils.Copy(keyRange.Min, buff.Next(int(keyLen)))
@@ -104,9 +104,9 @@ func (b *KeyRange) Decode(buf []byte) {
 }
 
 type BlockCollector struct {
-	blockRange *KeyRange
-	tableRange *KeyRange
-	indexRange *KeyRange
+	blockRange KeyRange
+	tableRange KeyRange
+	indexRange KeyRange
 }
 
 func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error {
@@ -123,7 +123,7 @@ func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error 
 	tableID := key.TableID()
 	keyRange, ok := b.blockRange.Ranges[tableID]
 	if !ok {
-		keyRange := &Range{}
+		keyRange := Range{}
 		keyRange.Min = utils.Copy(keyRange.Min, key[PrimaryKeyStartIdx:])
 		keyRange.Max = utils.Copy(keyRange.Max, key[PrimaryKeyStartIdx:])
 		b.blockRange.Ranges[tableID] = keyRange
