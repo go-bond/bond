@@ -25,9 +25,9 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 		Name       string
 		Serializer bond.Serializer[any]
 	}{
-		{"JSONSerializer", &serializers.JsonSerializer{}},
-		{"MsgpackSerializer", &serializers.MsgpackSerializer{}},
-		{"MsgpackGenSerializer", &serializers.MsgpackGenSerializer{}},
+		//{"JSONSerializer", &serializers.JsonSerializer{}},
+		//{"MsgpackSerializer", &serializers.MsgpackSerializer{}},
+		//{"MsgpackGenSerializer", &serializers.MsgpackGenSerializer{}},
 		{"CBORSerializer", &serializers.CBORSerializer{}},
 	}
 
@@ -96,8 +96,18 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			panic(err)
 		}
 
+		var (
+			tokenBalances500      *TokenBalance = nil
+			tokenBalances1000     *TokenBalance = nil
+			tokenBalances5000     *TokenBalance = nil
+			tokenBalances10000    *TokenBalance = nil
+			tokenBalances100000   *TokenBalance = nil
+			tokenBalances1000000  *TokenBalance = nil
+			tokenBalances10000000 *TokenBalance = nil
+		)
+
 		var tokenBalances []*TokenBalance
-		for i := 0; i < 20000000; i++ {
+		for i := 0; i < 20000001; i++ {
 			tokenBalances = append(tokenBalances, &TokenBalance{
 				ID:              uint64(i + 1),
 				AccountID:       0,
@@ -105,16 +115,37 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 				AccountAddress:  "0xtestAccount0",
 				Balance:         uint64((i % 100) * 10),
 			})
-		}
 
-		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:10000000])
-		if err != nil {
-			panic(err)
-		}
+			if i == 500 {
+				tokenBalances500 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 1000 {
+				tokenBalances1000 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 5000 {
+				tokenBalances5000 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 10000 {
+				tokenBalances10000 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 100000 {
+				tokenBalances100000 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 1000000 {
+				tokenBalances1000000 = tokenBalances[len(tokenBalances)-1]
+			}
+			if i == 10000000 {
+				tokenBalances10000000 = tokenBalances[len(tokenBalances)-1]
+			}
 
-		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[10000000:20000000])
-		if err != nil {
-			panic(err)
+			if i%100000 == 0 {
+				err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:])
+				if err != nil {
+					panic(err)
+				}
+
+				tokenBalances = nil
+			}
 		}
 
 		var queryInputs = []struct {
@@ -141,13 +172,13 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 			{index: nil, indexName: "Default", selector: nil, offset: 100000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 1000000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 10000000, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[500], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[1000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[5000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[10000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[100000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[1000000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[10000000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances500, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances1000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances5000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances10000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances100000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances1000000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances10000000, offset: 0, limit: 1000},
 			// AccountAddress Index
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 500},
