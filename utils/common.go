@@ -35,3 +35,10 @@ func ArrayN(n int) []int {
 	}
 	return arr
 }
+
+func ClearBytes(in []byte, n int) []byte {
+	for i := 0; i < n; i++ {
+		in[i] = 0
+	}
+	return in
+}

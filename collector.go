@@ -110,7 +110,8 @@ type BlockCollector struct {
 }
 
 func (b *BlockCollector) Add(pebbleKey sstable.InternalKey, value []byte) error {
-	if pebbleKey.Kind() != pebble.InternalKeyKindSet {
+	kind := pebbleKey.Kind()
+	if kind != pebble.InternalKeyKindSet && kind != pebble.InternalKeyKindDelete && kind != pebble.InternalKeyKindSetWithDelete {
 		return nil
 	}
 
@@ -176,7 +177,7 @@ func NewPrimaryKeyFilter(id TableID, keys [][]byte) *PrimaryKeyFilter {
 
 func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 	if len(prop) == 0 {
-		return true, nil
+		return false, nil
 	}
 	// It's efficient to use raw bytes while intersecting `KeyRange` instead
 	// of using `KeyRange.Decode`
@@ -185,7 +186,7 @@ func (p *PrimaryKeyFilter) Intersects(prop []byte) (bool, error) {
 		// TableID
 		tableID, err := buff.ReadByte()
 		if err == io.EOF {
-			return false, err
+			return false, nil
 		}
 		// minKeyLen | minKey
 		lenBuf := buff.Next(4)
