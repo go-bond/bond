@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -10,13 +11,6 @@ import (
 
 // FilterFunc is the function template to be used for record filtering.
 type FilterFunc[R any] func(r R) bool
-
-// FilterAndIndex the pair of evaluable and index on which query is executed.
-type FilterAndIndex[R any] struct {
-	FilterFunc    FilterFunc[R]
-	Index         *Index[R]
-	IndexSelector R
-}
 
 // OrderLessFunc is the function template to be used for record sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
@@ -36,7 +30,7 @@ type Query[R any] struct {
 	index         *Index[R]
 	indexSelector R
 
-	queries       []FilterAndIndex[R]
+	filterFunc    FilterFunc[R]
 	orderLessFunc OrderLessFunc[R]
 	offset        uint64
 	limit         uint64
@@ -48,7 +42,7 @@ func newQuery[R any](t *_table[R], i *Index[R]) Query[R] {
 		table:         t,
 		index:         i,
 		indexSelector: utils.MakeNew[R](),
-		queries:       []FilterAndIndex[R]{},
+		filterFunc:    nil,
 		orderLessFunc: nil,
 		offset:        0,
 		limit:         0,
@@ -77,12 +71,7 @@ func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
 // Filter adds additional filtering to the query. The conditions can be built with
 // structures that implement Evaluable interface.
 func (q Query[R]) Filter(filter FilterFunc[R]) Query[R] {
-	newWhere := make([]FilterAndIndex[R], 0, len(q.queries)+1)
-	q.queries = append(append(newWhere, q.queries...), FilterAndIndex[R]{
-		FilterFunc:    filter,
-		Index:         q.index,
-		IndexSelector: q.indexSelector,
-	})
+	q.filterFunc = filter
 	return q
 }
 
@@ -126,60 +115,55 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		return fmt.Errorf("after can not be used with order")
 	}
 
-	if len(q.queries) == 0 {
-		q.queries = append([]FilterAndIndex[R]{
-			{
-				FilterFunc:    nil,
-				Index:         q.index,
-				IndexSelector: q.indexSelector,
-			},
-		})
-	}
-
 	var records []R
-	for _, query := range q.queries {
-		count := uint64(0)
-		skippedFirstRow := false
-		err := q.table.ScanIndexForEach(ctx, query.Index, query.IndexSelector, func(_ KeyBytes, lazy Lazy[R]) (bool, error) {
-			if q.isAfter && !skippedFirstRow {
-				skippedFirstRow = true
+	count := uint64(0)
+	skippedFirstRow := false
+	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[R]) (bool, error) {
+		if q.isAfter && !skippedFirstRow {
+			skippedFirstRow = true
+
+			rowIdxKey := key.ToKey()
+			selIdxKey := KeyBytes(q.table.indexKey(q.indexSelector, q.index, []byte{})).ToKey()
+			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
+				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
+				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
 				return true, nil
 			}
+		}
 
-			// check if can apply offset in here
-			if q.shouldApplyOffsetEarly() && q.offset > count {
-				count++
-				return true, nil
-			}
+		// check if can apply offset in here
+		if q.shouldApplyOffsetEarly() && q.offset > count {
+			count++
+			return true, nil
+		}
 
-			// get and deserialize
-			record, err := lazy.Get()
-			if err != nil {
-				return false, err
-			}
+		// get and deserialize
+		record, err := lazy.Get()
+		if err != nil {
+			return false, err
+		}
 
-			// filter if filter available
-			if q.shouldFilter(query) {
-				if query.FilterFunc(record) {
-					records = append(records, record)
-					count++
-				}
-			} else {
+		// filter if filter available
+		if q.shouldFilter() {
+			if q.filterFunc(record) {
 				records = append(records, record)
 				count++
 			}
-
-			next := true
-			// check if we need to iterate further
-			if !q.shouldSort() && q.shouldLimit() {
-				next = count < q.offset+q.limit
-			}
-
-			return next, nil
-		}, optBatch...)
-		if err != nil {
-			return err
+		} else {
+			records = append(records, record)
+			count++
 		}
+
+		next := true
+		// check if we need to iterate further
+		if !q.shouldSort() && q.shouldLimit() {
+			next = count < q.offset+q.limit
+		}
+
+		return next, nil
+	}, optBatch...)
+	if err != nil {
+		return err
 	}
 
 	// sorting
@@ -212,8 +196,8 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	return nil
 }
 
-func (q Query[R]) shouldFilter(query FilterAndIndex[R]) bool {
-	return query.FilterFunc != nil
+func (q Query[R]) shouldFilter() bool {
+	return q.filterFunc != nil
 }
 
 func (q Query[R]) shouldSort() bool {
@@ -221,7 +205,7 @@ func (q Query[R]) shouldSort() bool {
 }
 
 func (q Query[R]) shouldApplyOffsetEarly() bool {
-	return q.orderLessFunc == nil && len(q.queries) == 1 && q.queries[0].FilterFunc == nil
+	return q.orderLessFunc == nil && q.filterFunc == nil
 }
 
 func (q Query[R]) shouldLimit() bool {
@@ -233,5 +217,5 @@ func (q Query[R]) isLimitApplied() bool {
 }
 
 func (q Query[R]) isOffsetApplied() bool {
-	return q.orderLessFunc == nil && len(q.queries) == 1 && q.queries[0].FilterFunc == nil
+	return q.orderLessFunc == nil && q.filterFunc == nil
 }
