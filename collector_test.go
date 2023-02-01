@@ -21,7 +21,7 @@ func key(tID TableID, i uint64) sstable.InternalKey {
 		PrimaryKey: buf,
 		TableID:    tID,
 		IndexID:    PrimaryIndexID,
-		IndexKey:   []byte{},
+		Index:      []byte{},
 		IndexOrder: []byte{},
 	})
 	return sstable.InternalKey{
