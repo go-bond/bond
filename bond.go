@@ -56,6 +56,7 @@ type Applier interface {
 type Closer io.Closer
 
 type DB interface {
+	Backend() *pebble.DB
 	Serializer() Serializer[any]
 
 	Getter
@@ -114,6 +115,10 @@ func Open(dirname string, opts *Options) (DB, error) {
 	}
 
 	return db, nil
+}
+
+func (db *_db) Backend() *pebble.DB {
+	return db.pebble
 }
 
 func (db *_db) Serializer() Serializer[any] {
