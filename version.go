@@ -13,10 +13,12 @@ const (
 )
 
 func (db *_db) Version() int {
-	value, _, err := db.pebble.Get(bondDataVersionKey())
+	value, closer, err := db.pebble.Get(bondDataVersionKey())
 	if err != nil {
 		return 0
 	}
+	defer func() { _ = closer.Close() }()
+
 	ver, _ := strconv.ParseInt(string(value), 10, 32)
 	return int(ver)
 }
