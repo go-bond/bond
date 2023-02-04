@@ -34,12 +34,13 @@ func _valueBufferPoolCloser(values [][]byte) {
 	for _, value := range values {
 		_valueBufferPool.Put(value[:0])
 	}
+	_keyArraysPool.Put(values[:0])
 }
 
 const KeyBufferInitialSize = 10240
 const ReindexBatchSize = 10000
 
-const DefaultScanPrefetchSize = 100
+const DefaultScanPrefetchSize = 250
 
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
@@ -789,7 +790,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	iter := t.db.Iter(&IterOptions{}, batch)
 	defer func() { _ = iter.Close() }()
 
-	values := make([][]byte, len(keys))
+	values := _keyArraysPool.Get().([][]byte)[:0]
 	for i := 0; i < len(keysSorted); i++ {
 		if !iter.SeekGE(keysSorted[i]) || !bytes.Equal(iter.Key(), keysSorted[i]) {
 			return nil, nil, fmt.Errorf("not found")
@@ -799,7 +800,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 		value := _valueBufferPool.Get().([]byte)[:0]
 		value = append(value, iterValue...)
 
-		values[i] = value
+		values = append(values, value)
 	}
 
 	// apply original order on values
@@ -942,9 +943,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
 
-	keys := make([][]byte, 0, t.scanPrefetchSize)
-	indexKeys := make([][]byte, 0, t.scanPrefetchSize)
+	keys := _keyArraysPool.Get().([][]byte)[:0]
+	indexKeys := _keyArraysPool.Get().([][]byte)[:0]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
+	defer _keyArraysPool.Put(keys)
+	defer _keyArraysPool.Put(indexKeys)
 	defer _multiKeyBufferPool.Put(multiKeyBuffer)
 
 	var prefetchCloser func()
@@ -966,7 +969,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		return rtr, nil
 	}
 
-	prefetchGetValue := func() (T, error) {
+	prefetchAndGetValue := func() (T, error) {
 		// prefetch the required data keys.
 		next := multiKeyBuffer
 		for iter.Valid() {
@@ -1004,7 +1007,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchGetValue})
+		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchAndGetValue})
 		if !cont || err != nil {
 			_ = iter.Close()
 			return err
