@@ -1000,7 +1000,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			return err
 		}
 
-		// iterate from prefetched entires if exist.
+		// iterate from prefetched entire if exists.
 		for prefetchedValuesIndex < len(prefetchedValues) {
 			cont, err = f(indexKeys[prefetchedValuesIndex], Lazy[T]{GetFunc: getPrefetchedValue})
 			if !cont || err != nil {
@@ -1011,8 +1011,8 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		prefetchedValuesIndex = 0
 		prefetchedValues = nil
-		keys = nil
-		indexKeys = nil
+		keys = keys[:0]
+		indexKeys = indexKeys[:0]
 	}
 
 	return iter.Close()
@@ -1025,18 +1025,19 @@ func (t *_table[T]) keySort(keys [][]byte) {
 }
 
 func (t *_table[T]) keyValueSort(keys, keysSorted, values [][]byte) {
-	for i, key := range keys {
-		for j, keySorted := range keysSorted {
-			if bytes.Equal(key, keySorted) {
-				tmp := values[i]
-				values[i] = values[j]
-				values[j] = tmp
+	for i := 0; i < len(keys); i++ {
+		j, found := sort.Find(len(keysSorted), func(z int) int {
+			return bytes.Compare(keys[i], keysSorted[z])
+		})
 
-				tmpK := keysSorted[i]
-				keysSorted[i] = keysSorted[j]
-				keysSorted[j] = tmpK
-				break
-			}
+		if found {
+			tmp := values[i]
+			values[i] = values[j]
+			values[j] = tmp
+
+			tmpK := keysSorted[i]
+			keysSorted[i] = keysSorted[j]
+			keysSorted[j] = tmpK
 		}
 	}
 }
