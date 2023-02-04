@@ -785,7 +785,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	keysSorted := _keyArraysPool.Get().([][]byte)[:0]
 	defer _keyArraysPool.Put(keysSorted[:0])
 	keysSorted = append(keysSorted, keys...)
-	t.keySort(keysSorted)
+	originalOrder := t.sortKeys(keysSorted)
 
 	iter := t.db.Iter(&IterOptions{}, batch)
 	defer func() { _ = iter.Close() }()
@@ -803,8 +803,8 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 		values = append(values, value)
 	}
 
-	// apply original order on values
-	t.keyValueSort(keys, keysSorted, values)
+	// restore original order on values
+	t.reorderValues(values, originalOrder)
 
 	return values, func() { _valueBufferPoolCloser(values) }, nil
 }
@@ -940,15 +940,15 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		})
 	}
 
-	var prefetchedValues [][]byte
-	var prefetchedValuesIndex int
-
 	keys := _keyArraysPool.Get().([][]byte)[:0]
 	indexKeys := _keyArraysPool.Get().([][]byte)[:0]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
 	defer _keyArraysPool.Put(keys)
 	defer _keyArraysPool.Put(indexKeys)
 	defer _multiKeyBufferPool.Put(multiKeyBuffer)
+
+	var prefetchedValues [][]byte
+	var prefetchedValuesIndex int
 
 	var prefetchCloser func()
 	defer func() {
@@ -1036,28 +1036,32 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	return iter.Close()
 }
 
-func (t *_table[T]) keySort(keys [][]byte) {
-	sort.Slice(keys, func(i, j int) bool {
-		return bytes.Compare(keys[i], keys[j]) < 0
+func (t *_table[T]) sortKeys(keys [][]byte) []int {
+	keyOrder := utils.ArrayN(len(keys))
+	sort.Sort(&utils.SortShim{
+		Length: len(keys),
+		SwapFn: func(i, j int) {
+			keys[i], keys[j] = keys[j], keys[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
+		},
+		LessFn: func(i, j int) bool {
+			return bytes.Compare(keys[i], keys[j]) < 0
+		},
 	})
+	return keyOrder
 }
 
-func (t *_table[T]) keyValueSort(keys, keysSorted, values [][]byte) {
-	for i := 0; i < len(keys); i++ {
-		j, found := sort.Find(len(keysSorted), func(z int) int {
-			return bytes.Compare(keys[i], keysSorted[z])
-		})
-
-		if found {
-			tmp := values[i]
-			values[i] = values[j]
-			values[j] = tmp
-
-			tmpK := keysSorted[i]
-			keysSorted[i] = keysSorted[j]
-			keysSorted[j] = tmpK
-		}
-	}
+func (t *_table[T]) reorderValues(values [][]byte, keyOrder []int) {
+	sort.Sort(&utils.SortShim{
+		Length: len(values),
+		SwapFn: func(i, j int) {
+			values[i], values[j] = values[j], values[i]
+			keyOrder[i], keyOrder[j] = keyOrder[j], keyOrder[i]
+		},
+		LessFn: func(i, j int) bool {
+			return keyOrder[i] < keyOrder[j]
+		},
+	})
 }
 
 func (t *_table[T]) key(tr T, buff []byte) []byte {
