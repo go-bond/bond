@@ -39,7 +39,7 @@ func _valueBufferPoolCloser(values [][]byte) {
 const KeyBufferInitialSize = 10240
 const ReindexBatchSize = 10000
 
-const DefaultScanBatchSize = 100
+const DefaultScanPrefetchSize = 100
 
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
@@ -133,6 +133,8 @@ type TableOptions[T any] struct {
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[*T]
 
+	ScanPrefetchSize int
+
 	Filter Filter
 }
 
@@ -147,7 +149,7 @@ type _table[T any] struct {
 	primaryIndex     *Index[T]
 	secondaryIndexes map[IndexID]*Index[T]
 
-	scanBatchSize int
+	scanPrefetchSize int
 
 	serializer Serializer[*T]
 
@@ -160,6 +162,11 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 	var serializer Serializer[*T] = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = opt.Serializer
+	}
+
+	scanPrefetchSize := DefaultScanPrefetchSize
+	if opt.ScanPrefetchSize != 0 {
+		scanPrefetchSize = opt.ScanPrefetchSize
 	}
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
@@ -176,7 +183,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 			IndexOrderFunc: IndexOrderDefault[T],
 		}),
 		secondaryIndexes: make(map[IndexID]*Index[T]),
-		scanBatchSize:    DefaultScanBatchSize,
+		scanPrefetchSize: scanPrefetchSize,
 		serializer:       serializer,
 		filter:           opt.Filter,
 		mutex:            sync.RWMutex{},
@@ -935,12 +942,18 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
 
-	keys := make([][]byte, 0, t.scanBatchSize)
-	indexKeys := make([][]byte, 0, t.scanBatchSize)
+	keys := make([][]byte, 0, t.scanPrefetchSize)
+	indexKeys := make([][]byte, 0, t.scanPrefetchSize)
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
 	defer _multiKeyBufferPool.Put(multiKeyBuffer)
 
 	var prefetchCloser func()
+	defer func() {
+		if prefetchCloser != nil {
+			prefetchCloser()
+			prefetchCloser = nil
+		}
+	}()
 
 	getPrefetchedValue := func() (T, error) {
 		var rtr T
@@ -954,10 +967,6 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	}
 
 	prefetchGetValue := func() (T, error) {
-		if prefetchCloser != nil {
-			prefetchCloser()
-		}
-
 		// prefetch the required data keys.
 		next := multiKeyBuffer
 		for iter.Valid() {
@@ -971,7 +980,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			keys = append(keys, key)
 
 			next = key[len(key):]
-			if len(keys) <= t.scanBatchSize {
+			if len(keys) <= t.scanPrefetchSize {
 				iter.Next()
 				continue
 			}
@@ -990,6 +999,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
+			_ = iter.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -1011,6 +1021,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		prefetchedValuesIndex = 0
 		prefetchedValues = nil
+		if prefetchCloser != nil {
+			prefetchCloser()
+			prefetchCloser = nil
+		}
+
 		keys = keys[:0]
 		indexKeys = indexKeys[:0]
 	}
