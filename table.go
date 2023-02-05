@@ -40,7 +40,7 @@ func _valueBufferPoolCloser(values [][]byte) {
 const KeyBufferInitialSize = 10240
 const ReindexBatchSize = 10000
 
-const DefaultScanPrefetchSize = 250
+const DefaultScanPrefetchSize = 100
 
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
@@ -782,17 +782,14 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	}
 
 	// sort keys so we get data from db efficiently
-	keysSorted := _keyArraysPool.Get().([][]byte)[:0]
-	defer _keyArraysPool.Put(keysSorted[:0])
-	keysSorted = append(keysSorted, keys...)
-	originalOrder := t.sortKeys(keysSorted)
+	originalOrder := t.sortKeys(keys)
 
 	iter := t.db.Iter(&IterOptions{}, batch)
 	defer func() { _ = iter.Close() }()
 
 	values := _keyArraysPool.Get().([][]byte)[:0]
-	for i := 0; i < len(keysSorted); i++ {
-		if !iter.SeekGE(keysSorted[i]) || !bytes.Equal(iter.Key(), keysSorted[i]) {
+	for i := 0; i < len(keys); i++ {
+		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			return nil, nil, fmt.Errorf("not found")
 		}
 
@@ -892,6 +889,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
+			_ = iter.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
@@ -943,9 +941,9 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	keys := _keyArraysPool.Get().([][]byte)[:0]
 	indexKeys := _keyArraysPool.Get().([][]byte)[:0]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
-	defer _keyArraysPool.Put(keys)
-	defer _keyArraysPool.Put(indexKeys)
-	defer _multiKeyBufferPool.Put(multiKeyBuffer)
+	defer _keyArraysPool.Put(keys[:0])
+	defer _keyArraysPool.Put(indexKeys[:0])
+	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
 
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
@@ -1031,6 +1029,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		keys = keys[:0]
 		indexKeys = indexKeys[:0]
+		multiKeyBuffer = multiKeyBuffer[:0]
 	}
 
 	return iter.Close()
