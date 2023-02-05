@@ -22,8 +22,8 @@ var _multiKeyBufferPool = sync.Pool{New: func() any {
 	return make([]byte, 0, KeyBufferInitialSize*1000)
 }}
 
-var _keyArraysPool = sync.Pool{New: func() any {
-	return make([][]byte, 0, 1024)
+var _byteArraysPool = sync.Pool{New: func() any {
+	return make([][]byte, 0, 1000)
 }}
 
 var _valueBufferPool = sync.Pool{New: func() any {
@@ -34,7 +34,7 @@ func _valueBufferPoolCloser(values [][]byte) {
 	for _, value := range values {
 		_valueBufferPool.Put(value[:0])
 	}
-	_keyArraysPool.Put(values[:0])
+	_byteArraysPool.Put(values[:0])
 }
 
 const KeyBufferInitialSize = 10240
@@ -787,7 +787,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	iter := t.db.Iter(&IterOptions{}, batch)
 	defer func() { _ = iter.Close() }()
 
-	values := _keyArraysPool.Get().([][]byte)[:0]
+	values := _byteArraysPool.Get().([][]byte)[:0]
 	for i := 0; i < len(keys); i++ {
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			return nil, nil, fmt.Errorf("not found")
@@ -938,11 +938,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		})
 	}
 
-	keys := _keyArraysPool.Get().([][]byte)[:0]
-	indexKeys := _keyArraysPool.Get().([][]byte)[:0]
+	keys := _byteArraysPool.Get().([][]byte)[:0]
+	indexKeys := _byteArraysPool.Get().([][]byte)[:0]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
-	defer _keyArraysPool.Put(keys[:0])
-	defer _keyArraysPool.Put(indexKeys[:0])
+	defer _byteArraysPool.Put(keys[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
 
 	var prefetchedValues [][]byte
