@@ -369,7 +369,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		key := t.key(tr, keyBuffer[:0])
 
 		// check if exist
-		if t.exist(key, keyBatch) {
+		if t.exist(key, keyBatch, nil) {
 			return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 		}
 
@@ -638,7 +638,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			closer    io.Closer
 			err       error
 		)
-		if t.exist(key, keyBatch) {
+		if t.exist(key, keyBatch, nil) {
 			oldTrData, closer, err = keyBatch.Get(key)
 			if err == nil {
 				err = t.serializer.Deserialize(oldTrData, &oldTr)
@@ -723,25 +723,29 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 		batch = nil
 	}
 
-	keyBuffer := _keyBufferPool.Get().([]byte)
+	keyBuffer := _keyBufferPool.Get().([]byte)[:0]
 	defer _keyBufferPool.Put(keyBuffer)
 	key := t.key(tr, keyBuffer[:0])
-	return t.exist(key, batch)
+	return t.exist(key, batch, nil)
 }
 
-func (t *_table[T]) exist(key []byte, batch Batch) bool {
-	bCtx := ContextWithBatch(context.Background(), batch)
-	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
+	if t.filter != nil && !t.filter.MayContain(context.TODO(), key) {
 		return false
 	}
 
-	_, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return false
+	if iter == nil {
+		iter = t.db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: key,
+			},
+		}, batch)
+		defer func() {
+			_ = iter.Close()
+		}()
 	}
 
-	_ = closer.Close()
-	return true
+	return iter.SeekPrefixGE(key) && bytes.Equal(iter.Key(), key)
 }
 
 func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
