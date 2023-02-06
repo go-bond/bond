@@ -36,7 +36,7 @@ func _valueBufferPoolCloser(values [][]byte) {
 	_byteArraysPool.Put(values[:0])
 }
 
-const KeyBufferInitialSize = 10240
+const KeyBufferInitialSize = 1024
 const ReindexBatchSize = 10000
 
 const DefaultScanPrefetchSize = 100
@@ -352,11 +352,11 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		multiKeyBuffer  = make([]byte, 0, KeyBufferInitialSize*minInt(len(trs), persistentBatchSize))
-		indexKeysBuffer = _keyBufferPool.Get().([]byte)[:0]
-		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
+		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
+		indexKeys       = _byteArraysPool.Get().([][]byte)[:0]
 	)
-	defer _keyBufferPool.Put(indexKeysBuffer[:0])
+	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 
 	// iter
 	iter := t.db.Iter(&IterOptions{}, keyBatch)
@@ -364,7 +364,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keys(trs, multiKeyBuffer[:0])
+		keys, closer := t.keys(trs)
+		defer closer()
+
+		// order keys
 		keyOrder := t.sortKeys(keys)
 
 		// process rows
@@ -454,11 +457,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}()
 
 	var (
-		multiKeyBuffer  = make([]byte, 0, KeyBufferInitialSize*minInt(len(trs), persistentBatchSize))
-		indexKeysBuffer = _keyBufferPool.Get().([]byte)[:0]
+		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
 	)
-	defer _keyBufferPool.Put(indexKeysBuffer[:0])
-	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
+	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
 
 	// iter
 	iter := t.db.Iter(&IterOptions{}, keyBatch)
@@ -466,7 +467,10 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keys(trs, multiKeyBuffer[:0])
+		keys, closer := t.keys(trs)
+		defer closer()
+
+		// order keys
 		keyOrder := t.sortKeys(keys)
 
 		for i, key := range keys {
@@ -572,11 +576,12 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	var (
 		keyBuffer      = _keyBufferPool.Get().([]byte)[:0]
-		indexKeyBuffer = _keyBufferPool.Get().([]byte)[:0]
-		indexKeys      = make([][]byte, len(indexes))
+		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
+		indexKeys      = _byteArraysPool.Get().([][]byte)[:0]
 	)
 	defer _keyBufferPool.Put(keyBuffer[:0])
-	defer _keyBufferPool.Put(indexKeyBuffer[:0])
+	defer _multiKeyBufferPool.Put(indexKeyBuffer[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		for _, tr := range trs {
@@ -650,12 +655,11 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}()
 
 	var (
-		multiKeyBuffer  = make([]byte, 0, KeyBufferInitialSize*minInt(len(trs), persistentBatchSize))
 		indexKeysBuffer = _keyBufferPool.Get().([]byte)[:0]
-		indexKeys       = make([][]byte, 0, len(t.secondaryIndexes))
+		indexKeys       = _byteArraysPool.Get().([][]byte)[:0]
 	)
-	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
 	defer _keyBufferPool.Put(indexKeysBuffer[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 
 	// iter
 	iter := t.db.Iter(&IterOptions{}, keyBatch)
@@ -663,7 +667,10 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keys(trs, multiKeyBuffer[:0])
+		keys, closer := t.keys(trs)
+		defer closer()
+
+		// order keys
 		keyOrder := t.sortKeys(keys)
 
 		for i := 0; i < len(keys); {
@@ -1128,24 +1135,31 @@ func (t *_table[T]) key(tr T, buff []byte) []byte {
 	return KeyEncode(Key{
 		TableID:    t.id,
 		IndexID:    PrimaryIndexID,
-		Index:      []byte{},
-		IndexOrder: []byte{},
+		Index:      nil,
+		IndexOrder: nil,
 		PrimaryKey: primaryKey,
 	}, primaryKey[len(primaryKey):])
 }
 
-func (t *_table[T]) keys(trs []T, multiKeyBuffer []byte) [][]byte {
-	keys := make([][]byte, len(trs))
+func (t *_table[T]) keys(trs []T) ([][]byte, func()) {
+	keys := _byteArraysPool.Get().([][]byte)[:0]
 
-	next := multiKeyBuffer
-	for i, tr := range trs {
-		key := t.key(tr, next)
-		keys[i] = key
-
-		next = key[len(key):]
+	if cap(keys) < len(trs) {
+		keys = make([][]byte, 0, len(trs))
 	}
 
-	return keys
+	for _, tr := range trs {
+		keyBuff := _keyBufferPool.Get().([]byte)[:0]
+		key := t.key(tr, keyBuff)
+		keys = append(keys, key)
+	}
+
+	return keys, func() {
+		for _, key := range keys {
+			_keyBufferPool.Put(key[:0])
+		}
+		_byteArraysPool.Put(keys[:0])
+	}
 }
 
 func (t *_table[T]) keyDuplicate(index int, keys [][]byte) bool {
@@ -1159,8 +1173,8 @@ func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
 		TableID:    t.id,
 		IndexID:    idx.IndexID,
 		Index:      indexKey,
-		IndexOrder: []byte{},
-		PrimaryKey: []byte{},
+		IndexOrder: nil,
+		PrimaryKey: nil,
 	}, indexKey[len(indexKey):])
 }
 
@@ -1250,12 +1264,4 @@ func batched[T any](allItems []T, batchSize int, f func(batch []T) error) error 
 	}
 
 	return nil
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
 }
