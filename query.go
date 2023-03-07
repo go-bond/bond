@@ -7,7 +7,97 @@ import (
 	"sort"
 
 	"github.com/go-bond/bond/utils"
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/exp/constraints"
 )
+
+// Evaluable is the interface used to simplify Query.Filter usage
+type Evaluable[R any] interface {
+	Eval(r R) bool
+}
+
+type Value[R any, V any] func(r R) V
+
+type Eq[R any, V any] struct {
+	Record Value[R, V]
+	Equal  V
+}
+
+func (e *Eq[R, V]) Eval(r R) bool {
+	return assert.ObjectsAreEqual(e.Record(r), e.Equal)
+}
+
+type Gt[R any, V constraints.Ordered] struct {
+	Record  Value[R, V]
+	Greater V
+}
+
+func (g *Gt[R, V]) Eval(r R) bool {
+	return g.Record(r) > g.Greater
+}
+
+type Gte[R any, V constraints.Ordered] struct {
+	Record       Value[R, V]
+	GreaterEqual V
+}
+
+func (g *Gte[R, V]) Eval(r R) bool {
+	return g.Record(r) >= g.GreaterEqual
+}
+
+type Lt[R any, V constraints.Ordered] struct {
+	Record Value[R, V]
+	Less   V
+}
+
+func (l *Lt[R, V]) Eval(r R) bool {
+	return l.Record(r) < l.Less
+}
+
+type Lte[R any, V constraints.Ordered] struct {
+	Record    Value[R, V]
+	LessEqual V
+}
+
+func (l *Lte[R, V]) Eval(r R) bool {
+	return l.Record(r) <= l.LessEqual
+}
+
+type and[R any] []any
+
+func (a *and[R]) Eval(r R) bool {
+	evalReturn := true
+	for _, evaluable := range *a {
+		evalReturn = evalReturn && evaluable.(Evaluable[R]).Eval(r)
+	}
+	return evalReturn
+}
+
+func And[R any](evalList ...Evaluable[R]) Evaluable[R] {
+	var e and[R]
+	for _, eval := range evalList {
+		e = append(e, eval)
+	}
+	return &e
+}
+
+type or[R any] []any
+
+func (o *or[R]) Eval(r R) bool {
+	evalReturn := false
+	for _, evaluable := range *o {
+		evalReturn = evalReturn || evaluable.(Evaluable[R]).Eval(r)
+	}
+	return evalReturn
+}
+
+func Or[R any](evalList ...Evaluable[R]) Evaluable[R] {
+	var e or[R]
+	for _, eval := range evalList {
+		e = append(e, eval)
+	}
+	return &e
+}
 
 // FilterFunc is the function template to be used for record filtering.
 type FilterFunc[R any] func(r R) bool

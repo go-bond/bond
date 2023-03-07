@@ -796,6 +796,94 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	require.Equal(t, 0, len(tokenBalances))
 }
 
+func TestBond_Query_Where_Offset_Limit_With_Filter_With_Evaluable(t *testing.T) {
+	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	query := TokenBalanceTable.Query().
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
+		}).
+		Limit(2)
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+
+	query = TokenBalanceTable.Query().
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
+		}).
+		Offset(1).
+		Limit(2)
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
+
+	query = TokenBalanceTable.Query().
+		Filter(func(tb *TokenBalance) bool {
+			return tb.AccountAddress == "0xtestAccount"
+		}).
+		Offset(3).
+		Limit(2)
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 0, len(tokenBalances))
+}
+
 func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
