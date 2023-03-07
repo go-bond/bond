@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"sync"
@@ -288,10 +289,12 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 
 	var prefixBuffer [KeyBufferInitialSize]byte
 	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
+	selectorEnd := big.NewInt(0).Add(big.NewInt(0).SetBytes(prefix[0:_KeyPrefixSplitIndex(prefix)]), big.NewInt(1)).Bytes()
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			LowerBound: prefix,
+			UpperBound: selectorEnd,
 		},
 	})
 
@@ -304,7 +307,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	indexKeysBuffer := make([]byte, 0, (KeyBufferInitialSize)*len(idxs))
 	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
 
-	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
+	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
 		err := t.serializer.Deserialize(iter.Value(), &tr)
@@ -851,19 +854,39 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 		return utils.MakeNew[T](), fmt.Errorf("not found")
 	}
 
-	records, closer, err := t.get([][]byte{key}, batch)
+	record, closer, err := t.getSingle(key, batch)
 	if err != nil {
 		return utils.MakeNew[T](), err
 	}
 	defer closer()
 
 	var rtr T
-	err = t.serializer.Deserialize(records[0], &rtr)
+	err = t.serializer.Deserialize(record, &rtr)
 	if err != nil {
 		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
 	}
 
 	return rtr, nil
+}
+
+func (t *_table[T]) getSingle(key []byte, batch Batch) ([]byte, func(), error) {
+	iter := t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: key,
+			UpperBound: key,
+		},
+	}, batch)
+	defer func() { _ = iter.Close() }()
+
+	if !iter.SeekPrefixGE(key) || !bytes.Equal(iter.Key(), key) {
+		return nil, nil, fmt.Errorf("not found")
+	}
+
+	iterValue := iter.Value()
+	value := _valueBufferPool.Get().([]byte)[:0]
+	value = append(value, iterValue...)
+
+	return value, func() { _valueBufferPool.Put(value) }, nil
 }
 
 func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
@@ -874,12 +897,17 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	// sort keys so we get data from db efficiently
 	originalOrder := t.sortKeys(keys)
 
-	iter := t.db.Iter(&IterOptions{}, batch)
+	iter := t.db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: keys[0],
+			UpperBound: keys[len(keys)-1],
+		},
+	}, batch)
 	defer func() { _ = iter.Close() }()
 
 	values := _byteArraysPool.Get().([][]byte)[:0]
 	for i := 0; i < len(keys); i++ {
-		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+		if !iter.SeekPrefixGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			return nil, nil, fmt.Errorf("not found")
 		}
 
@@ -950,6 +978,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	defer _keyBufferPool.Put(prefixBuffer)
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
+	selectorEnd := big.NewInt(0).Add(big.NewInt(0).SetBytes(selector[0:_KeyPrefixSplitIndex(selector)]), big.NewInt(1)).Bytes()
 
 	var iter Iterator
 	var batch Batch
@@ -958,12 +987,14 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 		iter = batch.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				UpperBound: selectorEnd,
 			},
 		})
 	} else {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				UpperBound: selectorEnd,
 			},
 		})
 	}
@@ -976,7 +1007,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 			return utils.MakeNew[T](), err
 		}
 	}
-	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+	for iter.SeekGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
 			_ = iter.Close()
@@ -1010,6 +1041,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	defer _keyBufferPool.Put(prefixBuffer)
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
+	selectorEnd := big.NewInt(0).Add(big.NewInt(0).SetBytes(selector[0:_KeyPrefixSplitIndex(selector)]), big.NewInt(1)).Bytes()
 
 	var iter Iterator
 	var batch Batch
@@ -1018,12 +1050,14 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		iter = batch.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				UpperBound: selectorEnd,
 			},
 		})
 	} else {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: selector,
+				UpperBound: selectorEnd,
 			},
 		})
 	}
@@ -1087,7 +1121,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		return getPrefetchedValue()
 	}
 
-	for iter.SeekPrefixGE(selector); iter.Valid(); iter.Next() {
+	for iter.SeekGE(selector); iter.Valid(); iter.Next() {
 		select {
 		case <-ctx.Done():
 			_ = iter.Close()
