@@ -359,19 +359,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 		indexKeyBatch = t.db.Batch()
 	)
+	defer indexKeyBatch.Close()
+
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
 		keyBatch = t.db.Batch()
+		defer keyBatch.Close()
 	}
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
-
-	defer func() {
-		if !externalBatch {
-			_ = keyBatch.Close()
-		}
-		_ = indexKeyBatch.Close()
-	}()
 
 	var (
 		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
@@ -398,7 +394,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 				UpperBound: []byte{byte(t.id), 0x01},
 			},
 		}, keyBatch)
-		defer func() { _ = iter.Close() }()
+		defer iter.Close()
 
 		// process rows
 		for i, key := range keys {
@@ -473,18 +469,14 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 		indexKeyBatch = t.db.Batch()
 	)
+	defer indexKeyBatch.Close()
+
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
 		keyBatch = t.db.Batch()
+		defer keyBatch.Close()
 	}
-
-	defer func() {
-		if !externalBatch {
-			_ = keyBatch.Close()
-		}
-		_ = indexKeyBatch.Close()
-	}()
 
 	var (
 		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
@@ -509,7 +501,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 				UpperBound: []byte{byte(t.id), 0x01},
 			},
 		}, keyBatch)
-		defer func() { _ = iter.Close() }()
+		defer iter.Close()
 
 		for i, key := range keys {
 			select {
@@ -599,59 +591,47 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 		indexKeyBatch = t.db.Batch()
 	)
+	defer indexKeyBatch.Close()
+
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
 		keyBatch = t.db.Batch()
+		defer keyBatch.Close()
 	}
 
-	defer func() {
-		if !externalBatch {
-			_ = keyBatch.Close()
-		}
-		_ = indexKeyBatch.Close()
-	}()
-
 	var (
-		keyBuffer      = _keyBufferPool.Get().([]byte)[:0]
-		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
-		indexKeys      = _byteArraysPool.Get().([][]byte)[:0]
+		keyBuffer      = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)
+		indexKeys      = make([][]byte, len(indexes))
 	)
-	defer _keyBufferPool.Put(keyBuffer[:0])
-	defer _multiKeyBufferPool.Put(indexKeyBuffer[:0])
-	defer _byteArraysPool.Put(indexKeys[:0])
+	defer _keyBufferPool.Put(keyBuffer)
+	defer _multiKeyBufferPool.Put(indexKeyBuffer)
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
-		for _, tr := range trs {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
-			}
+	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
 
-			var key = t.key(tr, keyBuffer[:0])
-			indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
+		var key = t.key(tr, keyBuffer[:0])
+		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
-			err := keyBatch.Delete(key, Sync)
+		err := keyBatch.Delete(key, Sync)
+		if err != nil {
+			return err
+		}
+
+		for _, indexKey := range indexKeys {
+			err = keyBatch.Delete(indexKey, Sync)
 			if err != nil {
 				return err
 			}
-
-			for _, indexKey := range indexKeys {
-				err = keyBatch.Delete(indexKey, Sync)
-				if err != nil {
-					return err
-				}
-			}
 		}
-
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
-	err = keyBatch.Apply(indexKeyBatch, Sync)
+	err := keyBatch.Apply(indexKeyBatch, Sync)
 	if err != nil {
 		return err
 	}
@@ -678,19 +658,15 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 		indexKeyBatch = t.db.Batch()
 	)
+	defer indexKeyBatch.Close()
+
 	if externalBatch {
 		keyBatch = optBatch[0]
 	} else {
 		keyBatch = t.db.Batch()
+		defer keyBatch.Close()
 	}
 	keyBatchCtx = ContextWithBatch(ctx, keyBatch)
-
-	defer func() {
-		if !externalBatch {
-			_ = keyBatch.Close()
-		}
-		_ = indexKeyBatch.Close()
-	}()
 
 	var (
 		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
@@ -717,7 +693,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				UpperBound: []byte{byte(t.id), 0x01},
 			},
 		}, keyBatch)
-		defer func() { _ = iter.Close() }()
+		defer iter.Close()
 
 		for i := 0; i < len(keys); {
 			tr := trs[keyOrder[i]]
@@ -861,9 +837,7 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 				UpperBound: []byte{byte(t.id), 0x01},
 			},
 		}, batch)
-		defer func() {
-			_ = iter.Close()
-		}()
+		defer iter.Close()
 	}
 
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
@@ -915,7 +889,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 			UpperBound: []byte{byte(t.id), 0x01},
 		},
 	}, batch)
-	defer func() { _ = iter.Close() }()
+	defer iter.Close()
 
 	values := _byteArraysPool.Get().([][]byte)[:0]
 	for i := 0; i < len(keys); i++ {
