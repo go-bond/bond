@@ -391,7 +391,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: keys[0],
-				UpperBound: []byte{byte(t.id), 0x01},
+				UpperBound: []byte{byte(t.id), 0x01, 0x00, 0x00, 0x00, 0x00},
 			},
 		}, keyBatch)
 		defer iter.Close()
@@ -498,7 +498,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: keys[0],
-				UpperBound: []byte{byte(t.id), 0x01},
+				UpperBound: []byte{byte(t.id), 0x01, 0x00, 0x00, 0x00, 0x00},
 			},
 		}, keyBatch)
 		defer iter.Close()
@@ -690,7 +690,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: keys[0],
-				UpperBound: []byte{byte(t.id), 0x01},
+				UpperBound: []byte{byte(t.id), 0x01, 0x00, 0x00, 0x00, 0x00},
 			},
 		}, keyBatch)
 		defer iter.Close()
@@ -834,7 +834,7 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: key,
-				UpperBound: []byte{byte(t.id), 0x01},
+				UpperBound: []byte{byte(t.id), 0x01, 0x00, 0x00, 0x00, 0x00},
 			},
 		}, batch)
 		defer iter.Close()
@@ -886,7 +886,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			LowerBound: keys[0],
-			UpperBound: []byte{byte(t.id), 0x01},
+			UpperBound: []byte{byte(t.id), 0x01, 0x00, 0x00, 0x00, 0x00},
 		},
 	}, batch)
 	defer iter.Close()

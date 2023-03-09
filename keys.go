@@ -304,12 +304,8 @@ func (key KeyBytes) ToKey() Key {
 
 func DefaultKeyComparer() *pebble.Comparer {
 	comparer := *pebble.DefaultComparer
-	comparer.Split = _KeyPrefixSplitIndexFullKey
+	comparer.Split = _KeyPrefixSplitIndex
 	return &comparer
-}
-
-func _KeyPrefixSplitIndexFullKey(rawKey []byte) int {
-	return len(rawKey) - 1
 }
 
 func _KeyPrefixSplitIndex(rawKey []byte) int {
