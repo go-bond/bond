@@ -14,21 +14,21 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-var _keyBufferPool = sync.Pool{New: func() any {
+var _keyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, KeyBufferInitialSize)
-}}
+}, 5*persistentBatchSize) // 51 MB
 
-var _multiKeyBufferPool = sync.Pool{New: func() any {
+var _multiKeyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, KeyBufferInitialSize*1000)
-}}
+}, 5) // 10 MB
 
-var _byteArraysPool = sync.Pool{New: func() any {
-	return make([][]byte, 0, 1000)
-}}
+var _byteArraysPool = utils.NewPreAllocatedPool[any](func() any {
+	return make([][]byte, 0, persistentBatchSize)
+}, 50) // 2 MB
 
-var _valueBufferPool = sync.Pool{New: func() any {
-	return make([]byte, 0, 1024)
-}}
+var _valueBufferPool = utils.NewPreAllocatedPool[any](func() any {
+	return make([]byte, 0, ValueBufferInitialSize)
+}, 10*DefaultScanPrefetchSize) // 10 MB
 
 func _valueBufferPoolCloser(values [][]byte) {
 	for _, value := range values {
@@ -37,9 +37,8 @@ func _valueBufferPoolCloser(values [][]byte) {
 	_byteArraysPool.Put(values[:0])
 }
 
-func _keyBuffersGet(numOfKeys int) ([][]byte, func()) {
+func _keyBuffersGet(numOfKeys int) [][]byte {
 	keys := _byteArraysPool.Get().([][]byte)[:0]
-
 	if cap(keys) < numOfKeys {
 		keys = make([][]byte, 0, numOfKeys)
 	}
@@ -47,18 +46,20 @@ func _keyBuffersGet(numOfKeys int) ([][]byte, func()) {
 	for i := 0; i < numOfKeys; i++ {
 		keys = append(keys, _keyBufferPool.Get().([]byte)[:0])
 	}
+	return keys
+}
 
-	return keys, func() {
-		for _, key := range keys {
-			_keyBufferPool.Put(key[:0])
-		}
-		_byteArraysPool.Put(keys[:0])
+func _keyBufferClose(keys [][]byte) {
+	for _, key := range keys {
+		_keyBufferPool.Put(key[:0])
 	}
+	_byteArraysPool.Put(keys[:0])
 }
 
 var _indexKeyValue = []byte{}
 
 const KeyBufferInitialSize = 2048
+const ValueBufferInitialSize = 2048
 const ReindexBatchSize = 10000
 
 const DefaultScanPrefetchSize = 100
@@ -378,13 +379,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	batchCtx = ContextWithBatch(ctx, batch)
 
 	var (
-		indexKeysBuffer = make([]byte, 0, len(indexes)*KeyBufferInitialSize)
-		indexKeys       = make([][]byte, 0, len(indexes))
+		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
+		indexKeys       = _byteArraysPool.Get().([][]byte)[:0]
 	)
+	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 
 	// key buffers
-	keysBuffer, keysBufferCloser := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer keysBufferCloser()
+	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
+	defer _keyBufferClose(keysBuffer)
 
 	keyPartsBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyPartsBuffer)
@@ -497,8 +500,8 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
 
 	// key buffers
-	keysBuffer, keysBufferCloser := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer keysBufferCloser()
+	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
+	defer _keyBufferClose(keysBuffer)
 
 	keyPartsBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyPartsBuffer)
@@ -691,8 +694,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	defer _byteArraysPool.Put(indexKeys[:0])
 
 	// key buffers
-	keysBuffer, keysBufferCloser := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer keysBufferCloser()
+	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
+	defer _keyBufferClose(keysBuffer)
 
 	keyPartsBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyPartsBuffer)
