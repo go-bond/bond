@@ -20,15 +20,15 @@ var _keyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 
 var _multiKeyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, KeyBufferInitialSize*1000)
-}, 5) // 10 MB
+}, 25) // 51 MB
 
 var _byteArraysPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([][]byte, 0, persistentBatchSize)
-}, 50) // 2 MB
+}, 500) // 20 MB
 
 var _valueBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, ValueBufferInitialSize)
-}, 10*DefaultScanPrefetchSize) // 10 MB
+}, 100*DefaultScanPrefetchSize) // 20 MB
 
 func _valueBufferPoolCloser(values [][]byte) {
 	for _, value := range values {
@@ -395,7 +395,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value)
+	defer _valueBufferPool.Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -509,7 +509,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value)
+	defer _valueBufferPool.Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -624,11 +624,13 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	var (
-		keyBuffer      = _keyBufferPool.Get().([]byte)
-		indexKeyBuffer = make([]byte, 0, len(indexes)*KeyBufferInitialSize)
-		indexKeys      = make([][]byte, len(indexes))
+		keyBuffer      = _keyBufferPool.Get().([]byte)[:0]
+		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
+		indexKeys      = _byteArraysPool.Get().([][]byte)[:0]
 	)
-	defer _keyBufferPool.Put(keyBuffer)
+	defer _keyBufferPool.Put(keyBuffer[:0])
+	defer _multiKeyBufferPool.Put(indexKeyBuffer[:0])
+	defer _byteArraysPool.Put(indexKeys[:0])
 
 	keyPartsBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyPartsBuffer)
@@ -703,7 +705,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value)
+	defer _valueBufferPool.Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
