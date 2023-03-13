@@ -22,40 +22,51 @@ func (s *SyncPoolWrapper[T]) Put(t T) {
 type PreAllocatedPool[T any] struct {
 	*SyncPoolWrapper[T]
 
-	preAllocItems chan T
+	preAllocItems     []T
+	preAllocItemsSize int
+
+	mu sync.Mutex
 }
 
 func NewPreAllocatedPool[T any](newFunc func() any, size int) *PreAllocatedPool[T] {
-	preAllocItems := make(chan T, size)
 	syncPool := &SyncPoolWrapper[T]{
 		Pool: sync.Pool{
 			New: newFunc,
 		},
 	}
 
+	preAllocItems := make([]T, 0, size)
 	for i := 0; i < size; i++ {
-		preAllocItems <- syncPool.Get()
+		preAllocItems = append(preAllocItems, syncPool.Get())
 	}
 
 	return &PreAllocatedPool[T]{
-		SyncPoolWrapper: syncPool,
-		preAllocItems:   preAllocItems,
+		SyncPoolWrapper:   syncPool,
+		preAllocItems:     preAllocItems,
+		preAllocItemsSize: size,
 	}
 }
 
 func (s *PreAllocatedPool[T]) Get() T {
-	select {
-	case item := <-s.preAllocItems:
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if itemsLen := len(s.preAllocItems); itemsLen > 0 {
+		item := s.preAllocItems[itemsLen-1]
+		s.preAllocItems = s.preAllocItems[:itemsLen-1]
 		return item
-	default:
+	} else {
 		return s.Pool.Get().(T)
 	}
 }
 
 func (s *PreAllocatedPool[T]) Put(t T) {
-	select {
-	case s.preAllocItems <- t:
-	default:
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if itemsLen := len(s.preAllocItems); itemsLen < s.preAllocItemsSize {
+		s.preAllocItems = append(s.preAllocItems, t)
+	} else {
 		s.Pool.Put(t)
 	}
 }
