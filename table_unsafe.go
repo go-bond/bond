@@ -38,13 +38,10 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	// key
 	var (
 		keyBuffer      = _keyBufferPool.Get().([]byte)
-		indexKeyBuffer = _keyBufferPool.Get().([]byte)
+		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)
 	)
 	defer _keyBufferPool.Put(keyBuffer)
 	defer _keyBufferPool.Put(indexKeyBuffer)
-
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
 
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
@@ -68,7 +65,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// update key
-		key := t.key(tr, keyBuffer[:0], keyPartsBuffer[:0])
+		key := t.key(tr, keyBuffer[:0])
 
 		// serialize
 		data, err := serialize(&tr)
@@ -84,7 +81,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// indexKeys to add and remove
-		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0], keyPartsBuffer[:0])
+		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0])
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {

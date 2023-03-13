@@ -85,7 +85,7 @@ func TableUpsertOnConflictReplace[T any](_, new T) T {
 	return new
 }
 
-func primaryIndexKey[T any](_ KeyBuilder, _ T) []byte { return []byte{} }
+func primaryIndexKey[T any](b KeyBuilder, _ T) []byte { return b.Bytes() }
 
 type TableInfo interface {
 	ID() TableID
@@ -327,9 +327,6 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	indexKeysBuffer := make([]byte, 0, (KeyBufferInitialSize)*len(idxs))
 	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
 	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
@@ -338,7 +335,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 			return fmt.Errorf("failed to deserialize during reindexing: %w", err)
 		}
 
-		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0], keyPartsBuffer[:0])
+		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
 
 		for _, indexKey := range indexKeys {
 			err = batch.Set(indexKey, _indexKeyValue, Sync)
@@ -401,9 +398,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
 	defer _keyBufferClose(keysBuffer)
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
@@ -417,7 +411,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keysExternal(trs, keysBuffer, keyPartsBuffer[:0])
+		keys := t.keysExternal(trs, keysBuffer)
 
 		// order keys
 		keyOrder := t.sortKeys(keys)
@@ -457,7 +451,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// index keys
-			indexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0], keyPartsBuffer[:0])
+			indexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
 
 			// update indexes
 			for _, indexKey := range indexKeys {
@@ -515,9 +509,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
 	defer _keyBufferClose(keysBuffer)
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
@@ -534,7 +525,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keysExternal(trs, keysBuffer, keyPartsBuffer[:0])
+		keys := t.keysExternal(trs, keysBuffer)
 
 		// order keys
 		keyOrder := t.sortKeys(keys)
@@ -585,7 +576,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// indexKeys to add and remove
-			toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0], keyPartsBuffer[:0])
+			toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0])
 
 			// update indexes
 			for _, indexKey := range toAddIndexKeys {
@@ -656,8 +647,8 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		default:
 		}
 
-		var key = t.key(tr, keyBuffer[:0], keyPartsBuffer[:0])
-		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0], keyPartsBuffer[:0])
+		var key = t.key(tr, keyBuffer[:0])
+		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
 		err := batch.Delete(key, Sync)
 		if err != nil {
@@ -713,9 +704,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
 	defer _keyBufferClose(keysBuffer)
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
 	// value
 	value := _valueBufferPool.Get().([]byte)[:0]
 	valueBuffer := bytes.NewBuffer(value)
@@ -732,7 +720,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
-		keys := t.keysExternal(trs, keysBuffer, keyPartsBuffer)
+		keys := t.keysExternal(trs, keysBuffer)
 
 		// order keys
 		keyOrder := t.sortKeys(keys)
@@ -802,9 +790,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			)
 
 			if isUpdate {
-				toAddIndexKeys, toRemoveIndexKeys = t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0], keyPartsBuffer)
+				toAddIndexKeys, toRemoveIndexKeys = t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0])
 			} else {
-				toAddIndexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0], keyPartsBuffer)
+				toAddIndexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
 			}
 
 			// update indexes
@@ -855,10 +843,7 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 	keyBuffer := _keyBufferPool.Get().([]byte)[:0]
 	defer _keyBufferPool.Put(keyBuffer[:0])
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
-	key := t.key(tr, keyBuffer[:0], keyPartsBuffer[:0])
+	key := t.key(tr, keyBuffer[:0])
 
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
@@ -903,10 +888,7 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 	keyBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(keyBuffer)
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
-	key := t.key(tr, keyBuffer[:0], keyPartsBuffer[:0])
+	key := t.key(tr, keyBuffer[:0])
 
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
@@ -1018,10 +1000,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	prefixBuffer := _keyBufferPool.Get().([]byte)
 	defer _keyBufferPool.Put(prefixBuffer)
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
-	selector := t.indexKey(s, idx, prefixBuffer[:0], keyPartsBuffer[:0])
+	selector := t.indexKey(s, idx, prefixBuffer[:0])
 	selectorEnd := _keyBufferPool.Get().([]byte)[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
 	defer _keyBufferPool.Put(selectorEnd[:0])
@@ -1084,12 +1063,9 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	prefixBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(prefixBuffer)
+	defer _keyBufferPool.Put(prefixBuffer[:0])
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
-
-	selector := t.indexKey(s, idx, prefixBuffer[:0], keyPartsBuffer[:0])
+	selector := t.indexKey(s, idx, prefixBuffer[:0])
 	selectorEnd := _keyBufferPool.Get().([]byte)[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
 	defer _keyBufferPool.Put(selectorEnd[:0])
@@ -1240,22 +1216,22 @@ func (t *_table[T]) reorderValues(values [][]byte, keyOrder []int) {
 	})
 }
 
-func (t *_table[T]) key(tr T, buff []byte, keyPartsBuffer []byte) []byte {
-	var primaryKey = t.primaryKeyFunc(NewKeyBuilder(keyPartsBuffer[:0]), tr)
-
-	return KeyEncode(Key{
-		TableID:    t.id,
-		IndexID:    PrimaryIndexID,
-		Index:      nil,
-		IndexOrder: nil,
-		PrimaryKey: primaryKey,
-	}, buff[:0])
+func (t *_table[T]) key(tr T, buff []byte) []byte {
+	return KeyEncodeRaw(
+		t.id,
+		PrimaryIndexID,
+		nil,
+		nil,
+		func(b []byte) []byte {
+			return t.primaryKeyFunc(NewKeyBuilder(b), tr)
+		},
+		buff[:0])
 }
 
-func (t *_table[T]) keysExternal(trs []T, keys [][]byte, keyPartsBuffer []byte) [][]byte {
+func (t *_table[T]) keysExternal(trs []T, keys [][]byte) [][]byte {
 	retKeys := keys[:len(trs)]
 	for i, tr := range trs {
-		key := t.key(tr, retKeys[i][:0], keyPartsBuffer)
+		key := t.key(tr, retKeys[i][:0])
 		retKeys[i] = key
 	}
 	return retKeys
@@ -1266,15 +1242,16 @@ func (t *_table[T]) keyDuplicate(index int, keys [][]byte) bool {
 }
 
 func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
-	indexKey := idx.IndexKeyFunction(NewKeyBuilder(buff[:0]), s)
-
-	return KeyEncode(Key{
-		TableID:    t.id,
-		IndexID:    idx.IndexID,
-		Index:      indexKey,
-		IndexOrder: nil,
-		PrimaryKey: nil,
-	}, indexKey[len(indexKey):])
+	return KeyEncodeRaw(
+		t.id,
+		idx.IndexID,
+		func(b []byte) []byte {
+			return idx.IndexKeyFunction(NewKeyBuilder(b), s)
+		},
+		nil,
+		nil,
+		buff[:0],
+	)
 }
 
 func keySuccessor(dst, src []byte) []byte {
@@ -1288,28 +1265,31 @@ func keySuccessor(dst, src []byte) []byte {
 	return dst
 }
 
-func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte, keyPartsBuffer []byte) []byte {
-	primaryKey := t.primaryKeyFunc(NewKeyBuilder(keyPartsBuffer[:0]), tr)
-	indexKeyPart := idx.IndexKeyFunction(NewKeyBuilder(primaryKey[len(primaryKey):]), tr)
-	orderKeyPart := idx.IndexOrderFunction(
-		IndexOrder{keyBuilder: NewKeyBuilder(indexKeyPart[len(indexKeyPart):])}, tr,
-	).Bytes()
-
-	return KeyEncode(Key{
-		TableID:    t.id,
-		IndexID:    idx.IndexID,
-		Index:      indexKeyPart,
-		IndexOrder: orderKeyPart,
-		PrimaryKey: primaryKey,
-	}, buff[:0])
+func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
+	return KeyEncodeRaw(
+		t.id,
+		idx.IndexID,
+		func(b []byte) []byte {
+			return idx.IndexKeyFunction(NewKeyBuilder(b), tr)
+		},
+		func(b []byte) []byte {
+			return idx.IndexOrderFunction(
+				IndexOrder{keyBuilder: NewKeyBuilder(b)}, tr,
+			).Bytes()
+		},
+		func(b []byte) []byte {
+			return t.primaryKeyFunc(NewKeyBuilder(b), tr)
+		},
+		buff[:0],
+	)
 }
 
-func (t *_table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte, keyPartsBuffer []byte) [][]byte {
+func (t *_table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {
 	indexKeys := indexKeysBuff[:0]
 
 	for _, idx := range idxs {
 		if idx.IndexFilterFunction(tr) {
-			indexKey := t.indexKey(tr, idx, buff, keyPartsBuffer)
+			indexKey := t.indexKey(tr, idx, buff)
 			indexKeys = append(indexKeys, indexKey)
 			buff = indexKey[len(indexKey):]
 		}
@@ -1317,14 +1297,14 @@ func (t *_table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, ind
 	return indexKeys
 }
 
-func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte, keyPartsBuffer []byte) (toAdd [][]byte, toRemove [][]byte) {
-	newTrKeys := t.indexKeys(newTr, idxs, buff[:0], [][]byte{}, keyPartsBuffer)
+func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
+	newTrKeys := t.indexKeys(newTr, idxs, buff[:0], [][]byte{})
 	if len(newTrKeys) != 0 {
 		buff = newTrKeys[len(newTrKeys)-1]
 		buff = buff[len(buff):]
 	}
 
-	oldTrKeys := t.indexKeys(oldTr, idxs, buff[:0], [][]byte{}, keyPartsBuffer)
+	oldTrKeys := t.indexKeys(oldTr, idxs, buff[:0], [][]byte{})
 
 	for _, newKey := range newTrKeys {
 		found := false

@@ -174,8 +174,22 @@ func TestKey_Encode_Decode(t *testing.T) {
 	}
 
 	keyRaw := KeyEncode(key)
+	keyRawDirect := KeyEncodeRaw(
+		key.TableID,
+		key.IndexID,
+		func(buff []byte) []byte {
+			return append(buff, key.Index...)
+		},
+		func(buff []byte) []byte {
+			return append(buff, key.IndexOrder...)
+		},
+		func(buff []byte) []byte {
+			return append(buff, key.PrimaryKey...)
+		},
+	)
 	keyReconstructed := KeyDecode(keyRaw)
 
+	assert.Equal(t, keyRaw, keyRawDirect)
 	assert.Equal(t, key, keyReconstructed)
 }
 
@@ -205,6 +219,10 @@ func TestKey_ToKeyPrefix(t *testing.T) {
 	assert.Equal(t, true, keyPrefix.IsIndexKey())
 	assert.Equal(t, true, keyPrefix.IsKeyPrefix())
 	assert.Equal(t, expectedKeyPrefix, KeyEncode(keyPrefix))
+	assert.Equal(t, expectedKeyPrefix, KeyEncodeRaw(
+		key.TableID, key.IndexID, func(buff []byte) []byte {
+			return append(buff, key.Index...)
+		}, nil, nil))
 }
 
 func TestKey_ToDataKey(t *testing.T) {

@@ -220,6 +220,40 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	return buff.Bytes()
 }
 
+func KeyEncodeRaw(tableID TableID, indexID IndexID, indexFunc, indexOrderFunc, primaryKeyFunc func(buff []byte) []byte, buffs ...[]byte) []byte {
+	var buff []byte
+	if len(buffs) > 0 && buffs[0] != nil {
+		buff = buffs[0]
+	}
+
+	buff = append(buff, byte(tableID))
+	buff = append(buff, byte(indexID))
+
+	// placeholder for len
+	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
+	lenIndex := len(buff) - 4
+
+	if indexFunc != nil {
+		buff = indexFunc(buff)
+		binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
+	}
+
+	if primaryKeyFunc != nil {
+		// placeholder for len
+		buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
+		lenIndex = len(buff) - 4
+
+		if indexOrderFunc != nil {
+			buff = indexOrderFunc(buff)
+			binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
+		}
+
+		buff = primaryKeyFunc(buff)
+	}
+
+	return buff
+}
+
 func KeyDecode(keyBytes []byte) Key {
 	buff := bytes.NewBuffer(keyBytes)
 
