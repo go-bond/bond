@@ -30,6 +30,18 @@ var _valueBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, ValueBufferInitialSize)
 }, 100*DefaultScanPrefetchSize) // 20 MB
 
+func _valueBuffersGet(numOfKeys int) [][]byte {
+	keys := _byteArraysPool.Get().([][]byte)[:0]
+	if cap(keys) < numOfKeys {
+		keys = make([][]byte, 0, numOfKeys)
+	}
+
+	for i := 0; i < numOfKeys; i++ {
+		keys = append(keys, _valueBufferPool.Get().([]byte)[:0])
+	}
+	return keys
+}
+
 func _valueBufferPoolCloser(values [][]byte) {
 	for _, value := range values {
 		_valueBufferPool.Put(value[:0])
@@ -912,9 +924,9 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 	return rtr, nil
 }
 
-func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
+func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, error) {
 	if len(keys) == 0 {
-		return [][]byte{}, func() {}, nil
+		return [][]byte{}, nil
 	}
 
 	// sort keys so we get data from db efficiently
@@ -928,23 +940,25 @@ func (t *_table[T]) get(keys [][]byte, batch Batch) ([][]byte, func(), error) {
 	}, batch)
 	defer iter.Close()
 
-	values := _byteArraysPool.Get().([][]byte)[:0]
 	for i := 0; i < len(keys); i++ {
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
-			return nil, nil, fmt.Errorf("not found")
+			return nil, fmt.Errorf("not found")
 		}
 
 		iterValue := iter.Value()
-		value := _valueBufferPool.Get().([]byte)[:0]
+		value := values[i][:0]
 		value = append(value, iterValue...)
 
-		values = append(values, value)
+		values[i] = value
 	}
+
+	// resize values
+	values = values[:len(keys)]
 
 	// restore original order on values
 	t.reorderValues(values, originalOrder)
 
-	return values, func() { _valueBufferPoolCloser(values) }, nil
+	return values, nil
 }
 
 func (t *_table[T]) Iter(opt *IterOptions, optBatch ...Batch) Iterator {
@@ -1098,9 +1112,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	keys := _byteArraysPool.Get().([][]byte)[:0]
 	indexKeys := _byteArraysPool.Get().([][]byte)[:0]
 	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
+	valuesBuffer := _valueBuffersGet(t.scanPrefetchSize)
 	defer _byteArraysPool.Put(keys[:0])
 	defer _byteArraysPool.Put(indexKeys[:0])
 	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
+	defer _valueBufferPoolCloser(valuesBuffer)
 
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
@@ -1138,7 +1154,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 			keys = append(keys, key)
 
 			next = key[len(key):]
-			if len(keys) <= t.scanPrefetchSize {
+			if len(keys) < t.scanPrefetchSize {
 				iter.Next()
 				continue
 			}
@@ -1146,7 +1162,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		}
 
 		var err error
-		prefetchedValues, prefetchCloser, err = t.get(keys, batch)
+		prefetchedValues, err = t.get(keys, batch, valuesBuffer)
 		if err != nil {
 			return utils.MakeNew[T](), err
 		}
