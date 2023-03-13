@@ -529,6 +529,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
+	// reusable object
+	var oldTr T
+
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer, keyPartsBuffer[:0])
@@ -562,7 +565,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
 			}
 
-			var oldTr T
 			err := t.serializer.Deserialize(iter.Value(), &oldTr)
 			if err != nil {
 				return err
@@ -725,6 +727,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
+	// reusable object
+	var oldTr T
+
 	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer, keyPartsBuffer)
@@ -754,7 +759,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 			// old record
 			var (
-				oldTr    T
 				isUpdate bool
 				err      error
 			)
