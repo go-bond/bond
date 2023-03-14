@@ -16,19 +16,19 @@ import (
 
 var _keyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, KeyBufferInitialSize)
-}, 5*persistentBatchSize) // 51 MB
+}, 2*persistentBatchSize) // 51 MB
 
 var _multiKeyBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, KeyBufferInitialSize*1000)
-}, 25) // 51 MB
+}, 10) // 51 MB
 
 var _byteArraysPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([][]byte, 0, persistentBatchSize)
-}, 500) // 20 MB
+}, 50) // 20 MB
 
 var _valueBufferPool = utils.NewPreAllocatedPool[any](func() any {
 	return make([]byte, 0, ValueBufferInitialSize)
-}, 100*DefaultScanPrefetchSize) // 20 MB
+}, 10*DefaultScanPrefetchSize) // 20 MB
 
 func _valueBuffersGet(numOfKeys int) [][]byte {
 	keys := _byteArraysPool.Get().([][]byte)[:0]
