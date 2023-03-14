@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/serializers"
+	"github.com/go-bond/bond/utils"
 )
 
 const (
@@ -55,7 +56,29 @@ type Applier interface {
 
 type Closer io.Closer
 
+const DefaultKeyBufferSize = 2048
+const DefaultValueBufferSize = 2048
+const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
+
+const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
+const DefaultNumberOfPreAllocMultiKeyBuffers = 10
+const DefaultNumberOfPreAllocValueBuffers = 10 * DefaultScanPrefetchSize
+const DefaultNumberOfPreAllocBytesArrays = 50
+
+type internalPools interface {
+	getKeyBufferPool() *utils.PreAllocatedPool[[]byte]
+	getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte]
+	getValueBufferPool() *utils.PreAllocatedPool[[]byte]
+	getBytesArrayPool() *utils.PreAllocatedPool[[][]byte]
+	getKeyArray(numOfKeys int) [][]byte
+	putKeyArray(arr [][]byte)
+	getValueArray(numOfValues int) [][]byte
+	putValueArray(arr [][]byte)
+}
+
 type DB interface {
+	internalPools
+
 	Backend() *pebble.DB
 	Serializer() Serializer[any]
 
@@ -77,6 +100,11 @@ type _db struct {
 	pebble *pebble.DB
 
 	serializer Serializer[any]
+
+	keyBufferPool      *utils.PreAllocatedPool[[]byte]
+	multiKeyBufferPool *utils.PreAllocatedPool[[]byte]
+	valueBufferPool    *utils.PreAllocatedPool[[]byte]
+	byteArraysPool     *utils.PreAllocatedPool[[][]byte]
 
 	onCloseCallbacks []func(db DB)
 }
@@ -104,7 +132,22 @@ func Open(dirname string, opts *Options) (DB, error) {
 		serializer = &serializers.JsonSerializer{}
 	}
 
-	db := &_db{pebble: pdb, serializer: serializer}
+	db := &_db{
+		pebble:     pdb,
+		serializer: serializer,
+		keyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+			return make([]byte, 0, DefaultKeyBufferSize)
+		}, DefaultNumberOfPreAllocKeyBuffers),
+		multiKeyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+			return make([]byte, 0, DefaultKeyBufferSize*DefaultNumberOfKeyBuffersInMultiKeyBuffer)
+		}, DefaultNumberOfPreAllocMultiKeyBuffers),
+		valueBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+			return make([]byte, 0, DefaultValueBufferSize)
+		}, DefaultNumberOfPreAllocValueBuffers),
+		byteArraysPool: utils.NewPreAllocatedPool[[][]byte](func() any {
+			return make([][]byte, 0, persistentBatchSize)
+		}, DefaultNumberOfPreAllocBytesArrays),
+	}
 
 	if db.Version() == 0 {
 		if err := db.initVersion(); err != nil {
@@ -187,6 +230,60 @@ func (db *_db) notifyOnClose() {
 	for _, onClose := range db.onCloseCallbacks {
 		onClose(db)
 	}
+}
+
+func (db *_db) getKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+	return db.keyBufferPool
+}
+
+func (db *_db) getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+	return db.multiKeyBufferPool
+}
+
+func (db *_db) getValueBufferPool() *utils.PreAllocatedPool[[]byte] {
+	return db.valueBufferPool
+}
+
+func (db *_db) getBytesArrayPool() *utils.PreAllocatedPool[[][]byte] {
+	return db.byteArraysPool
+}
+
+func (db *_db) getKeyArray(numOfKeys int) [][]byte {
+	keys := db.byteArraysPool.Get()[:0]
+	if cap(keys) < numOfKeys {
+		keys = make([][]byte, 0, numOfKeys)
+	}
+
+	for i := 0; i < numOfKeys; i++ {
+		keys = append(keys, db.keyBufferPool.Get()[:0])
+	}
+	return keys
+}
+
+func (db *_db) putKeyArray(arr [][]byte) {
+	for _, key := range arr {
+		db.keyBufferPool.Put(key[:0])
+	}
+	db.byteArraysPool.Put(arr[:0])
+}
+
+func (db *_db) getValueArray(numOfValues int) [][]byte {
+	keys := db.byteArraysPool.Get()[:0]
+	if cap(keys) < numOfValues {
+		keys = make([][]byte, 0, numOfValues)
+	}
+
+	for i := 0; i < numOfValues; i++ {
+		keys = append(keys, db.valueBufferPool.Get()[:0])
+	}
+	return keys
+}
+
+func (db *_db) putValueArray(arr [][]byte) {
+	for _, value := range arr {
+		db.valueBufferPool.Put(value[:0])
+	}
+	db.byteArraysPool.Put(arr[:0])
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {

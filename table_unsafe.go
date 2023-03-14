@@ -37,16 +37,16 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 	// key
 	var (
-		keyBuffer      = _keyBufferPool.Get().([]byte)
-		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)
+		keyBuffer      = t.db.getKeyBufferPool().Get()
+		indexKeyBuffer = t.db.getMultiKeyBufferPool().Get()
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeyBuffer)
+	defer t.db.getKeyBufferPool().Put(keyBuffer)
+	defer t.db.getMultiKeyBufferPool().Put(indexKeyBuffer)
 
 	// value
-	value := _valueBufferPool.Get().([]byte)[:0]
+	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value)
+	defer t.db.getValueBufferPool().Put(value)
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize

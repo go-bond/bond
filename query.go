@@ -122,8 +122,8 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 		if q.isAfter && !skippedFirstRow {
 			skippedFirstRow = true
 
-			keyBuffer := _keyBufferPool.Get().([]byte)
-			defer _keyBufferPool.Put(keyBuffer)
+			keyBuffer := q.table.db.getKeyBufferPool().Get()
+			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
 			rowIdxKey := key.ToKey()
 			selIdxKey := KeyBytes(q.table.indexKey(q.indexSelector, q.index, keyBuffer[:0])).ToKey()

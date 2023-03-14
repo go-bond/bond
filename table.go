@@ -14,64 +14,8 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-var _keyBufferPool = utils.NewPreAllocatedPool[any](func() any {
-	return make([]byte, 0, KeyBufferInitialSize)
-}, 2*persistentBatchSize) // 51 MB
-
-var _multiKeyBufferPool = utils.NewPreAllocatedPool[any](func() any {
-	return make([]byte, 0, KeyBufferInitialSize*1000)
-}, 10) // 51 MB
-
-var _byteArraysPool = utils.NewPreAllocatedPool[any](func() any {
-	return make([][]byte, 0, persistentBatchSize)
-}, 50) // 20 MB
-
-var _valueBufferPool = utils.NewPreAllocatedPool[any](func() any {
-	return make([]byte, 0, ValueBufferInitialSize)
-}, 10*DefaultScanPrefetchSize) // 20 MB
-
-func _valueBuffersGet(numOfKeys int) [][]byte {
-	keys := _byteArraysPool.Get().([][]byte)[:0]
-	if cap(keys) < numOfKeys {
-		keys = make([][]byte, 0, numOfKeys)
-	}
-
-	for i := 0; i < numOfKeys; i++ {
-		keys = append(keys, _valueBufferPool.Get().([]byte)[:0])
-	}
-	return keys
-}
-
-func _valueBufferPoolCloser(values [][]byte) {
-	for _, value := range values {
-		_valueBufferPool.Put(value[:0])
-	}
-	_byteArraysPool.Put(values[:0])
-}
-
-func _keyBuffersGet(numOfKeys int) [][]byte {
-	keys := _byteArraysPool.Get().([][]byte)[:0]
-	if cap(keys) < numOfKeys {
-		keys = make([][]byte, 0, numOfKeys)
-	}
-
-	for i := 0; i < numOfKeys; i++ {
-		keys = append(keys, _keyBufferPool.Get().([]byte)[:0])
-	}
-	return keys
-}
-
-func _keyBufferClose(keys [][]byte) {
-	for _, key := range keys {
-		_keyBufferPool.Put(key[:0])
-	}
-	_byteArraysPool.Put(keys[:0])
-}
-
 var _indexKeyValue = []byte{}
 
-const KeyBufferInitialSize = 2048
-const ValueBufferInitialSize = 2048
 const ReindexBatchSize = 10000
 
 const DefaultScanPrefetchSize = 100
@@ -307,7 +251,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 		}
 	}
 
-	var prefixBuffer [KeyBufferInitialSize]byte
+	var prefixBuffer [DefaultKeyBufferSize]byte
 	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
 	selectorEnd := big.NewInt(0).Add(big.NewInt(0).SetBytes(prefix[0:_KeyPrefixSplitIndex(prefix)]), big.NewInt(1)).Bytes()
 
@@ -324,7 +268,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	}()
 
 	counter := 0
-	indexKeysBuffer := make([]byte, 0, (KeyBufferInitialSize)*len(idxs))
+	indexKeysBuffer := make([]byte, 0, (DefaultKeyBufferSize)*len(idxs))
 	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
 
 	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
@@ -388,20 +332,20 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	batchCtx = ContextWithBatch(ctx, batch)
 
 	var (
-		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
-		indexKeys       = _byteArraysPool.Get().([][]byte)[:0]
+		indexKeysBuffer = t.db.getMultiKeyBufferPool().Get()[:0]
+		indexKeys       = t.db.getBytesArrayPool().Get()[:0]
 	)
-	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
-	defer _byteArraysPool.Put(indexKeys[:0])
+	defer t.db.getMultiKeyBufferPool().Put(indexKeysBuffer[:0])
+	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
 
 	// key buffers
-	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer _keyBufferClose(keysBuffer)
+	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := _valueBufferPool.Get().([]byte)[:0]
+	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value[:0])
+	defer t.db.getValueBufferPool().Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -501,18 +445,18 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	var (
-		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
+		indexKeysBuffer = t.db.getMultiKeyBufferPool().Get()[:0]
 	)
-	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
+	defer t.db.getMultiKeyBufferPool().Put(indexKeysBuffer[:0])
 
 	// key buffers
-	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer _keyBufferClose(keysBuffer)
+	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := _valueBufferPool.Get().([]byte)[:0]
+	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value[:0])
+	defer t.db.getValueBufferPool().Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -629,16 +573,16 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	var (
-		keyBuffer      = _keyBufferPool.Get().([]byte)[:0]
-		indexKeyBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
-		indexKeys      = _byteArraysPool.Get().([][]byte)[:0]
+		keyBuffer      = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer = t.db.getMultiKeyBufferPool().Get()[:0]
+		indexKeys      = t.db.getBytesArrayPool().Get()[:0]
 	)
-	defer _keyBufferPool.Put(keyBuffer[:0])
-	defer _multiKeyBufferPool.Put(indexKeyBuffer[:0])
-	defer _byteArraysPool.Put(indexKeys[:0])
+	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
+	defer t.db.getMultiKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
 
-	keyPartsBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyPartsBuffer)
+	keyPartsBuffer := t.db.getKeyBufferPool().Get()
+	defer t.db.getKeyBufferPool().Put(keyPartsBuffer)
 
 	for _, tr := range trs {
 		select {
@@ -694,20 +638,20 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	batchCtx = ContextWithBatch(ctx, batch)
 
 	var (
-		indexKeysBuffer = _multiKeyBufferPool.Get().([]byte)[:0]
-		indexKeys       = _byteArraysPool.Get().([][]byte)[:0]
+		indexKeysBuffer = t.db.getMultiKeyBufferPool().Get()[:0]
+		indexKeys       = t.db.getBytesArrayPool().Get()[:0]
 	)
-	defer _multiKeyBufferPool.Put(indexKeysBuffer[:0])
-	defer _byteArraysPool.Put(indexKeys[:0])
+	defer t.db.getMultiKeyBufferPool().Put(indexKeysBuffer[:0])
+	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
 
 	// key buffers
-	keysBuffer := _keyBuffersGet(minInt(len(trs), persistentBatchSize))
-	defer _keyBufferClose(keysBuffer)
+	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := _valueBufferPool.Get().([]byte)[:0]
+	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer _valueBufferPool.Put(value[:0])
+	defer t.db.getValueBufferPool().Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -840,8 +784,8 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 		batch = nil
 	}
 
-	keyBuffer := _keyBufferPool.Get().([]byte)[:0]
-	defer _keyBufferPool.Put(keyBuffer[:0])
+	keyBuffer := t.db.getKeyBufferPool().Get()[:0]
+	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
 	key := t.key(tr, keyBuffer[:0])
 
@@ -885,8 +829,8 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 		batch = nil
 	}
 
-	keyBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(keyBuffer)
+	keyBuffer := t.db.getKeyBufferPool().Get()
+	defer t.db.getKeyBufferPool().Put(keyBuffer)
 
 	key := t.key(tr, keyBuffer[:0])
 
@@ -997,13 +941,13 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 }
 
 func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	prefixBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(prefixBuffer)
+	prefixBuffer := t.db.getKeyBufferPool().Get()
+	defer t.db.getKeyBufferPool().Put(prefixBuffer)
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
-	selectorEnd := _keyBufferPool.Get().([]byte)[:0]
+	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
-	defer _keyBufferPool.Put(selectorEnd[:0])
+	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
 
 	var iter Iterator
 	var batch Batch
@@ -1062,13 +1006,13 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 }
 
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	prefixBuffer := _keyBufferPool.Get().([]byte)
-	defer _keyBufferPool.Put(prefixBuffer[:0])
+	prefixBuffer := t.db.getKeyBufferPool().Get()
+	defer t.db.getKeyBufferPool().Put(prefixBuffer[:0])
 
 	selector := t.indexKey(s, idx, prefixBuffer[:0])
-	selectorEnd := _keyBufferPool.Get().([]byte)[:0]
+	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
-	defer _keyBufferPool.Put(selectorEnd[:0])
+	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
 
 	var iter Iterator
 	var batch Batch
@@ -1089,14 +1033,14 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		})
 	}
 
-	keys := _byteArraysPool.Get().([][]byte)[:0]
-	indexKeys := _byteArraysPool.Get().([][]byte)[:0]
-	multiKeyBuffer := _multiKeyBufferPool.Get().([]byte)[:0]
-	valuesBuffer := _valueBuffersGet(t.scanPrefetchSize)
-	defer _byteArraysPool.Put(keys[:0])
-	defer _byteArraysPool.Put(indexKeys[:0])
-	defer _multiKeyBufferPool.Put(multiKeyBuffer[:0])
-	defer _valueBufferPoolCloser(valuesBuffer)
+	keys := t.db.getBytesArrayPool().Get()[:0]
+	indexKeys := t.db.getBytesArrayPool().Get()[:0]
+	multiKeyBuffer := t.db.getMultiKeyBufferPool().Get()[:0]
+	valuesBuffer := t.db.getValueArray(t.scanPrefetchSize)
+	defer t.db.getBytesArrayPool().Put(keys[:0])
+	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
+	defer t.db.getMultiKeyBufferPool().Put(multiKeyBuffer[:0])
+	defer t.db.putValueArray(valuesBuffer)
 
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
