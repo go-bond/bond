@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/big"
 	"reflect"
 	"sort"
 	"sync"
@@ -132,6 +131,8 @@ type _table[T any] struct {
 
 	dataKeySpaceStart []byte
 	dataKeySpaceEnd   []byte
+	valueEmpty        T
+	valueNil          T
 
 	scanPrefetchSize int
 
@@ -169,6 +170,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		secondaryIndexes:  make(map[IndexID]*Index[T]),
 		dataKeySpaceStart: []byte{byte(opt.TableID), 0x00, 0x00, 0x00, 0x00, 0x00},
 		dataKeySpaceEnd:   []byte{byte(opt.TableID), 0x01, 0x00, 0x00, 0x00, 0x00},
+		valueEmpty:        utils.MakeNew[T](),
 		scanPrefetchSize:  scanPrefetchSize,
 		serializer:        serializer,
 		filter:            opt.Filter,
@@ -203,7 +205,7 @@ func (t *_table[T]) Indexes() []IndexInfo {
 }
 
 func (t *_table[T]) EntryType() reflect.Type {
-	return reflect.TypeOf(utils.MakeNew[T]())
+	return reflect.TypeOf(t.valueEmpty)
 }
 
 func (t *_table[T]) PrimaryIndex() *Index[T] {
@@ -252,13 +254,14 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	}
 
 	var prefixBuffer [DefaultKeyBufferSize]byte
-	prefix := t.keyPrefix(t.primaryIndex, utils.MakeNew[T](), prefixBuffer[:0])
-	selectorEnd := big.NewInt(0).Add(big.NewInt(0).SetBytes(prefix[0:_KeyPrefixSplitIndex(prefix)]), big.NewInt(1)).Bytes()
+	var prefixSuccessorBuffer [DefaultKeyBufferSize]byte
+	prefix := t.keyPrefix(t.primaryIndex, t.valueEmpty, prefixBuffer[:0])
+	prefixSuccessor := keySuccessor(prefixSuccessorBuffer[:0], prefix)
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			LowerBound: prefix,
-			UpperBound: selectorEnd,
+			UpperBound: prefixSuccessor,
 		},
 	})
 
@@ -836,19 +839,19 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 
 	bCtx := ContextWithBatch(context.Background(), batch)
 	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
-		return utils.MakeNew[T](), fmt.Errorf("not found")
+		return t.valueNil, fmt.Errorf("not found")
 	}
 
 	record, closer, err := t.db.Get(key, batch)
 	if err != nil {
-		return utils.MakeNew[T](), fmt.Errorf("not found")
+		return t.valueNil, fmt.Errorf("not found")
 	}
 	defer closer.Close()
 
 	var rtr T
 	err = t.serializer.Deserialize(record, &rtr)
 	if err != nil {
-		return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
+		return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 	}
 
 	return rtr, nil
@@ -914,7 +917,7 @@ func (t *_table[T]) Query() Query[T] {
 }
 
 func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error {
-	return t.ScanIndex(ctx, t.primaryIndex, utils.MakeNew[T](), tr, optBatch...)
+	return t.ScanIndex(ctx, t.primaryIndex, t.valueEmpty, tr, optBatch...)
 }
 
 func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error {
@@ -929,7 +932,7 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 }
 
 func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
-	return t.ScanIndexForEach(ctx, t.primaryIndex, utils.MakeNew[T](), f, optBatch...)
+	return t.ScanIndexForEach(ctx, t.primaryIndex, t.valueEmpty, f, optBatch...)
 }
 
 func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
@@ -970,11 +973,12 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 
 	getValue := func() (T, error) {
 		var record T
-		if err := t.serializer.Deserialize(iter.Value(), &record); err == nil {
-			return record, nil
-		} else {
-			return utils.MakeNew[T](), err
+		err := t.serializer.Deserialize(iter.Value(), &record)
+		if err != nil {
+			return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
+
+		return record, nil
 	}
 	for iter.SeekGE(selector); iter.Valid(); iter.Next() {
 		select {
@@ -984,17 +988,10 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 		default:
 		}
 
-		if cont, err := f(iter.Key(), Lazy[T]{getValue}); !cont || err != nil {
-			break
-		} else {
-			if err != nil {
-				_ = iter.Close()
-				return err
-			}
-
-			if !cont {
-				break
-			}
+		cont, err := f(iter.Key(), Lazy[T]{GetFunc: getValue})
+		if !cont || err != nil {
+			_ = iter.Close()
+			return err
 		}
 	}
 
@@ -1057,7 +1054,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		var rtr T
 		err := t.serializer.Deserialize(prefetchedValues[prefetchedValuesIndex], &rtr)
 		if err != nil {
-			return utils.MakeNew[T](), fmt.Errorf("get failed to deserialize: %w", err)
+			return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
 
 		prefetchedValuesIndex++
@@ -1088,7 +1085,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		var err error
 		prefetchedValues, err = t.get(keys, batch, valuesBuffer)
 		if err != nil {
-			return utils.MakeNew[T](), err
+			return t.valueNil, err
 		}
 
 		return getPrefetchedValue()
