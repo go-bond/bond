@@ -1,5 +1,9 @@
 package bond
 
+import (
+	"bytes"
+)
+
 type Serializer[T any] interface {
 	Serialize(t T) ([]byte, error)
 	Deserialize(b []byte, t T) error
@@ -7,6 +11,10 @@ type Serializer[T any] interface {
 
 type SerializerWithClosable[T any] interface {
 	SerializerWithCloseable(t T) ([]byte, func(), error)
+}
+
+type SerializerWithBuffer[T any] interface {
+	SerializeFuncWithBuffer(buff *bytes.Buffer) func(T any) ([]byte, error)
 }
 
 type SerializerAnyWrapper[T any] struct {

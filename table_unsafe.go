@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -34,12 +35,24 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		batch = t.db.Batch()
 	}
 
+	// key
 	var (
-		keyBuffer      = _keyBufferPool.Get().([]byte)
-		indexKeyBuffer = _keyBufferPool.Get().([]byte)
+		keyBuffer      = t.db.getKeyBufferPool().Get()
+		indexKeyBuffer = t.db.getMultiKeyBufferPool().Get()
 	)
-	defer _keyBufferPool.Put(keyBuffer)
-	defer _keyBufferPool.Put(indexKeyBuffer)
+	defer t.db.getKeyBufferPool().Put(keyBuffer)
+	defer t.db.getMultiKeyBufferPool().Put(indexKeyBuffer)
+
+	// value
+	value := t.db.getValueBufferPool().Get()[:0]
+	valueBuffer := bytes.NewBuffer(value)
+	defer t.db.getValueBufferPool().Put(value)
+
+	// serializer
+	var serialize = t.serializer.Serializer.Serialize
+	if sw, ok := t.serializer.Serializer.(SerializerWithBuffer[any]); ok {
+		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
+	}
 
 	for i := 0; i < len(trs); i++ {
 		tr := trs[i]
@@ -55,7 +68,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		key := t.key(tr, keyBuffer[:0])
 
 		// serialize
-		data, err := t.serializer.Serialize(&tr)
+		data, err := serialize(&tr)
 		if err != nil {
 			return err
 		}

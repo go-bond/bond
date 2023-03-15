@@ -245,6 +245,7 @@ func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRe
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			var counter = 0
 			var tokenBalances []*TokenBalance
@@ -277,6 +278,7 @@ func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenB
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			var counter = 1
 			var tokenBalances []*TokenBalance
