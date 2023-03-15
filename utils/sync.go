@@ -64,7 +64,7 @@ func (s *PreAllocatedPool[T]) Put(t T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if itemsLen := len(s.preAllocItems); itemsLen < s.preAllocItemsSize {
+	if len(s.preAllocItems) < s.preAllocItemsSize {
 		s.preAllocItems = append(s.preAllocItems, t)
 	} else {
 		s.Pool.Put(t)
