@@ -111,7 +111,7 @@ type TableOptions[T any] struct {
 	TableID             TableID
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
-	Serializer          Serializer[*T]
+	Serializer          Serializer[any]
 
 	ScanPrefetchSize int
 
@@ -146,7 +146,7 @@ type _table[T any] struct {
 func NewTable[T any](opt TableOptions[T]) Table[T] {
 	var serializer = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
-		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer.(Serializer[any])}
+		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer}
 	}
 
 	scanPrefetchSize := DefaultScanPrefetchSize

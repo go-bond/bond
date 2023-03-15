@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -141,6 +142,27 @@ func TestBondTable_Serializer(t *testing.T) {
 		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
+	})
+	require.NotNil(t, tokenBalanceTable)
+	assert.NotNil(t, tokenBalanceTable.Serializer())
+}
+
+func TestBondTable_SerializerOption(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+		Serializer: &serializers.JsonSerializer{},
 	})
 	require.NotNil(t, tokenBalanceTable)
 	assert.NotNil(t, tokenBalanceTable.Serializer())
