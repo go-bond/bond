@@ -1276,17 +1276,17 @@ func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], 
 	return
 }
 
-func batched[T any](allItems []T, batchSize int, f func(batch []T) error) error {
+func batched[T any](items []T, batchSize int, f func(batch []T) error) error {
 	batchNum := 0
-	allItemsLen := len(allItems)
-	for batchNum*batchSize < allItemsLen {
+	itemsLen := len(items)
+	for batchNum*batchSize < itemsLen {
 		start := batchNum * batchSize
 		end := start + batchSize
-		if end > allItemsLen {
-			end = start + allItemsLen%batchSize
+		if end > itemsLen {
+			end = start + itemsLen%batchSize
 		}
 
-		err := f(allItems[start:end])
+		err := f(items[start:end])
 		if err != nil {
 			return err
 		}
