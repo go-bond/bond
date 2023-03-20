@@ -121,61 +121,18 @@ func (q Query[T]) Execute(ctx context.Context, r *[]T, optBatch ...Batch) error 
 	var err error
 	var records []T
 	if len(q.intersects) == 0 {
-		// scan database
-		records, err = q.scanValues(ctx, optBatch...)
+		records, err = q.executeQuery(ctx, optBatch...)
 		if err != nil {
 			return err
 		}
 	} else {
-		var keys [][]byte
-		keys, err = q.intersect(ctx, optBatch...)
+		records, err = q.executeIntersect(ctx, optBatch...)
 		if err != nil {
 			return err
 		}
-
-		values, err := q.table.get(keys, nil, make([][]byte, len(keys)))
-		if err != nil {
-			return err
-		}
-
-		for _, value := range values {
-			var record T
-			err = q.table.Serializer().Deserialize(value, &record)
-			if err != nil {
-				return err
-			}
-
-			records = append(records, record)
-		}
-	}
-
-	// sorting
-	if q.shouldSort() {
-		sort.Slice(records, func(i, j int) bool {
-			return q.orderLessFunc(records[i], records[j])
-		})
-	}
-
-	// offset
-	if !q.isOffsetApplied() {
-		if int(q.offset) >= len(records) {
-			records = make([]T, 0)
-		} else {
-			records = records[q.offset:]
-		}
-	}
-
-	// limit
-	if !q.isLimitApplied() && q.shouldLimit() {
-		lastIndex := q.limit
-		if int(lastIndex) >= len(records) {
-			lastIndex = uint64(len(records))
-		}
-		records = records[:lastIndex]
 	}
 
 	*r = records
-
 	return nil
 }
 
@@ -184,31 +141,22 @@ func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
 	return q
 }
 
-func (q Query[T]) scanKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
-	var keys [][]byte
-	err := q.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
-		keys = append(keys, key.ToDataKeyBytes([]byte{}))
-		return true, nil
-	}, optBatch...)
-	if err != nil {
-		return nil, err
-	}
+func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, error) {
+	var (
+		hasFilter = q.filterFunc != nil
+		hasSort   = q.orderLessFunc != nil
+		hasOffset = q.offset > 0
+		hasLimit  = q.limit > 0
 
-	return keys, nil
-}
+		//filterApplied = false
+		sortApplied   = false
+		offsetApplied = false
+		limitApplied  = false
+	)
 
-func (q Query[T]) scanKeysForEach(ctx context.Context, f func(key KeyBytes) (bool, error), optBatch ...Batch) error {
-	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
-		return f(key.ToDataKeyBytes([]byte{}))
-	}, optBatch...)
-	return err
-}
-
-func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error) {
 	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
-
 	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
 		if q.isAfter && !skippedFirstRow {
 			skippedFirstRow = true
@@ -226,7 +174,8 @@ func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error
 		}
 
 		// check if can apply offset in here
-		if q.shouldApplyOffsetEarly() && q.offset > count {
+		if !hasFilter && !hasSort && q.offset > count {
+			offsetApplied = true
 			count++
 			return true, nil
 		}
@@ -238,7 +187,8 @@ func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error
 		}
 
 		// filter if filter available
-		if q.shouldFilter() {
+		if hasFilter {
+			//filterApplied = true
 			if q.filterFunc(record) {
 				records = append(records, record)
 				count++
@@ -250,7 +200,8 @@ func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error
 
 		next := true
 		// check if we need to iterate further
-		if !q.shouldSort() && q.shouldLimit() {
+		if !hasSort && hasLimit {
+			limitApplied = true
 			next = count < q.offset+q.limit
 		}
 
@@ -260,10 +211,124 @@ func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error
 		return nil, err
 	}
 
+	// sorting
+	if hasSort && !sortApplied {
+		sort.Slice(records, func(i, j int) bool {
+			return q.orderLessFunc(records[i], records[j])
+		})
+	}
+
+	// offset
+	if hasOffset && !offsetApplied {
+		if int(q.offset) >= len(records) {
+			records = make([]T, 0)
+		} else {
+			records = records[q.offset:]
+		}
+	}
+
+	// limit
+	if hasLimit && !limitApplied {
+		lastIndex := q.limit
+		if int(lastIndex) >= len(records) {
+			lastIndex = uint64(len(records))
+		}
+		records = records[:lastIndex]
+	}
+
 	return records, nil
 }
 
-func (q Query[T]) intersect(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
+func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T, error) {
+	var (
+		hasFilter = q.filterFunc != nil
+		hasSort   = q.orderLessFunc != nil
+		hasOffset = q.offset > 0
+		hasLimit  = q.limit > 0
+
+		//filterApplied = false
+		sortApplied   = false
+		offsetApplied = false
+		limitApplied  = false
+	)
+
+	keys, err := q.intersectKeys(ctx, optBatch...)
+	if err != nil {
+		return nil, err
+	}
+
+	// apply offset & limit early
+	if !hasFilter && !hasSort {
+		if hasOffset {
+			offsetApplied = true
+			if int(q.offset) >= len(keys) {
+				return make([]T, 0), nil
+			} else {
+				keys = keys[q.offset:]
+			}
+		}
+
+		if hasLimit {
+			limitApplied = true
+			lastIndex := q.limit
+			if int(lastIndex) >= len(keys) {
+				lastIndex = uint64(len(keys))
+			}
+			keys = keys[:lastIndex]
+		}
+	}
+
+	// get data
+	values, err := q.table.get(keys, nil, make([][]byte, len(keys)))
+	if err != nil {
+		return nil, err
+	}
+
+	var records = make([]T, 0)
+	for _, value := range values {
+		var record T
+		err = q.table.Serializer().Deserialize(value, &record)
+		if err != nil {
+			return nil, err
+		}
+
+		if !hasFilter || (hasFilter && q.filterFunc(record)) {
+			//filterApplied = true
+			records = append(records, record)
+		}
+	}
+
+	// sort
+	if hasSort && !sortApplied {
+		sort.Slice(records, func(i, j int) bool {
+			return q.orderLessFunc(records[i], records[j])
+		})
+	}
+
+	if hasFilter || hasSort {
+		// offset
+		if hasOffset && !offsetApplied {
+			if int(q.offset) >= len(records) {
+				records = make([]T, 0)
+			} else {
+				records = records[q.offset:]
+			}
+		}
+
+		// limit
+		if hasLimit && !limitApplied {
+			lastIndex := q.limit
+			if int(lastIndex) >= len(records) {
+				lastIndex = uint64(len(records))
+			}
+			records = records[:lastIndex]
+		}
+	}
+
+	return records, nil
+}
+
+func (q Query[T]) intersectKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
 	var tempKeys [][]byte
 	intersectKeys, err := q.scanKeys(ctx, optBatch...)
 	if err != nil {
@@ -291,26 +356,22 @@ func (q Query[T]) intersect(ctx context.Context, optBatch ...Batch) ([][]byte, e
 	return intersectKeys, nil
 }
 
-func (q Query[T]) shouldFilter() bool {
-	return q.filterFunc != nil
+func (q Query[T]) scanKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
+	var keys [][]byte
+	err := q.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
+		keys = append(keys, key.ToDataKeyBytes([]byte{}))
+		return true, nil
+	}, optBatch...)
+	if err != nil {
+		return nil, err
+	}
+
+	return keys, nil
 }
 
-func (q Query[T]) shouldSort() bool {
-	return q.orderLessFunc != nil
-}
-
-func (q Query[T]) shouldApplyOffsetEarly() bool {
-	return q.orderLessFunc == nil && q.filterFunc == nil
-}
-
-func (q Query[T]) shouldLimit() bool {
-	return q.limit != 0
-}
-
-func (q Query[T]) isLimitApplied() bool {
-	return q.orderLessFunc == nil
-}
-
-func (q Query[T]) isOffsetApplied() bool {
-	return q.orderLessFunc == nil && q.filterFunc == nil
+func (q Query[T]) scanKeysForEach(ctx context.Context, f func(key KeyBytes) (bool, error), optBatch ...Batch) error {
+	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
+		return f(key.ToDataKeyBytes([]byte{}))
+	}, optBatch...)
+	return err
 }
