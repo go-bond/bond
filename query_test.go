@@ -1129,8 +1129,8 @@ func TestBond_Query_Indexes_Intersect(t *testing.T) {
 	assert.Equal(t, expectedTokenBalances, tokenBalances)
 }
 
-func BenchmarkQuery_NoIntersect(b *testing.B) {
-	db, TokenBalanceTable, _, _, TokenBalanceAccountAndContractAddress := setupDatabaseForQuery()
+func BenchmarkQuery_Intersects(b *testing.B) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, TokenBalanceAccountAndContractAddress := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -1178,78 +1178,32 @@ func BenchmarkQuery_NoIntersect(b *testing.B) {
 		panic(err)
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAndContractAddress, &TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract2"})
+	b.Run("NoIntersect", func(b *testing.B) {
+		q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAndContractAddress, &TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract2"})
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var tokenBalances []*TokenBalance
-		err = q1.Execute(context.Background(), &tokenBalances)
-		if err != nil {
-			panic(err)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			var tokenBalances []*TokenBalance
+			err = q1.Execute(context.Background(), &tokenBalances)
+			if err != nil {
+				panic(err)
+			}
 		}
-	}
-}
+	})
 
-func BenchmarkQuery_Intersect(b *testing.B) {
-	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	b.Run("Intersect_2", func(b *testing.B) {
+		q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
+		q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
 
-	tokenBalanceAccount1 := &TokenBalance{
-		ID:              1,
-		AccountID:       1,
-		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount",
-		Balance:         5,
-	}
-
-	tokenBalance2Account1 := &TokenBalance{
-		ID:              2,
-		AccountID:       1,
-		ContractAddress: "0xtestContract2",
-		AccountAddress:  "0xtestAccount",
-		Balance:         15,
-	}
-
-	tokenBalance3Account1 := &TokenBalance{
-		ID:              3,
-		AccountID:       1,
-		ContractAddress: "0xtestContract3",
-		AccountAddress:  "0xtestAccount",
-		Balance:         7,
-	}
-
-	tokenBalance1Account2 := &TokenBalance{
-		ID:              4,
-		AccountID:       2,
-		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount2",
-		Balance:         4,
-	}
-
-	err := TokenBalanceTable.Insert(
-		context.Background(),
-		[]*TokenBalance{
-			tokenBalanceAccount1,
-			tokenBalance2Account1,
-			tokenBalance3Account1,
-			tokenBalance1Account2,
-		},
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var tokenBalances []*TokenBalance
-		err = q1.Intersects(q2).Execute(context.Background(), &tokenBalances)
-		if err != nil {
-			panic(err)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			var tokenBalances []*TokenBalance
+			err = q1.Intersects(q2).Execute(context.Background(), &tokenBalances)
+			if err != nil {
+				panic(err)
+			}
 		}
-	}
+	})
 }
