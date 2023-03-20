@@ -118,9 +118,97 @@ func (q Query[T]) Execute(ctx context.Context, r *[]T, optBatch ...Batch) error 
 		return fmt.Errorf("after can not be used with order")
 	}
 
+	var err error
+	var records []T
+	if len(q.intersects) == 0 {
+		// scan database
+		records, err = q.scanValues(ctx, optBatch...)
+		if err != nil {
+			return err
+		}
+	} else {
+		var keys [][]byte
+		keys, err = q.intersect(ctx, optBatch...)
+		if err != nil {
+			return err
+		}
+
+		values, err := q.table.get(keys, nil, make([][]byte, len(keys)))
+		if err != nil {
+			return err
+		}
+
+		for _, value := range values {
+			var record T
+			err = q.table.Serializer().Deserialize(value, &record)
+			if err != nil {
+				return err
+			}
+
+			records = append(records, record)
+		}
+	}
+
+	// sorting
+	if q.shouldSort() {
+		sort.Slice(records, func(i, j int) bool {
+			return q.orderLessFunc(records[i], records[j])
+		})
+	}
+
+	// offset
+	if !q.isOffsetApplied() {
+		if int(q.offset) >= len(records) {
+			records = make([]T, 0)
+		} else {
+			records = records[q.offset:]
+		}
+	}
+
+	// limit
+	if !q.isLimitApplied() && q.shouldLimit() {
+		lastIndex := q.limit
+		if int(lastIndex) >= len(records) {
+			lastIndex = uint64(len(records))
+		}
+		records = records[:lastIndex]
+	}
+
+	*r = records
+
+	return nil
+}
+
+func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
+	q.intersects = append(q.intersects, queries...)
+	return q
+}
+
+func (q Query[T]) scanKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
+	var keys [][]byte
+	err := q.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
+		keys = append(keys, key.ToDataKeyBytes([]byte{}))
+		return true, nil
+	}, optBatch...)
+	if err != nil {
+		return nil, err
+	}
+
+	return keys, nil
+}
+
+func (q Query[T]) scanKeysForEach(ctx context.Context, f func(key KeyBytes) (bool, error), optBatch ...Batch) error {
+	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
+		return f(key.ToDataKeyBytes([]byte{}))
+	}, optBatch...)
+	return err
+}
+
+func (q Query[T]) scanValues(ctx context.Context, optBatch ...Batch) ([]T, error) {
 	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
+
 	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
 		if q.isAfter && !skippedFirstRow {
 			skippedFirstRow = true
@@ -169,42 +257,38 @@ func (q Query[T]) Execute(ctx context.Context, r *[]T, optBatch ...Batch) error 
 		return next, nil
 	}, optBatch...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// sorting
-	if q.shouldSort() {
-		sort.Slice(records, func(i, j int) bool {
-			return q.orderLessFunc(records[i], records[j])
-		})
-	}
-
-	// offset
-	if !q.isOffsetApplied() {
-		if int(q.offset) >= len(records) {
-			records = make([]T, 0)
-		} else {
-			records = records[q.offset:]
-		}
-	}
-
-	// limit
-	if !q.isLimitApplied() && q.shouldLimit() {
-		lastIndex := q.limit
-		if int(lastIndex) >= len(records) {
-			lastIndex = uint64(len(records))
-		}
-		records = records[:lastIndex]
-	}
-
-	*r = records
-
-	return nil
+	return records, nil
 }
 
-func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
-	q.intersects = append(q.intersects, queries...)
-	return q
+func (q Query[T]) intersect(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
+	var tempKeys [][]byte
+	intersectKeys, err := q.scanKeys(ctx, optBatch...)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, q2 := range q.intersects {
+		err = q2.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
+			for _, iKey := range intersectKeys {
+				if bytes.Compare(iKey, key) == 0 {
+					tempKeys = append(tempKeys, key)
+				}
+			}
+			return true, nil
+		}, optBatch...)
+		if err != nil {
+			return nil, err
+		}
+
+		temp := intersectKeys[:0]
+		intersectKeys = tempKeys
+		tempKeys = temp
+	}
+
+	return intersectKeys, nil
 }
 
 func (q Query[T]) shouldFilter() bool {
