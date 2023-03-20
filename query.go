@@ -25,23 +25,25 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 //			return c.Balance > 25
 //		}).
 //		Limit(50)
-type Query[R any] struct {
-	table         *_table[R]
-	index         *Index[R]
-	indexSelector R
+type Query[T any] struct {
+	table         *_table[T]
+	index         *Index[T]
+	indexSelector T
 
-	filterFunc    FilterFunc[R]
-	orderLessFunc OrderLessFunc[R]
+	filterFunc    FilterFunc[T]
+	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
 	isAfter       bool
+
+	intersects []Query[T]
 }
 
-func newQuery[R any](t *_table[R], i *Index[R]) Query[R] {
-	return Query[R]{
+func newQuery[T any](t *_table[T], i *Index[T]) Query[T] {
+	return Query[T]{
 		table:         t,
 		index:         i,
-		indexSelector: utils.MakeNew[R](),
+		indexSelector: utils.MakeNew[T](),
 		filterFunc:    nil,
 		orderLessFunc: nil,
 		offset:        0,
@@ -51,7 +53,7 @@ func newQuery[R any](t *_table[R], i *Index[R]) Query[R] {
 }
 
 // Table returns table that is used by this query.
-func (q Query[R]) Table() Table[R] {
+func (q Query[T]) Table() Table[T] {
 	return q.table
 }
 
@@ -62,7 +64,7 @@ func (q Query[R]) Table() Table[R] {
 //
 // WARNING: if we have DESC order on ID field, and we try to query with a selector
 // that has ID set to 0 it will start from the last row.
-func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
+func (q Query[T]) With(idx *Index[T], selector T) Query[T] {
 	q.index = idx
 	q.indexSelector = selector
 	return q
@@ -70,13 +72,13 @@ func (q Query[R]) With(idx *Index[R], selector R) Query[R] {
 
 // Filter adds additional filtering to the query. The conditions can be built with
 // structures that implement Evaluable interface.
-func (q Query[R]) Filter(filter FilterFunc[R]) Query[R] {
+func (q Query[T]) Filter(filter FilterFunc[T]) Query[T] {
 	q.filterFunc = filter
 	return q
 }
 
 // Order sets order of the records.
-func (q Query[R]) Order(less OrderLessFunc[R]) Query[R] {
+func (q Query[T]) Order(less OrderLessFunc[T]) Query[T] {
 	q.orderLessFunc = less
 	return q
 }
@@ -88,7 +90,7 @@ func (q Query[R]) Order(less OrderLessFunc[R]) Query[R] {
 // more efficient way to do that by passing last received row to
 // With method as a selector. This will jump to that row instantly
 // and start iterating from that point.
-func (q Query[R]) Offset(offset uint64) Query[R] {
+func (q Query[T]) Offset(offset uint64) Query[T] {
 	q.offset = offset
 	return q
 }
@@ -97,28 +99,29 @@ func (q Query[R]) Offset(offset uint64) Query[R] {
 //
 // WARNING: If not defined it will return all rows. Please be
 // mindful of your memory constrains.
-func (q Query[R]) Limit(limit uint64) Query[R] {
+func (q Query[T]) Limit(limit uint64) Query[T] {
 	q.limit = limit
 	return q
 }
 
 // After sets the query to start after the row provided in argument.
-func (q Query[R]) After(sel R) Query[R] {
+func (q Query[T]) After(sel T) Query[T] {
 	q.indexSelector = sel
 	q.isAfter = true
 	return q
 }
 
 // Execute the built query.
-func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error {
+func (q Query[T]) Execute(ctx context.Context, r *[]T, optBatch ...Batch) error {
+	// todo: after works with ordered query
 	if q.isAfter && q.orderLessFunc != nil {
 		return fmt.Errorf("after can not be used with order")
 	}
 
-	var records []R
+	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
-	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[R]) (bool, error) {
+	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
 		if q.isAfter && !skippedFirstRow {
 			skippedFirstRow = true
 
@@ -179,7 +182,7 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	// offset
 	if !q.isOffsetApplied() {
 		if int(q.offset) >= len(records) {
-			records = make([]R, 0)
+			records = make([]T, 0)
 		} else {
 			records = records[q.offset:]
 		}
@@ -199,26 +202,31 @@ func (q Query[R]) Execute(ctx context.Context, r *[]R, optBatch ...Batch) error 
 	return nil
 }
 
-func (q Query[R]) shouldFilter() bool {
+func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
+	q.intersects = append(q.intersects, queries...)
+	return q
+}
+
+func (q Query[T]) shouldFilter() bool {
 	return q.filterFunc != nil
 }
 
-func (q Query[R]) shouldSort() bool {
+func (q Query[T]) shouldSort() bool {
 	return q.orderLessFunc != nil
 }
 
-func (q Query[R]) shouldApplyOffsetEarly() bool {
+func (q Query[T]) shouldApplyOffsetEarly() bool {
 	return q.orderLessFunc == nil && q.filterFunc == nil
 }
 
-func (q Query[R]) shouldLimit() bool {
+func (q Query[T]) shouldLimit() bool {
 	return q.limit != 0
 }
 
-func (q Query[R]) isLimitApplied() bool {
+func (q Query[T]) isLimitApplied() bool {
 	return q.orderLessFunc == nil
 }
 
-func (q Query[R]) isOffsetApplied() bool {
+func (q Query[T]) isOffsetApplied() bool {
 	return q.orderLessFunc == nil && q.filterFunc == nil
 }

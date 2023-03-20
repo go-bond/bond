@@ -63,6 +63,7 @@ type TableIterationer[T any] interface {
 type TableReader[T any] interface {
 	TableInfo
 
+	DB() DB
 	PrimaryIndex() *Index[T]
 	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
@@ -206,6 +207,10 @@ func (t *_table[T]) Indexes() []IndexInfo {
 
 func (t *_table[T]) EntryType() reflect.Type {
 	return reflect.TypeOf(t.valueEmpty)
+}
+
+func (t *_table[T]) DB() DB {
+	return t.db
 }
 
 func (t *_table[T]) PrimaryIndex() *Index[T] {

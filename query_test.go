@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance]) {
+func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance], *Index[*TokenBalance]) {
 	db := setupDatabase()
 
 	const (
@@ -28,6 +28,7 @@ func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *
 	const (
 		_                                 = PrimaryIndexID
 		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceContractAddressIndexID
 		TokenBalanceAccountAndContractAddressIndexID
 	)
 
@@ -37,6 +38,14 @@ func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
 				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceContractAddressIndexID,
+			IndexName: "contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.ContractAddress).Bytes()
 			},
 			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
 		})
@@ -55,6 +64,7 @@ func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *
 
 	var TokenBalanceIndexes = []*Index[*TokenBalance]{
 		TokenBalanceAccountAddressIndex,
+		TokenBalanceContractAddressIndex,
 		TokenBalanceAccountAndContractAddressIndex,
 	}
 
@@ -63,11 +73,11 @@ func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *
 		panic(err)
 	}
 
-	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex
+	return db, tokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, TokenBalanceAccountAndContractAddressIndex
 }
 
 func TestBond_Query_OnOrderedIndex(t *testing.T) {
-	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
@@ -140,7 +150,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 }
 
 func TestBond_Query_Context_Canceled(t *testing.T) {
-	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
@@ -211,7 +221,7 @@ func TestBond_Query_Context_Canceled(t *testing.T) {
 }
 
 func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
-	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
@@ -302,7 +312,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 }
 
 func TestBond_Query_After(t *testing.T) {
-	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
@@ -416,7 +426,7 @@ func TestBond_Query_After(t *testing.T) {
 }
 
 func TestBond_Query_After_With_Order_Error(t *testing.T) {
-	db, TokenBalanceTable, _, lastIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
@@ -490,7 +500,7 @@ func TestBond_Query_After_With_Order_Error(t *testing.T) {
 }
 
 func TestBond_Query_Where(t *testing.T) {
-	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -566,7 +576,7 @@ func TestBond_Query_Where(t *testing.T) {
 }
 
 func TestBond_Query_Where_Offset_Limit(t *testing.T) {
-	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -655,7 +665,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 }
 
 func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
-	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -743,7 +753,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 }
 
 func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
-	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -844,7 +854,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 }
 
 func TestBond_Query_Order(t *testing.T) {
-	db, TokenBalanceTable, _, _ := setupDatabaseForQuery()
+	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -942,7 +952,7 @@ func TestBond_Query_Order(t *testing.T) {
 }
 
 func TestBond_Query_Indexes_Mix(t *testing.T) {
-	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, _, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -1049,4 +1059,72 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	require.Equal(t, 1, len(tokenBalances))
 
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+}
+
+func TestBond_Query_Indexes_Intersect(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	expectedTokenBalances := []*TokenBalance{
+		{
+			ID:              2,
+			AccountID:       1,
+			ContractAddress: "0xtestContract2",
+			AccountAddress:  "0xtestAccount",
+			Balance:         15,
+		},
+	}
+
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+
+	var tokenBalances []*TokenBalance
+
+	err = q1.Intersects(q2).Execute(context.Background(), &tokenBalances)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedTokenBalances, tokenBalances)
 }
