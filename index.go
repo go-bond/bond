@@ -189,6 +189,53 @@ func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
 	}
 }
 
+func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+	var buff []byte
+	if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		return batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
+	}
+	return nil
+}
+
+func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
+	var buff []byte
+	if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		err := batch.Delete(encodeIndexKey[T](table, oldTr, idx, buff), Sync)
+		if err != nil {
+			return err
+		}
+
+		err = batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+	var buff []byte
+	if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		err := batch.Delete(encodeIndexKey[T](table, tr, idx, buff), Sync)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {
 	return KeyEncodeRaw(
 		table.ID(),

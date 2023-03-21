@@ -669,12 +669,11 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[4]), "0xtestAccount1"))
 	assert.True(t, strings.Contains(string(keys[5]), "0xtestAccount2"))
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
-	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
-
-	it = tokenBalanceTable.Iter(nil)
+	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[7]), "0xtestContract"))
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
+	it = tokenBalanceTable.Iter(nil)
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
