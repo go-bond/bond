@@ -638,11 +638,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	batchCtx = ContextWithBatch(ctx, batch)
 
 	var (
-		indexKeysBuffer = t.db.getMultiKeyBufferPool().Get()[:0]
-		indexKeys       = t.db.getBytesArrayPool().Get()[:0]
+		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	)
-	defer t.db.getMultiKeyBufferPool().Put(indexKeysBuffer[:0])
-	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
@@ -727,36 +725,28 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				return err
 			}
 
-			// indexKeys to add and remove
-			var (
-				toAddIndexKeys    [][]byte
-				toRemoveIndexKeys [][]byte
-			)
-
-			if isUpdate {
-				toAddIndexKeys, toRemoveIndexKeys = encodeIndexKeysDiff[T](t, tr, oldTr, indexes, indexKeysBuffer[:0])
-			} else {
-				toAddIndexKeys = encodeIndexKeys[T](t, tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
-			}
-
 			// update indexes
-			for _, indexKey := range toAddIndexKeys {
-				err = batch.Set(indexKey, _indexKeyValue, Sync)
-				if err != nil {
-					return err
+			if isUpdate {
+				for _, idx := range indexes {
+					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0])
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				for _, idx := range indexes {
+					err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
+					if err != nil {
+						return err
+					}
 				}
 			}
 
-			for _, indexKey := range toRemoveIndexKeys {
-				err = batch.Delete(indexKey, Sync)
-				if err != nil {
-					return err
-				}
-			}
-
+			// add to bloom filter
 			if t.filter != nil && !isUpdate {
 				t.filter.Add(batchCtx, key)
 			}
+
 			i++
 		}
 
