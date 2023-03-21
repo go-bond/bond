@@ -168,17 +168,25 @@ func (idx *Index[T]) Name() string {
 	return idx.IndexName
 }
 
-func (idx *Index[T]) Iter(table Table[T], sel T) Iterator {
+func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
 	lowerBound := encodeIndexKey(table, sel, idx, make([]byte, 0, 1024))
 	upperBound := keySuccessor(make([]byte, 0, 1024), lowerBound[0:_KeyPrefixSplitIndex(lowerBound)])
 
-	it := table.DB().Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: lowerBound,
-			UpperBound: upperBound,
-		},
-	})
-	return it
+	if len(optBatch) > 0 {
+		return optBatch[0].Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+		})
+	} else {
+		return table.DB().Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+		})
+	}
 }
 
 func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {

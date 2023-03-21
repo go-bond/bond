@@ -958,90 +958,41 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 }
 
 func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	prefixBuffer := t.db.getKeyBufferPool().Get()
-	defer t.db.getKeyBufferPool().Put(prefixBuffer)
-
-	selector := encodeIndexKey[T](t, s, idx, prefixBuffer[:0])
-	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
-	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
-	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
-
-	var iter Iterator
-	var batch Batch
-	if len(optBatch) > 0 && optBatch[0] != nil {
-		batch = optBatch[0]
-		iter = batch.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: selector,
-				UpperBound: selectorEnd,
-			},
-		})
-	} else {
-		iter = t.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: selector,
-				UpperBound: selectorEnd,
-			},
-		})
-	}
+	it := idx.Iter(t, s, optBatch...)
 
 	getValue := func() (T, error) {
 		var record T
-		err := t.serializer.Deserialize(iter.Value(), &record)
+		err := t.serializer.Deserialize(it.Value(), &record)
 		if err != nil {
 			return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
 
 		return record, nil
 	}
-	for iter.SeekGE(selector); iter.Valid(); iter.Next() {
+	for it.First(); it.Valid(); it.Next() {
 		select {
 		case <-ctx.Done():
-			_ = iter.Close()
+			_ = it.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: getValue})
+		cont, err := f(it.Key(), Lazy[T]{GetFunc: getValue})
 		if !cont || err != nil {
-			_ = iter.Close()
+			_ = it.Close()
 			return err
 		}
 	}
 
-	err := iter.Close()
-	if err != nil {
-		return err
-	}
-	return nil
+	return it.Close()
 }
 
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	prefixBuffer := t.db.getKeyBufferPool().Get()
-	defer t.db.getKeyBufferPool().Put(prefixBuffer[:0])
+	it := idx.Iter(t, s, optBatch...)
 
-	selector := encodeIndexKey[T](t, s, idx, prefixBuffer[:0])
-	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
-	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
-	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
-
-	var iter Iterator
 	var batch Batch
-	if len(optBatch) > 0 && optBatch[0] != nil {
+	if len(optBatch) > 0 {
 		batch = optBatch[0]
-		iter = batch.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: selector,
-				UpperBound: selectorEnd,
-			},
-		})
-	} else {
-		iter = t.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: selector,
-				UpperBound: selectorEnd,
-			},
-		})
 	}
 
 	keys := t.db.getBytesArrayPool().Get()[:0]
@@ -1078,8 +1029,8 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	prefetchAndGetValue := func() (T, error) {
 		// prefetch the required data keys.
 		next := multiKeyBuffer
-		for iter.Valid() {
-			iterKey := iter.Key()
+		for it.Valid() {
+			iterKey := it.Key()
 
 			indexKey := append(next[:0], iterKey...)
 			indexKeys = append(indexKeys, indexKey)
@@ -1090,7 +1041,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 			next = key[len(key):]
 			if len(keys) < t.scanPrefetchSize {
-				iter.Next()
+				it.Next()
 				continue
 			}
 			break
@@ -1105,17 +1056,17 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		return getPrefetchedValue()
 	}
 
-	for iter.SeekGE(selector); iter.Valid(); iter.Next() {
+	for it.First(); it.Valid(); it.Next() {
 		select {
 		case <-ctx.Done():
-			_ = iter.Close()
+			_ = it.Close()
 			return fmt.Errorf("context done: %w", ctx.Err())
 		default:
 		}
 
-		cont, err := f(iter.Key(), Lazy[T]{GetFunc: prefetchAndGetValue})
+		cont, err := f(it.Key(), Lazy[T]{GetFunc: prefetchAndGetValue})
 		if !cont || err != nil {
-			_ = iter.Close()
+			_ = it.Close()
 			return err
 		}
 
@@ -1123,7 +1074,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		for prefetchedValuesIndex < len(prefetchedValues) {
 			cont, err = f(indexKeys[prefetchedValuesIndex], Lazy[T]{GetFunc: getPrefetchedValue})
 			if !cont || err != nil {
-				_ = iter.Close()
+				_ = it.Close()
 				return err
 			}
 		}
@@ -1140,7 +1091,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		multiKeyBuffer = multiKeyBuffer[:0]
 	}
 
-	return iter.Close()
+	return it.Close()
 }
 
 func (t *_table[T]) sortKeys(keys [][]byte) []int {
