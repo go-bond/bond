@@ -1,6 +1,11 @@
 package bond
 
-import "math/big"
+import (
+	"bytes"
+	"math/big"
+
+	"github.com/cockroachdb/pebble"
+)
 
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
@@ -155,10 +160,93 @@ func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
 	return idx
 }
 
-func (i *Index[T]) ID() IndexID {
-	return i.IndexID
+func (idx *Index[T]) ID() IndexID {
+	return idx.IndexID
 }
 
-func (i *Index[T]) Name() string {
-	return i.IndexName
+func (idx *Index[T]) Name() string {
+	return idx.IndexName
+}
+
+func (idx *Index[T]) Iter(table Table[T], sel T) Iterator {
+	lowerBound := encodeIndexKey(table, sel, idx, make([]byte, 0, 1024))
+	upperBound := keySuccessor(make([]byte, 0, 1024), lowerBound[0:_KeyPrefixSplitIndex(lowerBound)])
+
+	it := table.DB().Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: lowerBound,
+			UpperBound: upperBound,
+		},
+	})
+	return it
+}
+
+func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {
+	return KeyEncodeRaw(
+		table.ID(),
+		idx.IndexID,
+		func(b []byte) []byte {
+			return idx.IndexKeyFunction(NewKeyBuilder(b), tr)
+		},
+		func(b []byte) []byte {
+			return idx.IndexOrderFunction(
+				IndexOrder{keyBuilder: NewKeyBuilder(b)}, tr,
+			).Bytes()
+		},
+		func(b []byte) []byte {
+			return table.PrimaryKey(tr, NewKeyBuilder(b))
+		},
+		buff[:0],
+	)
+}
+
+func encodeIndexKeys[T any](table Table[T], tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {
+	indexKeys := indexKeysBuff[:0]
+
+	for _, idx := range idxs {
+		if idx.IndexFilterFunction(tr) {
+			indexKey := encodeIndexKey(table, tr, idx, buff)
+			indexKeys = append(indexKeys, indexKey)
+			buff = indexKey[len(indexKey):]
+		}
+	}
+	return indexKeys
+}
+
+func encodeIndexKeysDiff[T any](table Table[T], newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
+	newTrKeys := encodeIndexKeys(table, newTr, idxs, buff[:0], [][]byte{})
+	if len(newTrKeys) != 0 {
+		buff = newTrKeys[len(newTrKeys)-1]
+		buff = buff[len(buff):]
+	}
+
+	oldTrKeys := encodeIndexKeys(table, oldTr, idxs, buff[:0], [][]byte{})
+
+	for _, newKey := range newTrKeys {
+		found := false
+		for _, oldKey := range oldTrKeys {
+			if bytes.Equal(newKey, oldKey) {
+				found = true
+			}
+		}
+
+		if !found {
+			toAdd = append(toAdd, newKey)
+		}
+	}
+
+	for _, oldKey := range oldTrKeys {
+		found := false
+		for _, newKey := range newTrKeys {
+			if bytes.Equal(oldKey, newKey) {
+				found = true
+			}
+		}
+
+		if !found {
+			toRemove = append(toRemove, oldKey)
+		}
+	}
+
+	return
 }

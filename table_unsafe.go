@@ -81,7 +81,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// indexKeys to add and remove
-		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0])
+		toAddIndexKeys, toRemoveIndexKeys := encodeIndexKeysDiff[T](t, tr, oldTr, indexes, indexKeyBuffer[:0])
 
 		// update indexes
 		for _, indexKey := range toAddIndexKeys {

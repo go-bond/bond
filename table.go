@@ -64,6 +64,7 @@ type TableReader[T any] interface {
 	TableInfo
 
 	DB() DB
+	PrimaryKey(t T, builder ...KeyBuilder) []byte
 	PrimaryIndex() *Index[T]
 	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
@@ -213,6 +214,14 @@ func (t *_table[T]) DB() DB {
 	return t.db
 }
 
+func (t *_table[T]) PrimaryKey(tr T, builders ...KeyBuilder) []byte {
+	var builder KeyBuilder
+	if len(builders) > 0 {
+		builder = builders[0]
+	}
+	return t.primaryKeyFunc(builder, tr)
+}
+
 func (t *_table[T]) PrimaryIndex() *Index[T] {
 	return t.primaryIndex
 }
@@ -260,7 +269,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 
 	var prefixBuffer [DefaultKeyBufferSize]byte
 	var prefixSuccessorBuffer [DefaultKeyBufferSize]byte
-	prefix := t.keyPrefix(t.primaryIndex, t.valueEmpty, prefixBuffer[:0])
+	prefix := keyPrefix(t.id, t.primaryIndex, t.valueEmpty, prefixBuffer[:0])
 	prefixSuccessor := keySuccessor(prefixSuccessorBuffer[:0], prefix)
 
 	iter := t.db.Iter(&IterOptions{
@@ -287,7 +296,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 			return fmt.Errorf("failed to deserialize during reindexing: %w", err)
 		}
 
-		indexKeys = t.indexKeys(tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
+		indexKeys = encodeIndexKeys[T](t, tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
 
 		for _, indexKey := range indexKeys {
 			err = batch.Set(indexKey, _indexKeyValue, Sync)
@@ -403,7 +412,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// index keys
-			indexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
+			indexKeys = encodeIndexKeys[T](t, tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
 
 			// update indexes
 			for _, indexKey := range indexKeys {
@@ -528,7 +537,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// indexKeys to add and remove
-			toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0])
+			toAddIndexKeys, toRemoveIndexKeys := encodeIndexKeysDiff[T](t, tr, oldTr, indexes, indexKeysBuffer[:0])
 
 			// update indexes
 			for _, indexKey := range toAddIndexKeys {
@@ -600,7 +609,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		var key = t.key(tr, keyBuffer[:0])
-		indexKeys = t.indexKeys(tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
+		indexKeys = encodeIndexKeys[T](t, tr, indexes, indexKeyBuffer[:0], indexKeys[:0])
 
 		err := batch.Delete(key, Sync)
 		if err != nil {
@@ -742,9 +751,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			)
 
 			if isUpdate {
-				toAddIndexKeys, toRemoveIndexKeys = t.indexKeysDiff(tr, oldTr, indexes, indexKeysBuffer[:0])
+				toAddIndexKeys, toRemoveIndexKeys = encodeIndexKeysDiff[T](t, tr, oldTr, indexes, indexKeysBuffer[:0])
 			} else {
-				toAddIndexKeys = t.indexKeys(tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
+				toAddIndexKeys = encodeIndexKeys[T](t, tr, indexes, indexKeysBuffer[:0], indexKeys[:0])
 			}
 
 			// update indexes
@@ -952,7 +961,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	prefixBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(prefixBuffer)
 
-	selector := t.indexKey(s, idx, prefixBuffer[:0])
+	selector := encodeIndexKey[T](t, s, idx, prefixBuffer[:0])
 	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
 	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
@@ -1011,7 +1020,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	prefixBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(prefixBuffer[:0])
 
-	selector := t.indexKey(s, idx, prefixBuffer[:0])
+	selector := encodeIndexKey[T](t, s, idx, prefixBuffer[:0])
 	selectorEnd := t.db.getKeyBufferPool().Get()[:0]
 	selectorEnd = keySuccessor(selectorEnd, selector[0:_KeyPrefixSplitIndex(selector)])
 	defer t.db.getKeyBufferPool().Put(selectorEnd[:0])
@@ -1187,9 +1196,9 @@ func (t *_table[T]) keyDuplicate(index int, keys [][]byte) bool {
 	return index > 0 && bytes.Equal(keys[index], keys[index-1])
 }
 
-func (t *_table[T]) keyPrefix(idx *Index[T], s T, buff []byte) []byte {
+func keyPrefix[T any](tableID TableID, idx *Index[T], s T, buff []byte) []byte {
 	return KeyEncodeRaw(
-		t.id,
+		tableID,
 		idx.IndexID,
 		func(b []byte) []byte {
 			return idx.IndexKeyFunction(NewKeyBuilder(b), s)
@@ -1209,76 +1218,6 @@ func keySuccessor(dst, src []byte) []byte {
 		}
 	}
 	return dst
-}
-
-func (t *_table[T]) indexKey(tr T, idx *Index[T], buff []byte) []byte {
-	return KeyEncodeRaw(
-		t.id,
-		idx.IndexID,
-		func(b []byte) []byte {
-			return idx.IndexKeyFunction(NewKeyBuilder(b), tr)
-		},
-		func(b []byte) []byte {
-			return idx.IndexOrderFunction(
-				IndexOrder{keyBuilder: NewKeyBuilder(b)}, tr,
-			).Bytes()
-		},
-		func(b []byte) []byte {
-			return t.primaryKeyFunc(NewKeyBuilder(b), tr)
-		},
-		buff[:0],
-	)
-}
-
-func (t *_table[T]) indexKeys(tr T, idxs map[IndexID]*Index[T], buff []byte, indexKeysBuff [][]byte) [][]byte {
-	indexKeys := indexKeysBuff[:0]
-
-	for _, idx := range idxs {
-		if idx.IndexFilterFunction(tr) {
-			indexKey := t.indexKey(tr, idx, buff)
-			indexKeys = append(indexKeys, indexKey)
-			buff = indexKey[len(indexKey):]
-		}
-	}
-	return indexKeys
-}
-
-func (t *_table[T]) indexKeysDiff(newTr T, oldTr T, idxs map[IndexID]*Index[T], buff []byte) (toAdd [][]byte, toRemove [][]byte) {
-	newTrKeys := t.indexKeys(newTr, idxs, buff[:0], [][]byte{})
-	if len(newTrKeys) != 0 {
-		buff = newTrKeys[len(newTrKeys)-1]
-		buff = buff[len(buff):]
-	}
-
-	oldTrKeys := t.indexKeys(oldTr, idxs, buff[:0], [][]byte{})
-
-	for _, newKey := range newTrKeys {
-		found := false
-		for _, oldKey := range oldTrKeys {
-			if bytes.Equal(newKey, oldKey) {
-				found = true
-			}
-		}
-
-		if !found {
-			toAdd = append(toAdd, newKey)
-		}
-	}
-
-	for _, oldKey := range oldTrKeys {
-		found := false
-		for _, newKey := range newTrKeys {
-			if bytes.Equal(oldKey, newKey) {
-				found = true
-			}
-		}
-
-		if !found {
-			toRemove = append(toRemove, oldKey)
-		}
-	}
-
-	return
 }
 
 func batched[T any](items []T, batchSize int, f func(batch []T) error) error {

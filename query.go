@@ -165,7 +165,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
 			rowIdxKey := key.ToKey()
-			selIdxKey := KeyBytes(q.table.indexKey(q.indexSelector, q.index, keyBuffer[:0])).ToKey()
+			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, q.indexSelector, q.index, keyBuffer[:0])).ToKey()
 			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
 				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
 				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
@@ -370,8 +370,21 @@ func (q Query[T]) scanKeys(ctx context.Context, optBatch ...Batch) ([][]byte, er
 }
 
 func (q Query[T]) scanKeysForEach(ctx context.Context, f func(key KeyBytes) (bool, error), optBatch ...Batch) error {
-	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
-		return f(key.ToDataKeyBytes([]byte{}))
-	}, optBatch...)
-	return err
+	it := q.index.Iter(q.table, q.indexSelector)
+	defer it.Close()
+
+	for it.First(); it.Valid(); it.Next() {
+		select {
+		case <-ctx.Done():
+			_ = it.Close()
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
+		cont, err := f(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+		if !cont || err != nil {
+			return err
+		}
+	}
+	return nil
 }
