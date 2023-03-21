@@ -64,7 +64,7 @@ type TableReader[T any] interface {
 	TableInfo
 
 	DB() DB
-	PrimaryKey(t T, builder ...KeyBuilder) []byte
+	PrimaryKey(builder KeyBuilder, tr T) []byte
 	PrimaryIndex() *Index[T]
 	SecondaryIndexes() []*Index[T]
 	Serializer() Serializer[*T]
@@ -214,11 +214,7 @@ func (t *_table[T]) DB() DB {
 	return t.db
 }
 
-func (t *_table[T]) PrimaryKey(tr T, builders ...KeyBuilder) []byte {
-	var builder KeyBuilder
-	if len(builders) > 0 {
-		builder = builders[0]
-	}
+func (t *_table[T]) PrimaryKey(builder KeyBuilder, tr T) []byte {
 	return t.primaryKeyFunc(builder, tr)
 }
 

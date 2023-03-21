@@ -249,7 +249,7 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 			).Bytes()
 		},
 		func(b []byte) []byte {
-			return table.PrimaryKey(tr, NewKeyBuilder(b))
+			return table.PrimaryKey(NewKeyBuilder(b), tr)
 		},
 		buff[:0],
 	)
