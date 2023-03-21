@@ -270,7 +270,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	var prefixBuffer [DefaultKeyBufferSize]byte
 	var prefixSuccessorBuffer [DefaultKeyBufferSize]byte
 	prefix := keyPrefix(t.id, t.primaryIndex, t.valueEmpty, prefixBuffer[:0])
-	prefixSuccessor := keySuccessor(prefixSuccessorBuffer[:0], prefix)
+	prefixSuccessor := keySuccessor(prefix, prefixSuccessorBuffer[:0])
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
@@ -1133,7 +1133,7 @@ func keyPrefix[T any](tableID TableID, idx *Index[T], s T, buff []byte) []byte {
 	)
 }
 
-func keySuccessor(dst, src []byte) []byte {
+func keySuccessor(src, dst []byte) []byte {
 	dst = append(dst, src...)
 	for i := len(src) - 1; i > 0; i-- {
 		if dst[i] != 0xFF {

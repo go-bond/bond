@@ -170,7 +170,7 @@ func (idx *Index[T]) Name() string {
 
 func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
 	lowerBound := encodeIndexKey(table, sel, idx, make([]byte, 0, 1024))
-	upperBound := keySuccessor(make([]byte, 0, 1024), lowerBound[0:_KeyPrefixSplitIndex(lowerBound)])
+	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], make([]byte, 0, 1024))
 
 	if len(optBatch) > 0 {
 		return optBatch[0].Iter(&IterOptions{
