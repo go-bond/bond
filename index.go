@@ -2,6 +2,8 @@ package bond
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"math/big"
 
 	"github.com/cockroachdb/pebble"
@@ -246,6 +248,52 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 		}
 	}
 	return nil
+}
+
+func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, indexes []*Index[T], sels []T, optBatch ...Batch) ([][]byte, error) {
+	var (
+		tempKeys      [][]byte
+		intersectKeys [][]byte
+	)
+
+	it := idx.Iter(table, sel, optBatch...)
+	for it.First(); it.Valid(); it.Next() {
+		select {
+		case <-ctx.Done():
+			_ = it.Close()
+			return nil, fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
+		intersectKeys = append(intersectKeys, KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+	}
+	_ = it.Close()
+
+	for i, idx2 := range indexes {
+		it = idx2.Iter(table, sels[i], optBatch...)
+		for it.First(); it.Valid(); it.Next() {
+			select {
+			case <-ctx.Done():
+				_ = it.Close()
+				return nil, fmt.Errorf("context done: %w", ctx.Err())
+			default:
+			}
+
+			for _, iKey := range intersectKeys {
+				key := KeyBytes(it.Key()).ToDataKeyBytes([]byte{})
+				if bytes.Compare(iKey, key) == 0 {
+					tempKeys = append(tempKeys, key)
+				}
+			}
+		}
+		_ = it.Close()
+
+		temp := intersectKeys[:0]
+		intersectKeys = tempKeys
+		tempKeys = temp
+	}
+
+	return intersectKeys, nil
 }
 
 func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {

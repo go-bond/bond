@@ -252,7 +252,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		limitApplied  = false
 	)
 
-	keys, err := q.intersectKeys(ctx, optBatch...)
+	keys, err := q.index.Intersect(ctx, q.table, q.indexSelector, q.indexes(), q.selectors(), optBatch...)
 	if err != nil {
 		return nil, err
 	}
@@ -328,63 +328,18 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	return records, nil
 }
 
-func (q Query[T]) intersectKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
-	var tempKeys [][]byte
-	intersectKeys, err := q.scanKeys(ctx, optBatch...)
-	if err != nil {
-		return nil, err
+func (q Query[T]) indexes() []*Index[T] {
+	indexes := make([]*Index[T], 0, len(q.intersects))
+	for _, inter := range q.intersects {
+		indexes = append(indexes, inter.index)
 	}
-
-	for _, q2 := range q.intersects {
-		err = q2.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
-			for _, iKey := range intersectKeys {
-				if bytes.Compare(iKey, key) == 0 {
-					tempKeys = append(tempKeys, key)
-				}
-			}
-			return true, nil
-		}, optBatch...)
-		if err != nil {
-			return nil, err
-		}
-
-		temp := intersectKeys[:0]
-		intersectKeys = tempKeys
-		tempKeys = temp
-	}
-
-	return intersectKeys, nil
+	return indexes
 }
 
-func (q Query[T]) scanKeys(ctx context.Context, optBatch ...Batch) ([][]byte, error) {
-	var keys [][]byte
-	err := q.scanKeysForEach(ctx, func(key KeyBytes) (bool, error) {
-		keys = append(keys, key.ToDataKeyBytes([]byte{}))
-		return true, nil
-	}, optBatch...)
-	if err != nil {
-		return nil, err
+func (q Query[T]) selectors() []T {
+	sels := make([]T, 0, len(q.intersects))
+	for _, inter := range q.intersects {
+		sels = append(sels, inter.indexSelector)
 	}
-
-	return keys, nil
-}
-
-func (q Query[T]) scanKeysForEach(ctx context.Context, f func(key KeyBytes) (bool, error), optBatch ...Batch) error {
-	it := q.index.Iter(q.table, q.indexSelector)
-	defer it.Close()
-
-	for it.First(); it.Valid(); it.Next() {
-		select {
-		case <-ctx.Done():
-			_ = it.Close()
-			return fmt.Errorf("context done: %w", ctx.Err())
-		default:
-		}
-
-		cont, err := f(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
-		if !cont || err != nil {
-			return err
-		}
-	}
-	return nil
+	return sels
 }
