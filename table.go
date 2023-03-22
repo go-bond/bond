@@ -281,26 +281,26 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 	}()
 
 	counter := 0
-	indexKeysBuffer := make([]byte, 0, (DefaultKeyBufferSize)*len(idxs))
-	indexKeys := make([][]byte, 0, len(t.secondaryIndexes))
+	indexKeyBuffer := make([]byte, 0, (DefaultKeyBufferSize)*len(idxs))
 
 	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
+		// deserialize row
 		err := t.serializer.Deserialize(iter.Value(), &tr)
 		if err != nil {
 			return fmt.Errorf("failed to deserialize during reindexing: %w", err)
 		}
 
-		indexKeys = encodeIndexKeys[T](t, tr, idxsMap, indexKeysBuffer[:0], indexKeys[:0])
-
-		for _, indexKey := range indexKeys {
-			err = batch.Set(indexKey, _indexKeyValue, Sync)
+		// update indexes
+		for _, idx := range idxs {
+			err = idx.OnInsert(t, tr, batch, indexKeyBuffer)
 			if err != nil {
-				return fmt.Errorf("failed to set index key during reindexing: %w", err)
+				return err
 			}
 		}
 
+		// batch handling
 		counter++
 		if counter >= ReindexBatchSize {
 			counter = 0
