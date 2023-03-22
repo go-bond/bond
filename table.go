@@ -454,9 +454,11 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
 	)
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
@@ -530,7 +532,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 			// update indexes
 			for _, idx := range indexes {
-				err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0])
+				err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 				if err != nil {
 					return err
 				}
@@ -634,9 +636,11 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	batchCtx = ContextWithBatch(ctx, batch)
 
 	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
 	)
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
@@ -724,7 +728,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			// update indexes
 			if isUpdate {
 				for _, idx := range indexes {
-					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0])
+					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 					if err != nil {
 						return err
 					}

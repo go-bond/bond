@@ -202,20 +202,32 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 }
 
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
-	var buff []byte
-	if len(buffs) > 0 {
+	var (
+		buff  []byte
+		buff2 []byte
+	)
+
+	if len(buffs) > 1 {
+		buff = buffs[0]
+		buff2 = buffs[1]
+	} else if len(buffs) > 0 {
 		buff = buffs[0]
 	}
 
 	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		err := batch.Delete(encodeIndexKey[T](table, oldTr, idx, buff), Sync)
-		if err != nil {
-			return err
-		}
+		deleteKey := encodeIndexKey[T](table, oldTr, idx, buff)
+		setKey := encodeIndexKey[T](table, tr, idx, buff2)
 
-		err = batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
-		if err != nil {
-			return err
+		if bytes.Compare(deleteKey, setKey) != 0 {
+			err := batch.Delete(deleteKey, Sync)
+			if err != nil {
+				return err
+			}
+
+			err = batch.Set(setKey, _indexKeyValue, Sync)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
