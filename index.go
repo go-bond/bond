@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
 )
 
 type IndexID uint8
@@ -264,7 +265,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 		default:
 		}
 
-		intersectKeysMap[string(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))] = struct{}{}
+		intersectKeysMap[utils.BytesToString(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))] = struct{}{}
 	}
 	_ = it.Close()
 
@@ -278,7 +279,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 			default:
 			}
 
-			key := string(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+			key := utils.BytesToString(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
 			if _, ok := intersectKeysMap[key]; ok {
 				tempKeysMap[key] = struct{}{}
 			}
@@ -291,7 +292,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 
 	intersectKeys := make([][]byte, 0, len(intersectKeysMap))
 	for key, _ := range intersectKeysMap {
-		intersectKeys = append(intersectKeys, []byte(key))
+		intersectKeys = append(intersectKeys, utils.StringToBytes(key))
 	}
 
 	sort.Slice(intersectKeys, func(i, j int) bool {

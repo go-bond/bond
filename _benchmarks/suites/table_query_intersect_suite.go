@@ -153,7 +153,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name: fmt.Sprintf("%s/%s/Query_Index_No_Intersect%s_Sel_%d_Offset_%d_Limit_%d",
+					Name: fmt.Sprintf("%s/%s/Query_Index_No_Intersect_%s_Sel_%d_Offset_%d_Limit_%d",
 						bs.Name, serializer.Name, v.indexName, selectorID, v.offset, v.limit),
 					Inputs:        v,
 					BenchmarkFunc: QueryIntersectWithOpts(tokenBalanceTable, v.index, v.selector, v.index2, v.selector2, v.offset, v.limit),
@@ -190,7 +190,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name: fmt.Sprintf("%s/%s/Query_Index_Intersect%s_Sel_%d_Offset_%d_Limit_%d",
+					Name: fmt.Sprintf("%s/%s/Query_Index_Intersect_%s_Sel_%d_Offset_%d_Limit_%d",
 						bs.Name, serializer.Name, v.indexName, selectorID, v.offset, v.limit),
 					Inputs:        v,
 					BenchmarkFunc: QueryIntersectWithOpts(tokenBalanceTable, v.index, v.selector, v.index2, v.selector2, v.offset, v.limit),
