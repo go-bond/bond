@@ -113,11 +113,6 @@ func (q Query[T]) After(sel T) Query[T] {
 
 // Execute the built query.
 func (q Query[T]) Execute(ctx context.Context, r *[]T, optBatch ...Batch) error {
-	// todo: after works with ordered query
-	if q.isAfter && q.orderLessFunc != nil {
-		return fmt.Errorf("after can not be used with order")
-	}
-
 	var err error
 	var records []T
 	if len(q.intersects) == 0 {
@@ -142,6 +137,11 @@ func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
 }
 
 func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, error) {
+	// todo: after works with ordered query
+	if q.isAfter && q.orderLessFunc != nil {
+		return nil, fmt.Errorf("after can not be used with order")
+	}
+
 	var (
 		hasFilter = q.filterFunc != nil
 		hasSort   = q.orderLessFunc != nil
@@ -218,6 +218,8 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 		})
 	}
 
+	// todo: after
+
 	// offset
 	if hasOffset && !offsetApplied {
 		if int(q.offset) >= len(records) {
@@ -243,6 +245,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	var (
 		hasFilter = q.filterFunc != nil
 		hasSort   = q.orderLessFunc != nil
+		hasAfter  = q.isAfter
 		hasOffset = q.offset > 0
 		hasLimit  = q.limit > 0
 
@@ -258,7 +261,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	}
 
 	// apply offset & limit early
-	if !hasFilter && !hasSort {
+	if !hasFilter && !hasSort && !hasAfter {
 		if hasOffset {
 			offsetApplied = true
 			if int(q.offset) >= len(keys) {
@@ -303,6 +306,19 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		sort.Slice(records, func(i, j int) bool {
 			return q.orderLessFunc(records[i], records[j])
 		})
+	}
+
+	// after
+	if hasAfter {
+		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.indexSelector)
+		recordKey := []byte{}
+		for index, record := range records {
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
+			if bytes.Compare(afterKey, recordKey) == 0 {
+				records = records[minInt(index+1, len(records)):]
+				break
+			}
+		}
 	}
 
 	if hasFilter || hasSort {

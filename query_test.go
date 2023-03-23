@@ -1425,6 +1425,92 @@ func TestBond_Query_Indexes_Intersect_Sort(t *testing.T) {
 	assert.Equal(t, expectedTokenBalances, tokenBalances)
 }
 
+func TestBond_Query_Indexes_Intersect_After(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		TokenID:         1,
+		Balance:         15,
+	}
+
+	tokenBalance4Account1TokenID2 := &TokenBalance{
+		ID:              5,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		TokenID:         3,
+		Balance:         7,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance4Account1TokenID2,
+			tokenBalance1Account2,
+		},
+	)
+	require.NoError(t, err)
+
+	expectedTokenBalances := []*TokenBalance{
+		tokenBalance2Account1,
+	}
+
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+
+	var tokenBalances []*TokenBalance
+
+	err = q1.Intersects(q2).Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+		return tb.Balance > tb2.Balance
+	}).Limit(1).Execute(context.Background(), &tokenBalances)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedTokenBalances, tokenBalances)
+
+	expectedTokenBalances = []*TokenBalance{
+		tokenBalance4Account1TokenID2,
+	}
+
+	err = q1.Intersects(q2).Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
+		return tb.Balance > tb2.Balance
+	}).After(tokenBalances[0]).Limit(1).Execute(context.Background(), &tokenBalances)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedTokenBalances, tokenBalances)
+}
+
 func BenchmarkQuery_Intersects(b *testing.B) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, TokenBalanceAccountAndContractAddress := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
