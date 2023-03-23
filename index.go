@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -251,10 +252,8 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 }
 
 func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, indexes []*Index[T], sels []T, optBatch ...Batch) ([][]byte, error) {
-	var (
-		tempKeys      [][]byte
-		intersectKeys [][]byte
-	)
+	tempKeysMap := map[string]struct{}{}
+	intersectKeysMap := map[string]struct{}{}
 
 	it := idx.Iter(table, sel, optBatch...)
 	for it.First(); it.Valid(); it.Next() {
@@ -265,7 +264,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 		default:
 		}
 
-		intersectKeys = append(intersectKeys, KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+		intersectKeysMap[string(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))] = struct{}{}
 	}
 	_ = it.Close()
 
@@ -279,19 +278,25 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 			default:
 			}
 
-			for _, iKey := range intersectKeys {
-				key := KeyBytes(it.Key()).ToDataKeyBytes([]byte{})
-				if bytes.Compare(iKey, key) == 0 {
-					tempKeys = append(tempKeys, key)
-				}
+			key := string(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+			if _, ok := intersectKeysMap[key]; ok {
+				tempKeysMap[key] = struct{}{}
 			}
 		}
 		_ = it.Close()
 
-		temp := intersectKeys[:0]
-		intersectKeys = tempKeys
-		tempKeys = temp
+		intersectKeysMap = tempKeysMap
+		tempKeysMap = map[string]struct{}{}
 	}
+
+	intersectKeys := make([][]byte, 0, len(intersectKeysMap))
+	for key, _ := range intersectKeysMap {
+		intersectKeys = append(intersectKeys, []byte(key))
+	}
+
+	sort.Slice(intersectKeys, func(i, j int) bool {
+		return bytes.Compare(intersectKeys[i], intersectKeys[j]) == -1
+	})
 
 	return intersectKeys, nil
 }

@@ -1150,20 +1150,20 @@ func TestBond_Query_Indexes_Intersect_Offset_Limit(t *testing.T) {
 		Balance:         15,
 	}
 
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
 	tokenBalance4Account1TokenID2 := &TokenBalance{
 		ID:              5,
 		AccountID:       1,
 		ContractAddress: "0xtestContract2",
 		AccountAddress:  "0xtestAccount",
 		TokenID:         3,
-		Balance:         7,
-	}
-
-	tokenBalance3Account1 := &TokenBalance{
-		ID:              3,
-		AccountID:       1,
-		ContractAddress: "0xtestContract3",
-		AccountAddress:  "0xtestAccount",
 		Balance:         7,
 	}
 

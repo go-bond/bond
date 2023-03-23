@@ -108,7 +108,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 		}
 
 		var tokenBalances []*TokenBalance
-		for i := 0; i < 1000000; i++ {
+		for i := 0; i < 10000000; i++ {
 			tokenBalances = append(tokenBalances, &TokenBalance{
 				ID:              uint64(i + 1),
 				AccountID:       0,
@@ -119,10 +119,12 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			})
 		}
 
-		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:1000000])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[0:10000000])
 		if err != nil {
 			panic(err)
 		}
+
+		tokenBalances = nil
 
 		var queryInputs = []struct {
 			index     *bond.Index[*TokenBalance]
@@ -173,11 +175,11 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			limit     int
 		}{
 			// AccountAddress Index
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAndContractAddress", selector: selector, selector2: selector, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAndContractAddress", selector: selector, selector2: selector, offset: 0, limit: 500},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAndContractAddress", selector: selector, selector2: selector, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAndContractAddress", selector: selector, selector2: selector, offset: 0, limit: 5000},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAndContractAddress", selector: selector, selector2: selector, offset: 0, limit: 10000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAddress_And_ContractAddress", selector: selector, selector2: selector, offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAddress_And_ContractAddress", selector: selector, selector2: selector, offset: 0, limit: 500},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAddress_And_ContractAddress", selector: selector, selector2: selector, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAddress_And_ContractAddress", selector: selector, selector2: selector, offset: 0, limit: 5000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressIndex, indexName: "AccountAddress_And_ContractAddress", selector: selector, selector2: selector, offset: 0, limit: 10000},
 		}
 
 		for _, v := range queryInputs2 {
@@ -188,7 +190,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 
 			results = append(results,
 				bs.Benchmark(bench.Benchmark{
-					Name: fmt.Sprintf("%s/%s/Query_Index_No_Intersect%s_Sel_%d_Offset_%d_Limit_%d",
+					Name: fmt.Sprintf("%s/%s/Query_Index_Intersect%s_Sel_%d_Offset_%d_Limit_%d",
 						bs.Name, serializer.Name, v.indexName, selectorID, v.offset, v.limit),
 					Inputs:        v,
 					BenchmarkFunc: QueryIntersectWithOpts(tokenBalanceTable, v.index, v.selector, v.index2, v.selector2, v.offset, v.limit),
