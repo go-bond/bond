@@ -34,6 +34,7 @@ type Query[T any] struct {
 	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
+	afterSelector T
 	isAfter       bool
 
 	intersects []Query[T]
@@ -44,6 +45,7 @@ func newQuery[T any](t *_table[T], i *Index[T]) Query[T] {
 		table:         t,
 		index:         i,
 		indexSelector: utils.MakeNew[T](),
+		afterSelector: utils.MakeNew[T](),
 		filterFunc:    nil,
 		orderLessFunc: nil,
 		offset:        0,
@@ -106,7 +108,7 @@ func (q Query[T]) Limit(limit uint64) Query[T] {
 
 // After sets the query to start after the row provided in argument.
 func (q Query[T]) After(sel T) Query[T] {
-	q.indexSelector = sel
+	q.afterSelector = sel
 	q.isAfter = true
 	return q
 }
@@ -145,27 +147,36 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	var (
 		hasFilter = q.filterFunc != nil
 		hasSort   = q.orderLessFunc != nil
+		hasAfter  = q.isAfter
 		hasOffset = q.offset > 0
 		hasLimit  = q.limit > 0
 
 		//filterApplied = false
 		sortApplied   = false
+		afterApplied  = false
 		offsetApplied = false
 		limitApplied  = false
 	)
 
+	// after
+	selector := q.indexSelector
+	if hasAfter && !hasSort {
+		selector = q.afterSelector
+	}
+
 	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
-	err := q.table.ScanIndexForEach(ctx, q.index, q.indexSelector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
-		if q.isAfter && !skippedFirstRow {
+	err := q.table.ScanIndexForEach(ctx, q.index, selector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
+		if q.isAfter && !hasSort && !skippedFirstRow {
 			skippedFirstRow = true
+			afterApplied = true
 
 			keyBuffer := q.table.db.getKeyBufferPool().Get()
 			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
 			rowIdxKey := key.ToKey()
-			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, q.indexSelector, q.index, keyBuffer[:0])).ToKey()
+			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, selector, q.index, keyBuffer[:0])).ToKey()
 			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
 				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
 				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
@@ -218,7 +229,17 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 		})
 	}
 
-	// todo: after
+	if hasAfter && !afterApplied {
+		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.indexSelector)
+		recordKey := []byte{}
+		for index, record := range records {
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
+			if bytes.Compare(afterKey, recordKey) == 0 {
+				records = records[minInt(index+1, len(records)):]
+				break
+			}
+		}
+	}
 
 	// offset
 	if hasOffset && !offsetApplied {
@@ -310,7 +331,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 
 	// after
 	if hasAfter {
-		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.indexSelector)
+		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
 			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
