@@ -479,6 +479,85 @@ func TestIndexOrder_Multi(t *testing.T) {
 	assert.Equal(t, expectedKeyList, keyList)
 }
 
+func TestBond_IndexSelector(t *testing.T) {
+	/*
+		// Index Selector (already in bond, however with different api)
+		// idx1: index on AccountAddress
+		// Selects all records where AccountAddress == account1
+		Table.Query().
+			With(
+				idx1,
+				NewIndexSelectorPoints[*TokenBalance](
+					&TokenBalance{AccountAddress: "account1"},
+				),
+			).
+			Execute()
+
+		// Index Selector
+		// idx1: index on AccountAddress
+		// Selects records for AccountAddress IN [account1, account8, account10]
+		Table.Query().
+			With(
+				idx1,
+				NewIndexSelectorPoints[*TokenBalance](
+					&TokenBalance{AccountAddress: "account1"},
+					&TokenBalance{AccountAddress: "account8"},
+					&TokenBalance{AccountAddress: "account10"},
+				),
+			).
+			Execute()
+
+		// Range Index Selector
+		// idx2: index on ContractAddress & TokenID
+		// Selects all records with ContractAddress == contract0 and 0 <= TokenID < math.MaxUint64
+		Table.Query().
+			With(
+				idx2,
+				NewIndexSelectorRanges[*TokenBalance](
+					[]*TokenBalance{
+						{ContractAddress: "contract0", TokenID: 0},
+						{ContractAddress: "contract0", TokenID: math.MaxUint64},
+					},
+				),
+			).
+			Execute()
+
+		// Range Index Selector
+		// idx2: index on ContractAddress & TokenID
+		// Selects all records with ContractAddress == contract0 and TokenID >= 25
+		Table.Query().
+			With(
+				idx2,
+				NewIndexSelectorRanges[*TokenBalance](
+					[]*TokenBalance{
+						{ContractAddress: "contract0", TokenID: 25},
+						{ContractAddress: "contract0", TokenID: math.MaxUint64},
+					},
+				),
+			).
+			Execute()
+
+		// Range Index Selector
+		// idx2: index on ContractAddress & TokenID
+		// Selects all records with ContractAddress == contract0 and TokenID < 20 and TokenID >= 25
+		Table.Query().
+			With(
+				idx2,
+				NewIndexSelectorRanges[*TokenBalance](
+					[]*TokenBalance{
+						{ContractAddress: "contract0", TokenID: 0},
+						{ContractAddress: "contract0", TokenID: 20},
+					},
+					[]*TokenBalance{
+						{ContractAddress: "contract0", TokenID: 25},
+						{ContractAddress: "contract0", TokenID: math.MaxUint64},
+					},
+				),
+			).
+			Execute()
+	*/
+}
+
 func TestBond_NewIndex(t *testing.T) {
 	const (
 		TokenBalanceAccountIDIndexID = IndexID(1)

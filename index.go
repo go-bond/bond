@@ -117,6 +117,27 @@ func IndexOrderDefault[T any](o IndexOrder, t T) IndexOrder {
 	return o
 }
 
+type IndexSelector[T any] interface {
+	Next() (T, T)
+	Valid() bool
+}
+
+type IndexSelectorPoint[T any] struct {
+	Points []T
+}
+
+func NewIndexSelectorPoints[T any](points ...T) IndexSelectorPoint[T] {
+	return IndexSelectorPoint[T]{Points: points}
+}
+
+type IndexSelectorRange[T any] struct {
+	Ranges [][]T
+}
+
+func NewIndexSelectorRanges[T any](ranges ...[]T) IndexSelectorRange[T] {
+	return IndexSelectorRange[T]{Ranges: ranges}
+}
+
 const PrimaryIndexID = IndexID(0)
 const PrimaryIndexName = "primary"
 
