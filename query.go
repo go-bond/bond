@@ -276,6 +276,10 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		limitApplied  = false
 	)
 
+	if err := q.checkIntersectQueries(); err != nil {
+		return nil, err
+	}
+
 	keys, err := q.index.Intersect(ctx, q.table, q.indexSelector, q.indexes(), q.selectors(), optBatch...)
 	if err != nil {
 		return nil, err
@@ -363,6 +367,27 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	}
 
 	return records, nil
+}
+
+func (q Query[T]) checkIntersectQueries() error {
+	for _, q1 := range q.intersects {
+		if q1.filterFunc != nil {
+			return fmt.Errorf("queries passed to Intersect do not support filter")
+		}
+		if q1.orderLessFunc != nil {
+			return fmt.Errorf("queries passed to Intersect do not support order")
+		}
+		if q1.isAfter {
+			return fmt.Errorf("queries passed to Intersect do not support after")
+		}
+		if q1.offset != 0 {
+			return fmt.Errorf("queries passed to Intersect do not support offset")
+		}
+		if q1.limit != 0 {
+			return fmt.Errorf("queries passed to Intersect do not support limit")
+		}
+	}
+	return nil
 }
 
 func (q Query[T]) indexes() []*Index[T] {
