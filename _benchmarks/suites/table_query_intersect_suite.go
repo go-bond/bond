@@ -138,8 +138,8 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			tokenBalances = append(tokenBalances, &TokenBalance{
 				ID:              uint64(i + 1),
 				AccountID:       0,
-				ContractAddress: fmt.Sprintf("0xtestContract%d", i%10),
-				AccountAddress:  fmt.Sprintf("0xtestAccount%d", i%1000),
+				ContractAddress: fmt.Sprintf("0xtestContract%d", i%1),
+				AccountAddress:  fmt.Sprintf("0xtestAccount%d", i%10000),
 				TokenID:         uint32(i % 10),
 				Balance:         uint64((i % 100) * 10),
 			})
