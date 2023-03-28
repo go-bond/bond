@@ -127,6 +127,8 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 		tokenBalances1000000 := tokenBalances[1000000]
 		tokenBalances10000000 := tokenBalances[10000000]
 
+		tokenBalances = nil
+
 		var queryInputs = []struct {
 			index     *bond.Index[*TokenBalance]
 			indexName string
