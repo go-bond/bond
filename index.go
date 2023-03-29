@@ -194,8 +194,13 @@ func (idx *Index[T]) Name() string {
 }
 
 func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
-	lowerBound := encodeIndexKey(table, sel, idx, make([]byte, 0, 1024))
-	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], make([]byte, 0, 1024))
+	lowerBound := encodeIndexKey(table, sel, idx, table.DB().getKeyBufferPool().Get()[:0])
+	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], table.DB().getKeyBufferPool().Get()[:0])
+
+	releaseBuffers := func() {
+		table.DB().getKeyBufferPool().Put(lowerBound[:0])
+		table.DB().getKeyBufferPool().Put(upperBound[:0])
+	}
 
 	if len(optBatch) > 0 {
 		return optBatch[0].Iter(&IterOptions{
@@ -203,6 +208,7 @@ func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
 				LowerBound: lowerBound,
 				UpperBound: upperBound,
 			},
+			releaseBufferOnClose: releaseBuffers,
 		})
 	} else {
 		return table.DB().Iter(&IterOptions{
@@ -210,6 +216,7 @@ func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
 				LowerBound: lowerBound,
 				UpperBound: upperBound,
 			},
+			releaseBufferOnClose: releaseBuffers,
 		})
 	}
 }

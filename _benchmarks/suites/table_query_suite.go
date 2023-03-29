@@ -119,6 +119,16 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 			panic(err)
 		}
 
+		tokenBalances500 := tokenBalances[500]
+		tokenBalances1000 := tokenBalances[1000]
+		tokenBalances5000 := tokenBalances[5000]
+		tokenBalances10000 := tokenBalances[10000]
+		tokenBalances100000 := tokenBalances[100000]
+		tokenBalances1000000 := tokenBalances[1000000]
+		tokenBalances10000000 := tokenBalances[10000000]
+
+		tokenBalances = nil
+
 		var queryInputs = []struct {
 			index     *bond.Index[*TokenBalance]
 			indexName string
@@ -143,13 +153,13 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 			{index: nil, indexName: "Default", selector: nil, offset: 100000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 1000000, limit: 1000},
 			{index: nil, indexName: "Default", selector: nil, offset: 10000000, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[500], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[1000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[5000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[10000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[100000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[1000000], offset: 0, limit: 1000},
-			{index: nil, indexName: "Default", selector: tokenBalances[10000000], offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances500, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances1000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances5000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances10000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances100000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances1000000, offset: 0, limit: 1000},
+			{index: nil, indexName: "Default", selector: tokenBalances10000000, offset: 0, limit: 1000},
 			// AccountAddress Index
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
 			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 500},
