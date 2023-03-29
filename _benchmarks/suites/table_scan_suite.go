@@ -73,12 +73,12 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		}
 
 		var tokenBalances []*TokenBalance
-		for i := 0; i < 10000000; i++ {
+		for i := 0; i < 4000000; i++ {
 			tokenBalances = append(tokenBalances, &TokenBalance{
 				ID:              uint64(i + 1),
 				AccountID:       uint32(i % 10),
 				ContractAddress: "0xtestContract" + fmt.Sprintf("%d", i),
-				AccountAddress:  "0xtestAccount" + fmt.Sprintf("%d", i%5),
+				AccountAddress:  "0xtestAccount" + fmt.Sprintf("%d", i%2),
 				Balance:         uint64((i % 100) * 10),
 			})
 		}
@@ -248,7 +248,7 @@ func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRe
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			var counter = 0
-			var tokenBalances []*TokenBalance
+			var tokenBalances = make([]*TokenBalance, 0, numberToRead)
 			err := tbt.ScanForEach(context.Background(), func(_ bond.KeyBytes, l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {
@@ -280,8 +280,8 @@ func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenB
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			var counter = 1
-			var tokenBalances []*TokenBalance
+			var counter = 0
+			var tokenBalances = make([]*TokenBalance, 0, numberToRead)
 			err := tbt.ScanIndexForEach(context.Background(), idx, sel, func(_ bond.KeyBytes, l bond.Lazy[*TokenBalance]) (bool, error) {
 				counter++
 				if counter <= numberToSkip {

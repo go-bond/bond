@@ -38,10 +38,10 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	// key
 	var (
 		keyBuffer      = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer = t.db.getMultiKeyBufferPool().Get()
+		indexKeyBuffer = t.db.getKeyBufferPool().Get()
 	)
 	defer t.db.getKeyBufferPool().Put(keyBuffer)
-	defer t.db.getMultiKeyBufferPool().Put(indexKeyBuffer)
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer)
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
@@ -80,22 +80,10 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 			return err
 		}
 
-		// indexKeys to add and remove
-		toAddIndexKeys, toRemoveIndexKeys := t.indexKeysDiff(tr, oldTr, indexes, indexKeyBuffer[:0])
-
 		// update indexes
-		for _, indexKey := range toAddIndexKeys {
-			err = batch.Set(indexKey, []byte{}, Sync)
+		for _, idx := range indexes {
+			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0])
 			if err != nil {
-				_ = batch.Close()
-				return err
-			}
-		}
-
-		for _, indexKey := range toRemoveIndexKeys {
-			err = batch.Delete(indexKey, Sync)
-			if err != nil {
-				_ = batch.Close()
 				return err
 			}
 		}

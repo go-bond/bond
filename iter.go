@@ -4,6 +4,8 @@ import "github.com/cockroachdb/pebble"
 
 type IterOptions struct {
 	pebble.IterOptions
+
+	releaseBufferOnClose func()
 }
 
 type Iterator interface {
@@ -24,10 +26,30 @@ type Iterator interface {
 	Close() error
 }
 
-func pebbleIterOptions(opt *IterOptions) *pebble.IterOptions {
-	if opt == nil {
-		return &pebble.IterOptions{}
-	} else {
-		return &opt.IterOptions
+type _iterator struct {
+	Iterator
+
+	opts *IterOptions
+}
+
+func newIteratorFromDB(db *_db, opts *IterOptions) *_iterator {
+	return &_iterator{Iterator: db.pebble.NewIter(&opts.IterOptions), opts: opts}
+}
+
+func newIteratorFromBatch(batch *pebble.Batch, opts *IterOptions) *_iterator {
+	return &_iterator{Iterator: batch.NewIter(&opts.IterOptions), opts: opts}
+}
+
+func (it *_iterator) Close() error {
+	defer func() {
+		if it.opts.releaseBufferOnClose != nil {
+			it.opts.releaseBufferOnClose()
+		}
+	}()
+
+	err := it.Iterator.Close()
+	if err != nil {
+		return err
 	}
+	return nil
 }

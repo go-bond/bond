@@ -1,6 +1,15 @@
 package bond
 
-import "math/big"
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"math/big"
+	"sort"
+
+	"github.com/cockroachdb/pebble"
+	"github.com/go-bond/bond/utils"
+)
 
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
@@ -155,10 +164,166 @@ func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
 	return idx
 }
 
-func (i *Index[T]) ID() IndexID {
-	return i.IndexID
+func (idx *Index[T]) ID() IndexID {
+	return idx.IndexID
 }
 
-func (i *Index[T]) Name() string {
-	return i.IndexName
+func (idx *Index[T]) Name() string {
+	return idx.IndexName
+}
+
+func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
+	lowerBound := encodeIndexKey(table, sel, idx, table.DB().getKeyBufferPool().Get()[:0])
+	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], table.DB().getKeyBufferPool().Get()[:0])
+
+	releaseBuffers := func() {
+		table.DB().getKeyBufferPool().Put(lowerBound[:0])
+		table.DB().getKeyBufferPool().Put(upperBound[:0])
+	}
+
+	if len(optBatch) > 0 {
+		return optBatch[0].Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+			releaseBufferOnClose: releaseBuffers,
+		})
+	} else {
+		return table.DB().Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+			releaseBufferOnClose: releaseBuffers,
+		})
+	}
+}
+
+func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+	var buff []byte
+	if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		return batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
+	}
+	return nil
+}
+
+func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
+	var (
+		buff  []byte
+		buff2 []byte
+	)
+
+	if len(buffs) > 1 {
+		buff = buffs[0]
+		buff2 = buffs[1]
+	} else if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		deleteKey := encodeIndexKey[T](table, oldTr, idx, buff)
+		setKey := encodeIndexKey[T](table, tr, idx, buff2)
+
+		if bytes.Compare(deleteKey, setKey) != 0 {
+			err := batch.Delete(deleteKey, Sync)
+			if err != nil {
+				return err
+			}
+
+			err = batch.Set(setKey, _indexKeyValue, Sync)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+	var buff []byte
+	if len(buffs) > 0 {
+		buff = buffs[0]
+	}
+
+	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+		err := batch.Delete(encodeIndexKey[T](table, tr, idx, buff), Sync)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, indexes []*Index[T], sels []T, optBatch ...Batch) ([][]byte, error) {
+	tempKeysMap := map[string]struct{}{}
+	intersectKeysMap := map[string]struct{}{}
+
+	it := idx.Iter(table, sel, optBatch...)
+	for it.First(); it.Valid(); it.Next() {
+		select {
+		case <-ctx.Done():
+			_ = it.Close()
+			return nil, fmt.Errorf("context done: %w", ctx.Err())
+		default:
+		}
+
+		intersectKeysMap[utils.BytesToString(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))] = struct{}{}
+	}
+	_ = it.Close()
+
+	for i, idx2 := range indexes {
+		it = idx2.Iter(table, sels[i], optBatch...)
+		for it.First(); it.Valid(); it.Next() {
+			select {
+			case <-ctx.Done():
+				_ = it.Close()
+				return nil, fmt.Errorf("context done: %w", ctx.Err())
+			default:
+			}
+
+			key := utils.BytesToString(KeyBytes(it.Key()).ToDataKeyBytes([]byte{}))
+			if _, ok := intersectKeysMap[key]; ok {
+				tempKeysMap[key] = struct{}{}
+			}
+		}
+		_ = it.Close()
+
+		intersectKeysMap = tempKeysMap
+		tempKeysMap = map[string]struct{}{}
+	}
+
+	intersectKeys := make([][]byte, 0, len(intersectKeysMap))
+	for key, _ := range intersectKeysMap {
+		intersectKeys = append(intersectKeys, utils.StringToBytes(key))
+	}
+
+	sort.Slice(intersectKeys, func(i, j int) bool {
+		return bytes.Compare(intersectKeys[i], intersectKeys[j]) == -1
+	})
+
+	return intersectKeys, nil
+}
+
+func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {
+	return KeyEncodeRaw(
+		table.ID(),
+		idx.IndexID,
+		func(b []byte) []byte {
+			return idx.IndexKeyFunction(NewKeyBuilder(b), tr)
+		},
+		func(b []byte) []byte {
+			return idx.IndexOrderFunction(
+				IndexOrder{keyBuilder: NewKeyBuilder(b)}, tr,
+			).Bytes()
+		},
+		func(b []byte) []byte {
+			return table.PrimaryKey(NewKeyBuilder(b), tr)
+		},
+		buff[:0],
+	)
 }
