@@ -119,20 +119,20 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 			panic(err)
 		}
 
-		tokenBalances500 := tokenBalances[500]
-		tokenBalances1000 := tokenBalances[1000]
-		tokenBalances5000 := tokenBalances[5000]
-		tokenBalances10000 := tokenBalances[10000]
-		tokenBalances100000 := tokenBalances[100000]
-		tokenBalances1000000 := tokenBalances[1000000]
-		tokenBalances10000000 := tokenBalances[10000000]
+		tokenBalances500 := bond.NewSelectorPoint(tokenBalances[500])
+		tokenBalances1000 := bond.NewSelectorPoint(tokenBalances[1000])
+		tokenBalances5000 := bond.NewSelectorPoint(tokenBalances[5000])
+		tokenBalances10000 := bond.NewSelectorPoint(tokenBalances[10000])
+		tokenBalances100000 := bond.NewSelectorPoint(tokenBalances[100000])
+		tokenBalances1000000 := bond.NewSelectorPoint(tokenBalances[1000000])
+		tokenBalances10000000 := bond.NewSelectorPoint(tokenBalances[10000000])
 
 		tokenBalances = nil
 
 		var queryInputs = []struct {
 			index     *bond.Index[*TokenBalance]
 			indexName string
-			selector  *TokenBalance
+			selector  bond.Selector[*TokenBalance]
 			filter    func(tb *TokenBalance) bool
 			order     func(tb *TokenBalance, tb2 *TokenBalance) bool
 			offset    int
@@ -161,55 +161,55 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 			{index: nil, indexName: "Default", selector: tokenBalances1000000, offset: 0, limit: 1000},
 			{index: nil, indexName: "Default", selector: tokenBalances10000000, offset: 0, limit: 1000},
 			// AccountAddress Index
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 500},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 5000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 10000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 100000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 500, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 1000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 5000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 10000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 100000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 1000000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0"}, offset: 10000000, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 500}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 5000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 100000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: &TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000000}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 500},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 5000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 10000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 100000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 500, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 1000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 5000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 10000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 100000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 1000000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), offset: 10000000, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 500}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 5000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 100000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 1000000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, indexName: "AccountAddress", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", ID: 10000000}), offset: 0, limit: 1000},
 			// AccountAddressOrderBalanceDESC
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 500},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 5000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 10000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 100000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 500, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 1000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 5000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 10000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 100000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 1000000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}, offset: 10000000, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 500}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 1000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 5000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 10000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 100000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 1000000}, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: &TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 10000000}, offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 500},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 5000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 10000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 100000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 500, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 1000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 5000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 10000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 100000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 1000000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64}), offset: 10000000, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 500}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 1000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 5000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 10000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 100000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 1000000}), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressOrderBalanceDESCIndex, indexName: "AccountAddressOrderBalanceDESC", selector: bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0", Balance: math.MaxUint64, ID: 10000000}), offset: 0, limit: 1000},
 		}
 
 		for _, v := range queryInputs {
 			var selectorID = uint64(0)
 			if v.selector != nil {
-				selectorID = v.selector.ID
+				selectorID = v.selector.(bond.SelectorPoint[*TokenBalance]).Point().ID
 			}
 
 			results = append(results,
@@ -228,7 +228,7 @@ func BenchmarkTableQuerySuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult 
 	return results
 }
 
-func QueryWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, offset int, limit int) func(b *testing.B) {
+func QueryWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel bond.Selector[*TokenBalance], offset int, limit int) func(b *testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 

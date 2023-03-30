@@ -28,7 +28,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 type Query[T any] struct {
 	table         *_table[T]
 	index         *Index[T]
-	indexSelector T
+	indexSelector Selector[T]
 
 	filterFunc    FilterFunc[T]
 	orderLessFunc OrderLessFunc[T]
@@ -44,7 +44,7 @@ func newQuery[T any](t *_table[T], i *Index[T]) Query[T] {
 	return Query[T]{
 		table:         t,
 		index:         i,
-		indexSelector: utils.MakeNew[T](),
+		indexSelector: NewSelectorPoint[T](utils.MakeNew[T]()),
 		afterSelector: utils.MakeNew[T](),
 		filterFunc:    nil,
 		orderLessFunc: nil,
@@ -66,7 +66,7 @@ func (q Query[T]) Table() Table[T] {
 //
 // WARNING: if we have DESC order on ID field, and we try to query with a selector
 // that has ID set to 0 it will start from the last row.
-func (q Query[T]) With(idx *Index[T], selector T) Query[T] {
+func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 	q.index = idx
 	q.indexSelector = selector
 	return q
@@ -161,13 +161,23 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	// after
 	selector := q.indexSelector
 	if hasAfter && !hasSort {
-		selector = q.afterSelector
+		switch q.indexSelector.Type() {
+		case SelectorTypePoint:
+			selector = NewSelectorPoint(q.afterSelector)
+		case SelectorTypeRange:
+			rngSelector := q.indexSelector.(SelectorRange[T])
+
+			_, upper := rngSelector.Range()
+			selector = NewSelectorRange(q.afterSelector, upper)
+		default:
+			return nil, fmt.Errorf("unsupported selector type")
+		}
 	}
 
 	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
-	err := q.table.ScanIndexForEach(ctx, q.index, NewSelectorPoint(selector), func(key KeyBytes, lazy Lazy[T]) (bool, error) {
+	err := q.table.ScanIndexForEach(ctx, q.index, selector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
 		if q.isAfter && !hasSort && !skippedFirstRow {
 			skippedFirstRow = true
 			afterApplied = true
@@ -176,7 +186,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
 			rowIdxKey := key.ToKey()
-			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, selector, q.index, keyBuffer[:0])).ToKey()
+			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, q.afterSelector, q.index, keyBuffer[:0])).ToKey()
 			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
 				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
 				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
@@ -230,7 +240,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	}
 
 	if hasAfter && !afterApplied {
-		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.indexSelector)
+		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
 			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
@@ -280,7 +290,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		return nil, err
 	}
 
-	keys, err := q.index.Intersect(ctx, q.table, NewSelectorPoint(q.indexSelector), q.indexes(), q.selectors(), optBatch...)
+	keys, err := q.index.Intersect(ctx, q.table, q.indexSelector, q.indexes(), q.selectors(), optBatch...)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +411,7 @@ func (q Query[T]) indexes() []*Index[T] {
 func (q Query[T]) selectors() []Selector[T] {
 	sels := make([]Selector[T], 0, len(q.intersects))
 	for _, inter := range q.intersects {
-		sels = append(sels, NewSelectorPoint(inter.indexSelector))
+		sels = append(sels, inter.indexSelector)
 	}
 	return sels
 }

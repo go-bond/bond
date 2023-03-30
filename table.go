@@ -35,6 +35,7 @@ type TableInfo interface {
 	Name() string
 	Indexes() []IndexInfo
 	EntryType() reflect.Type
+	SelectorPointType() reflect.Type
 }
 
 type TableGetter[T any] interface {
@@ -208,6 +209,10 @@ func (t *_table[T]) Indexes() []IndexInfo {
 
 func (t *_table[T]) EntryType() reflect.Type {
 	return reflect.TypeOf(t.valueEmpty)
+}
+
+func (t *_table[T]) SelectorPointType() reflect.Type {
+	return reflect.TypeOf(NewSelectorPoint(t.valueEmpty))
 }
 
 func (t *_table[T]) DB() DB {

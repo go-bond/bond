@@ -19,12 +19,14 @@ type Selector[T any] interface {
 type SelectorPoint[T any] interface {
 	Selector[T]
 	Point() T
+	SetPoint(p T)
 }
 
 // SelectorPoints is the interface for multi-point selector.
 type SelectorPoints[T any] interface {
 	Selector[T]
 	Points() []T
+	SetPoints(p ...T)
 }
 
 // SelectorRange is the interface for range selector.
@@ -33,6 +35,7 @@ type SelectorPoints[T any] interface {
 type SelectorRange[T any] interface {
 	Selector[T]
 	Range() (T, T)
+	SetRange(start, end T)
 }
 
 // SelectorRanges is the interface for multi-range selector.
@@ -41,6 +44,7 @@ type SelectorRange[T any] interface {
 type SelectorRanges[T any] interface {
 	Selector[T]
 	Ranges() [][]T
+	SetRanges(ranges ...[]T)
 }
 
 type selectorPoint[T any] struct {
@@ -60,6 +64,10 @@ func (s *selectorPoint[T]) Point() T {
 	return s.point
 }
 
+func (s *selectorPoint[T]) SetPoint(p T) {
+	s.point = p
+}
+
 type selectorPoints[T any] struct {
 	points []T
 }
@@ -75,6 +83,10 @@ func (s *selectorPoints[T]) Type() SelectorType {
 
 func (s *selectorPoints[T]) Points() []T {
 	return s.points
+}
+
+func (s *selectorPoints[T]) SetPoints(p ...T) {
+	s.points = p
 }
 
 type selectorRange[T any] struct {
@@ -95,6 +107,11 @@ func (s *selectorRange[T]) Range() (T, T) {
 	return s.start, s.end
 }
 
+func (s *selectorRange[T]) SetRange(start, end T) {
+	s.start = start
+	s.end = end
+}
+
 type selectorRanges[T any] struct {
 	ranges [][]T
 }
@@ -110,4 +127,8 @@ func (s *selectorRanges[T]) Type() SelectorType {
 
 func (s *selectorRanges[T]) Ranges() [][]T {
 	return s.ranges
+}
+
+func (s *selectorRanges[T]) SetRanges(ranges ...[]T) {
+	s.ranges = ranges
 }
