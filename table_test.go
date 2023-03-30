@@ -1121,7 +1121,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 
 	var tokenBalances []*TokenBalance
 	err = tokenBalanceTable.ScanIndex(context.Background(), TokenBalanceAccountAddressIndex,
-		&TokenBalance{AccountAddress: "0xtestAccount"}, &tokenBalances)
+		NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}), &tokenBalances)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 
@@ -1162,13 +1162,13 @@ func TestBond_Batch(t *testing.T) {
 	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)
 
-	tokenBalance, err := tokenBalanceTable.Get(&TokenBalance{ID: 1}, batch)
+	tokenBalance, err := tokenBalanceTable.Get(NewSelectorPoint(&TokenBalance{ID: 1}), batch)
 	require.NoError(t, err)
 	require.NotNil(t, tokenBalance)
 
-	tokenBalance.Balance += 20
+	tokenBalance[0].Balance += 20
 
-	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance}, batch)
+	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance[0]}, batch)
 	require.NoError(t, err)
 
 	err = batch.Commit(Sync)
@@ -1185,6 +1185,6 @@ func TestBond_Batch(t *testing.T) {
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
 		require.NoError(t, err)
-		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
+		assert.Equal(t, tokenBalance[0], &tokenBalanceAccountFromDB)
 	}
 }

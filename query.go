@@ -167,7 +167,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	var records []T
 	count := uint64(0)
 	skippedFirstRow := false
-	err := q.table.ScanIndexForEach(ctx, q.index, selector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
+	err := q.table.ScanIndexForEach(ctx, q.index, NewSelectorPoint(selector), func(key KeyBytes, lazy Lazy[T]) (bool, error) {
 		if q.isAfter && !hasSort && !skippedFirstRow {
 			skippedFirstRow = true
 			afterApplied = true
@@ -280,7 +280,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		return nil, err
 	}
 
-	keys, err := q.index.Intersect(ctx, q.table, q.indexSelector, q.indexes(), q.selectors(), optBatch...)
+	keys, err := q.index.Intersect(ctx, q.table, NewSelectorPoint(q.indexSelector), q.indexes(), q.selectors(), optBatch...)
 	if err != nil {
 		return nil, err
 	}
@@ -398,10 +398,10 @@ func (q Query[T]) indexes() []*Index[T] {
 	return indexes
 }
 
-func (q Query[T]) selectors() []T {
-	sels := make([]T, 0, len(q.intersects))
+func (q Query[T]) selectors() []Selector[T] {
+	sels := make([]Selector[T], 0, len(q.intersects))
 	for _, inter := range q.intersects {
-		sels = append(sels, inter.indexSelector)
+		sels = append(sels, NewSelectorPoint(inter.indexSelector))
 	}
 	return sels
 }

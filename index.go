@@ -288,11 +288,11 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, indexes []*Index[T], sels []T, optBatch ...Batch) ([][]byte, error) {
+func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector[T], indexes []*Index[T], sels []Selector[T], optBatch ...Batch) ([][]byte, error) {
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}
 
-	it := idx.Iter(table, NewSelectorPoint(sel), optBatch...)
+	it := idx.Iter(table, sel, optBatch...)
 	for it.First(); it.Valid(); it.Next() {
 		select {
 		case <-ctx.Done():
@@ -306,7 +306,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 	_ = it.Close()
 
 	for i, idx2 := range indexes {
-		it = idx2.Iter(table, NewSelectorPoint(sels[i]), optBatch...)
+		it = idx2.Iter(table, sels[i], optBatch...)
 		for it.First(); it.Valid(); it.Next() {
 			select {
 			case <-ctx.Done():

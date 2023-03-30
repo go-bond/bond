@@ -95,7 +95,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				BenchmarkFunc: func(b *testing.B) {
 					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
-						_, _ = tokenBalanceTable.Get(tokenBalances[0])
+						_, _ = tokenBalanceTable.Get(bond.NewSelectorPoint(tokenBalances[0]))
 					}
 				},
 			}),
@@ -108,7 +108,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				BenchmarkFunc: func(b *testing.B) {
 					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
-						_, _ = tokenBalanceTable.Get(tokenBalances[1])
+						_, _ = tokenBalanceTable.Get(bond.NewSelectorPoint(tokenBalances[1]))
 					}
 				},
 			}),

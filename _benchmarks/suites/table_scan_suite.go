@@ -117,7 +117,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 					Name:   fmt.Sprintf("%s/%s/ScanIndex_%d", bs.Name, serializer.Name, v.scanSize),
 					Inputs: v,
 					BenchmarkFunc: ScanIndexElements(tokenBalanceTable, TokenBalanceAccountAddressIndex,
-						&TokenBalance{AccountAddress: "0xtestAccount0"}, tokenBalancesAccount0, v.scanSize),
+						bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), tokenBalancesAccount0, v.scanSize),
 				}),
 			)
 		}
@@ -172,7 +172,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 						v.skipNumber, v.readNumber),
 					Inputs: v,
 					BenchmarkFunc: ScanIndexSkipThrough(tokenBalanceTable, TokenBalanceAccountAddressIndex,
-						&TokenBalance{AccountAddress: "0xtestAccount0"}, v.skipNumber, v.readNumber),
+						bond.NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount0"}), v.skipNumber, v.readNumber),
 				}),
 			)
 		}
@@ -216,7 +216,7 @@ func ScanElements(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, numberToSc
 	}
 }
 
-func ScanIndexElements(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, tbs []*TokenBalance, numberToScan int) func(*testing.B) {
+func ScanIndexElements(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel bond.Selector[*TokenBalance], tbs []*TokenBalance, numberToScan int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -274,7 +274,7 @@ func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRe
 	}
 }
 
-func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, numberToSkip int, numberToRead int) func(*testing.B) {
+func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel bond.Selector[*TokenBalance], numberToSkip int, numberToRead int) func(*testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
