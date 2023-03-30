@@ -6,3 +6,11 @@
 
 tests/demo
 tests/tmp
+
+bond-cli
+
+*.csv
+*.xlsx
+
+.ipynb_checkpoints
+*.ipynb
