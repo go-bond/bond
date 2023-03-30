@@ -117,27 +117,6 @@ func IndexOrderDefault[T any](o IndexOrder, t T) IndexOrder {
 	return o
 }
 
-type IndexSelector[T any] interface {
-	Next() (T, T)
-	Valid() bool
-}
-
-type IndexSelectorPoint[T any] struct {
-	Points []T
-}
-
-func NewIndexSelectorPoints[T any](points ...T) IndexSelectorPoint[T] {
-	return IndexSelectorPoint[T]{Points: points}
-}
-
-type IndexSelectorRange[T any] struct {
-	Ranges [][]T
-}
-
-func NewIndexSelectorRanges[T any](ranges ...[]T) IndexSelectorRange[T] {
-	return IndexSelectorRange[T]{Ranges: ranges}
-}
-
 const PrimaryIndexID = IndexID(0)
 const PrimaryIndexName = "primary"
 
@@ -193,13 +172,42 @@ func (idx *Index[T]) Name() string {
 	return idx.IndexName
 }
 
-func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
-	lowerBound := encodeIndexKey(table, sel, idx, table.DB().getKeyBufferPool().Get()[:0])
-	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], table.DB().getKeyBufferPool().Get()[:0])
+// Iter returns an iterator for the index.
+// The iterator will iterate over all the keys in the index.
+// If the selector is a point selector, the iterator will iterate over a single index key.
+// If the selector is a range selector, the iterator will iterate over all the index keys in the range.
+// The iterator will return the index keys in the order specified by the index.
+// The iterator will return data if created for primary index.
+func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
+	var (
+		lowerBound []byte
+		upperBound []byte
+	)
+
+	keyBufferPool := table.DB().getKeyBufferPool()
+
+	switch selector.Type() {
+	case SelectorTypePoint:
+		sel := selector.(SelectorPoint[T])
+
+		lowerBound = encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
+		upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+	case SelectorTypeRange:
+		sel := selector.(SelectorRange[T])
+		low, up := sel.Range()
+
+		lowerBound = encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
+		upperBound = encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+		if bytes.Equal(lowerBound, upperBound) {
+			upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], upperBound[:0])
+		}
+	default:
+		panic("invalid selector type")
+	}
 
 	releaseBuffers := func() {
-		table.DB().getKeyBufferPool().Put(lowerBound[:0])
-		table.DB().getKeyBufferPool().Put(upperBound[:0])
+		keyBufferPool.Put(lowerBound[:0])
+		keyBufferPool.Put(upperBound[:0])
 	}
 
 	if len(optBatch) > 0 {
@@ -228,7 +236,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	}
 
 	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		return batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
+		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
 	return nil
 }
@@ -247,10 +255,10 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 	}
 
 	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		deleteKey := encodeIndexKey[T](table, oldTr, idx, buff)
-		setKey := encodeIndexKey[T](table, tr, idx, buff2)
+		deleteKey := encodeIndexKey(table, oldTr, idx, buff)
+		setKey := encodeIndexKey(table, tr, idx, buff2)
 
-		if bytes.Compare(deleteKey, setKey) != 0 {
+		if !bytes.Equal(deleteKey, setKey) {
 			err := batch.Delete(deleteKey, Sync)
 			if err != nil {
 				return err
@@ -272,7 +280,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	}
 
 	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		err := batch.Delete(encodeIndexKey[T](table, tr, idx, buff), Sync)
+		err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
 		if err != nil {
 			return err
 		}
@@ -284,7 +292,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}
 
-	it := idx.Iter(table, sel, optBatch...)
+	it := idx.Iter(table, NewSelectorPoint(sel), optBatch...)
 	for it.First(); it.Valid(); it.Next() {
 		select {
 		case <-ctx.Done():
@@ -298,7 +306,7 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, index
 	_ = it.Close()
 
 	for i, idx2 := range indexes {
-		it = idx2.Iter(table, sels[i], optBatch...)
+		it = idx2.Iter(table, NewSelectorPoint(sels[i]), optBatch...)
 		for it.First(); it.Valid(); it.Next() {
 			select {
 			case <-ctx.Done():

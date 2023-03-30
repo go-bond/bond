@@ -1,79 +1,98 @@
 package bond
 
-// Selector is a structure that represents row template or a range of
-// row templates that is used to select rows from a table. It can point
-// to a single row or a range of rows defined by a first and last row.
-//
-// The row templates need to contain fields that are part of the primary
-// key or index key depending on the context.
-//
-// Example:
-//
-//		var t Table[Contract]
-//
-//		t.Get(NewPointSelector(Contract{ID: 1})) // points to a single row
-//		t.Get(NewRangeSelector(Contract{ID: 1}, Contract{ID: 10})) // points to a range of rows
-//
-//	 	t.Query(idx, NewPointSelector(Contract{ID: 1})) // points to a single index bucket
-//	 	t.Query(idx, NewRangeSelector(Contract{ID: 1}, Contract{ID: 10})) // points to a range of index buckets
-type Selector[T any] struct {
-	first, last T
-	points      []T
+type SelectorType uint8
 
-	isPoint      bool
-	isMultiPoint bool
-	isRange      bool
-	isSet        bool
+const (
+	SelectorTypePoint SelectorType = iota
+	SelectorTypeMultiPoint
+	SelectorTypeRange
+	SelectorTypeRanges
+)
+
+type Selector[T any] interface {
+	Type() SelectorType
+}
+type SelectorPoint[T any] interface {
+	Selector[T]
+	Point() T
 }
 
-// First returns the first row template of the selector.
-func (s *Selector[T]) First() T {
-	return s.first
+type SelectorPoints[T any] interface {
+	Selector[T]
+	Points() []T
 }
 
-// Last returns the last row template of the selector.
-func (s *Selector[T]) Last() T {
-	return s.last
+type SelectorRange[T any] interface {
+	Selector[T]
+	Range() (T, T)
 }
 
-// IsPoint returns true if the selector points to a single row.
-func (s *Selector[T]) IsPoint() bool {
-	return s.isPoint
+type SelectorRanges[T any] interface {
+	Selector[T]
+	Ranges() [][]T
 }
 
-// IsMultiPoint returns true if the selector points to multiple rows.
-func (s *Selector[T]) IsMultiPoint() bool {
-	return s.isMultiPoint
+type selectorPoint[T any] struct {
+	point T
 }
 
-// IsRange returns true if the selector points to a range of rows.
-func (s *Selector[T]) IsRange() bool {
-	return s.isRange
+func NewSelectorPoint[T any](point T) SelectorPoint[T] {
+	return &selectorPoint[T]{point: point}
 }
 
-// IsSet returns true if the selector is set.
-func (s *Selector[T]) IsSet() bool {
-	return s.isSet
+func (s *selectorPoint[T]) Type() SelectorType {
+	return SelectorTypePoint
 }
 
-func SelectorNotSet[T any]() Selector[T] {
-	return Selector[T]{}
+func (s *selectorPoint[T]) Point() T {
+	return s.point
 }
 
-// NewPointSelector creates a new selector that points to a single row.
-func NewPointSelector[T any](first T) Selector[T] {
-	return Selector[T]{first: first, last: first, isPoint: true, isSet: true}
+type selectorPoints[T any] struct {
+	points []T
 }
 
-// NewMultiPointsSelector creates a new selector that points to multiple rows.
-func NewMultiPointsSelector[T any](points ...T) Selector[T] {
-	return Selector[T]{points: points, isMultiPoint: true, isSet: true}
+func NewSelectorPoints[T any](points ...T) SelectorPoints[T] {
+	return &selectorPoints[T]{points: points}
 }
 
-// NewRangeSelector creates a new selector that points to a range of rows.
-func NewRangeSelector[T any](first, last T) Selector[T] {
-	return Selector[T]{first: first, last: last, isRange: true, isSet: true}
+func (s *selectorPoints[T]) Type() SelectorType {
+	return SelectorTypeMultiPoint
 }
 
-// Selectors is a list of selectors.
-type Selectors[T any] []Selector[T]
+func (s *selectorPoints[T]) Points() []T {
+	return s.points
+}
+
+type selectorRange[T any] struct {
+	start T
+	end   T
+}
+
+func NewSelectorRange[T any](start, end T) SelectorRange[T] {
+	return &selectorRange[T]{start: start, end: end}
+}
+
+func (s *selectorRange[T]) Type() SelectorType {
+	return SelectorTypeRange
+}
+
+func (s *selectorRange[T]) Range() (T, T) {
+	return s.start, s.end
+}
+
+type selectorRanges[T any] struct {
+	ranges [][]T
+}
+
+func NewSelectorRanges[T any](ranges ...[]T) SelectorRanges[T] {
+	return &selectorRanges[T]{ranges: ranges}
+}
+
+func (s *selectorRanges[T]) Type() SelectorType {
+	return SelectorTypeRanges
+}
+
+func (s *selectorRanges[T]) Ranges() [][]T {
+	return s.ranges
+}

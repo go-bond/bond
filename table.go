@@ -57,7 +57,7 @@ type TableScanner[T any] interface {
 }
 
 type TableIterationer[T any] interface {
-	Iter(opt *IterOptions, optBatch ...Batch) Iterator
+	Iter(sel Selector[T], optBatch ...Batch) Iterator
 }
 
 type TableReader[T any] interface {
@@ -881,22 +881,8 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, 
 	return values, nil
 }
 
-func (t *_table[T]) Iter(opt *IterOptions, optBatch ...Batch) Iterator {
-	if opt == nil {
-		opt = &IterOptions{}
-	}
-
-	lower := KeyEncode(Key{TableID: t.id}, nil)
-	upper := KeyEncode(Key{TableID: t.id + 1}, nil)
-	opt.LowerBound = lower
-	opt.UpperBound = upper
-
-	if len(optBatch) > 0 && optBatch[0] != nil {
-		batch := optBatch[0]
-		return batch.Iter(opt)
-	} else {
-		return t.db.Iter(opt)
-	}
+func (t *_table[T]) Iter(sel Selector[T], optBatch ...Batch) Iterator {
+	return t.primaryIndex.Iter(t, sel, optBatch...)
 }
 
 func (t *_table[T]) Query() Query[T] {
@@ -931,7 +917,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 }
 
 func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	it := idx.Iter(t, s, optBatch...)
+	it := idx.Iter(t, NewSelectorPoint(s), optBatch...)
 
 	getValue := func() (T, error) {
 		var record T
@@ -961,7 +947,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 }
 
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
-	it := idx.Iter(t, s, optBatch...)
+	it := idx.Iter(t, NewSelectorPoint(s), optBatch...)
 
 	var batch Batch
 	if len(optBatch) > 0 {

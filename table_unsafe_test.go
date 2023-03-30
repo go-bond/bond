@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,10 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -67,7 +71,10 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()

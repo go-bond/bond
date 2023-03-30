@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -734,7 +735,10 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -752,7 +756,10 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
@@ -852,7 +859,10 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -868,7 +878,10 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount1") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount2") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -981,7 +994,10 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -997,7 +1013,10 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1114,7 +1133,10 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -1130,7 +1152,10 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	assert.True(t, strings.Contains(string(keys[6]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 	assert.True(t, strings.Contains(string(keys[7]), "0xtestAccount3") && strings.Contains(string(keys[6]), "0xtestContract"))
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1238,9 +1263,15 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	assert.False(t, tokenBalanceTable.Iter(nil).First())
+	assert.False(t, db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	}).First())
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
@@ -1337,7 +1368,10 @@ func TestBond_Table_Reindex(t *testing.T) {
 	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
 	require.NoError(t, err)
 
-	it := tokenBalanceTable.Iter(nil)
+	it := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	var keys [][]byte
 	for it.First(); it.Valid(); it.Next() {
@@ -1360,7 +1394,10 @@ func TestBond_Table_Reindex(t *testing.T) {
 	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
 	require.NoError(t, err)
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	keys = [][]byte{}
 	for it.First(); it.Valid(); it.Next() {
@@ -1377,7 +1414,10 @@ func TestBond_Table_Reindex(t *testing.T) {
 
 	_ = it.Close()
 
-	it = tokenBalanceTable.Iter(nil)
+	it = db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 
