@@ -14,7 +14,7 @@ func TestSelector(t *testing.T) {
 
 	selectorPoints := NewSelectorPoints([]int{1, 2, 3}...)
 
-	assert.Equal(t, SelectorTypeMultiPoint, selectorPoints.Type())
+	assert.Equal(t, SelectorTypePoints, selectorPoints.Type())
 	assert.Equal(t, []int{1, 2, 3}, selectorPoints.Points())
 
 	selectorRange := NewSelectorRange(1, 2)

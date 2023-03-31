@@ -73,7 +73,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		}
 
 		var tokenBalances []*TokenBalance
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 1000000; i++ {
 			tokenBalances = append(tokenBalances, &TokenBalance{
 				ID:              uint64(i + 1),
 				AccountID:       uint32(i % 10),
@@ -83,7 +83,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 			})
 		}
 
-		err = tokenBalanceTable.Insert(context.Background(), tokenBalances[:1])
+		err = tokenBalanceTable.Insert(context.Background(), tokenBalances)
 		if err != nil {
 			panic(err)
 		}
@@ -95,7 +95,7 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				BenchmarkFunc: func(b *testing.B) {
 					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
-						_, _ = tokenBalanceTable.Get(bond.NewSelectorPoint(tokenBalances[0]))
+						_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoint(tokenBalances[0]))
 					}
 				},
 			}),
@@ -108,7 +108,55 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				BenchmarkFunc: func(b *testing.B) {
 					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
-						_, _ = tokenBalanceTable.Get(bond.NewSelectorPoint(tokenBalances[1]))
+						_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoint(tokenBalances[1]))
+					}
+				},
+			}),
+		)
+
+		var tokenBalancesToGet []*TokenBalance
+		for i := 0; i < 1000000; i++ {
+			if i%10 == 0 {
+				tokenBalancesToGet = append(tokenBalancesToGet, tokenBalances[i])
+			}
+		}
+
+		results = append(results,
+			bs.Benchmark(bench.Benchmark{
+				Name:   fmt.Sprintf("%s/%s/Get_Rows_Sequencial_100000", bs.Name, serializer.Name),
+				Inputs: nil,
+				BenchmarkFunc: func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorRange(tokenBalances[0], tokenBalances[100000]))
+					}
+				},
+			}),
+		)
+
+		results = append(results,
+			bs.Benchmark(bench.Benchmark{
+				Name:   fmt.Sprintf("%s/%s/Get_Rows_RandomAccess_100000", bs.Name, serializer.Name),
+				Inputs: nil,
+				BenchmarkFunc: func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						for _, tokenBalance := range tokenBalancesToGet {
+							_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoint(tokenBalance))
+						}
+					}
+				},
+			}),
+		)
+
+		results = append(results,
+			bs.Benchmark(bench.Benchmark{
+				Name:   fmt.Sprintf("%s/%s/Get_Rows_RandomAccess_Selector_Points_100000", bs.Name, serializer.Name),
+				Inputs: nil,
+				BenchmarkFunc: func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoints(tokenBalancesToGet...))
 					}
 				},
 			}),

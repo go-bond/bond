@@ -317,7 +317,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	}
 
 	// get data
-	values, err := q.table.get(keys, nil, make([][]byte, len(keys)))
+	values, err := q.table.get(keys, nil, make([][]byte, len(keys)), true)
 	if err != nil {
 		return nil, err
 	}

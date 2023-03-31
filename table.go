@@ -851,6 +851,49 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		}
 
 		return []T{rtr}, nil
+	case SelectorTypePoints:
+		selPoints := sel.(SelectorPoints[T]).Points()
+
+		keyArray := t.db.getKeyArray(len(selPoints))
+		defer t.db.putKeyArray(keyArray)
+
+		valueArray := t.db.getKeyArray(len(selPoints))
+		defer t.db.putKeyArray(valueArray)
+
+		var trs []T
+		err := batched[T](selPoints, t.scanPrefetchSize, func(selPoints []T) error {
+			keys := t.keysExternal(selPoints, keyArray)
+
+			order := t.sortKeys(keys)
+
+			values, err := t.get(keys, batch, valueArray, false)
+			if err != nil {
+				return err
+			}
+
+			t.reorderValues(values, order)
+			for _, value := range values {
+				if len(value) == 0 {
+					trs = append(trs, t.valueNil)
+					continue
+				}
+
+				var tr T
+				err = t.serializer.Deserialize(value, &tr)
+				if err != nil {
+					return err
+				}
+
+				trs = append(trs, tr)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return trs, nil
 	case SelectorTypeRange:
 		var trs []T
 
@@ -865,7 +908,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	}
 }
 
-func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, error) {
+func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotExist bool) ([][]byte, error) {
 	if len(keys) == 0 {
 		return [][]byte{}, nil
 	}
@@ -883,7 +926,12 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, 
 
 	for i := 0; i < len(keys); i++ {
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
-			return nil, fmt.Errorf("not found")
+			if errorOnNotExist {
+				return nil, fmt.Errorf("not found")
+			} else {
+				values[i] = values[i][:0]
+				continue
+			}
 		}
 
 		iterValue := iter.Value()
@@ -1028,7 +1076,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		}
 
 		var err error
-		prefetchedValues, err = t.get(keys, batch, valuesBuffer)
+		prefetchedValues, err = t.get(keys, batch, valuesBuffer, true)
 		if err != nil {
 			return t.valueNil, err
 		}

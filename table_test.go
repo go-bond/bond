@@ -263,6 +263,61 @@ func TestBondTable_Get_Range(t *testing.T) {
 	assert.Equal(t, 0, len(tokenBalances))
 }
 
+func TestBondTable_Get_Points(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+		Serializer: &serializers.JsonSerializer{},
+	})
+	require.NotNil(t, tokenBalanceTable)
+
+	// token balances to insert
+	insertTokenBalances := []*TokenBalance{
+		{
+			ID:              1,
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		},
+		{
+			ID:              3,
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		},
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), insertTokenBalances)
+	require.NoError(t, err)
+
+	// get token balances with points
+	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 3}))
+	require.NoError(t, err)
+	require.Equal(t, len(insertTokenBalances), len(tokenBalances))
+
+	assert.Equal(t, insertTokenBalances, tokenBalances)
+
+	// get token balance with non-existing points
+	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 2}))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(tokenBalances))
+
+	assert.Nil(t, tokenBalances[0])
+}
+
 func TestBondTable_Insert(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)

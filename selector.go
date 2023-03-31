@@ -5,7 +5,7 @@ type SelectorType uint8
 
 const (
 	SelectorTypePoint SelectorType = iota
-	SelectorTypeMultiPoint
+	SelectorTypePoints
 	SelectorTypeRange
 	SelectorTypeRanges
 )
@@ -78,7 +78,7 @@ func NewSelectorPoints[T any](points ...T) SelectorPoints[T] {
 }
 
 func (s *selectorPoints[T]) Type() SelectorType {
-	return SelectorTypeMultiPoint
+	return SelectorTypePoints
 }
 
 func (s *selectorPoints[T]) Points() []T {
