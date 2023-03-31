@@ -128,6 +128,21 @@ func BenchmarkTableGetSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 				BenchmarkFunc: func(b *testing.B) {
 					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
+						for i := 0; i < 100000; i++ {
+							_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoint(tokenBalances[i]))
+						}
+					}
+				},
+			}),
+		)
+
+		results = append(results,
+			bs.Benchmark(bench.Benchmark{
+				Name:   fmt.Sprintf("%s/%s/Get_Rows_Sequencial_Selector_Range_100000", bs.Name, serializer.Name),
+				Inputs: nil,
+				BenchmarkFunc: func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
 						_, _ = tokenBalanceTable.Get(context.Background(), bond.NewSelectorRange(tokenBalances[0], tokenBalances[100000]))
 					}
 				},
