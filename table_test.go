@@ -2,6 +2,7 @@ package bond
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/cockroachdb/pebble"
@@ -316,6 +317,70 @@ func TestBondTable_Get_Points(t *testing.T) {
 	require.Equal(t, 1, len(tokenBalances))
 
 	assert.Nil(t, tokenBalances[0])
+}
+
+func TestBondTable_Get_Ranges(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+		Serializer: &serializers.JsonSerializer{},
+	})
+	require.NotNil(t, tokenBalanceTable)
+
+	// token balances to insert
+	insertTokenBalances := []*TokenBalance{
+		{
+			ID:              1,
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		},
+		{
+			ID:              2,
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		},
+		{
+			ID:              3,
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         7,
+		},
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), insertTokenBalances)
+	require.NoError(t, err)
+
+	expectedTokenBalances := []*TokenBalance{
+		insertTokenBalances[0],
+		insertTokenBalances[2],
+	}
+
+	// get token balances with range
+	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 0}, {ID: 1}}, []*TokenBalance{{ID: 3}, {ID: math.MaxUint64}}))
+	require.NoError(t, err)
+	require.Equal(t, len(expectedTokenBalances), len(tokenBalances))
+	assert.Equal(t, expectedTokenBalances, tokenBalances)
+
+	// get token balance with non-existing id range
+	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 5}, {ID: 5}}))
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(tokenBalances))
 }
 
 func TestBondTable_Insert(t *testing.T) {

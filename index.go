@@ -179,10 +179,10 @@ func (idx *Index[T]) Name() string {
 // The iterator will return the index keys in the order specified by the index.
 // The iterator will return data if created for primary index.
 func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
-	var (
-		lowerBound []byte
-		upperBound []byte
-	)
+	var iterConstructor Iterationer = table.DB()
+	if len(optBatch) > 0 {
+		iterConstructor = optBatch[0]
+	}
 
 	keyBufferPool := table.DB().getKeyBufferPool()
 
@@ -190,44 +190,100 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	case SelectorTypePoint:
 		sel := selector.(SelectorPoint[T])
 
-		lowerBound = encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
-		upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
+		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+
+		releaseBuffers := func() {
+			keyBufferPool.Put(lowerBound[:0])
+			keyBufferPool.Put(upperBound[:0])
+		}
+
+		return iterConstructor.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+			releaseBufferOnClose: releaseBuffers,
+		})
+	case SelectorTypePoints:
+		sel := selector.(SelectorPoints[T])
+
+		var pebbleOpts []*IterOptions
+		for _, point := range sel.Points() {
+			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
+			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+
+			releaseBuffers := func() {
+				keyBufferPool.Put(lowerBound[:0])
+				keyBufferPool.Put(upperBound[:0])
+			}
+
+			pebbleOpts = append(pebbleOpts, &IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: lowerBound,
+					UpperBound: upperBound,
+				},
+				releaseBufferOnClose: releaseBuffers,
+			})
+		}
+
+		return newIteratorMulti(iterConstructor, pebbleOpts)
 	case SelectorTypeRange:
 		sel := selector.(SelectorRange[T])
 		low, up := sel.Range()
 
-		lowerBound = encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
-		upperBound = encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
+		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
 		if bytes.Equal(lowerBound, upperBound) {
 			upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], upperBound[:0])
 		} else {
 			upperBound = keySuccessor(upperBound, upperBound[:0])
 		}
+
+		releaseBuffers := func() {
+			keyBufferPool.Put(lowerBound[:0])
+			keyBufferPool.Put(upperBound[:0])
+		}
+
+		return iterConstructor.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: lowerBound,
+				UpperBound: upperBound,
+			},
+			releaseBufferOnClose: releaseBuffers,
+		})
+	case SelectorTypeRanges:
+		sel := selector.(SelectorRanges[T])
+
+		var pebbleOpts []*IterOptions
+		for _, r := range sel.Ranges() {
+			low, up := r[0], r[1]
+
+			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
+			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+			if bytes.Equal(lowerBound, upperBound) {
+				upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], upperBound[:0])
+			} else {
+				upperBound = keySuccessor(upperBound, upperBound[:0])
+			}
+
+			releaseBuffers := func() {
+				keyBufferPool.Put(lowerBound[:0])
+				keyBufferPool.Put(upperBound[:0])
+			}
+
+			pebbleOpts = append(pebbleOpts, &IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: lowerBound,
+					UpperBound: upperBound,
+				},
+				releaseBufferOnClose: releaseBuffers,
+			})
+		}
+
+		return newIteratorMulti(iterConstructor, pebbleOpts)
 	default:
 		panic("invalid selector type")
-	}
-
-	releaseBuffers := func() {
-		keyBufferPool.Put(lowerBound[:0])
-		keyBufferPool.Put(upperBound[:0])
-	}
-
-	if len(optBatch) > 0 {
-		return optBatch[0].Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: lowerBound,
-				UpperBound: upperBound,
-			},
-			releaseBufferOnClose: releaseBuffers,
-		})
-	} else {
-		return table.DB().Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: lowerBound,
-				UpperBound: upperBound,
-			},
-			releaseBufferOnClose: releaseBuffers,
-		})
 	}
 }
 

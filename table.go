@@ -894,7 +894,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		}
 
 		return trs, nil
-	case SelectorTypeRange:
+	case SelectorTypeRange, SelectorTypeRanges:
 		var trs []T
 
 		err := t.ScanIndex(ctx, t.primaryIndex, sel, &trs, optBatch...)
