@@ -192,9 +192,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
 		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
-		if idx.IndexID == PrimaryIndexID {
-			upperBound = keySuccessor(lowerBound, upperBound[:0])
-		}
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -211,13 +208,14 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	case SelectorTypePoints:
 		sel := selector.(SelectorPoints[T])
 
+		if idx.IndexID == PrimaryIndexID {
+			return errIterator{err: fmt.Errorf("cannot iterate over primary index with points selector")}
+		}
+
 		var pebbleOpts []*IterOptions
 		for _, point := range sel.Points() {
 			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
 			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
-			if idx.IndexID == PrimaryIndexID {
-				upperBound = keySuccessor(lowerBound, upperBound[:0])
-			}
 
 			releaseBuffers := func() {
 				keyBufferPool.Put(lowerBound[:0])
@@ -240,7 +238,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
 		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
-		upperBound = keySuccessor(upperBound, upperBound[:0])
+		upperBound = keySuccessor(upperBound, nil)
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -263,7 +261,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
 			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
-			upperBound = keySuccessor(upperBound, upperBound[:0])
+			upperBound = keySuccessor(upperBound, nil)
 
 			releaseBuffers := func() {
 				keyBufferPool.Put(lowerBound[:0])
@@ -281,7 +279,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		return newIteratorMulti(iterConstructor, pebbleOpts)
 	default:
-		panic("invalid selector type")
+		return errIterator{err: fmt.Errorf("unknown selector type: %v", selector.Type())}
 	}
 }
 
@@ -409,6 +407,6 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		func(b []byte) []byte {
 			return table.PrimaryKey(NewKeyBuilder(b), tr)
 		},
-		buff[:0],
+		buff,
 	)
 }

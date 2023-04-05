@@ -149,6 +149,11 @@ func TestNewInspectHandler(t *testing.T) {
 		err = table.Insert(context.Background(), insertTokenBalance)
 		require.NoError(t, err)
 
+		defer func() {
+			err = table.Delete(context.Background(), insertTokenBalance)
+			require.NoError(t, err)
+		}()
+
 		t.Run("Simple", func(t *testing.T) {
 			expectedTokenBalance := []map[string]interface{}{
 				{

@@ -1189,8 +1189,13 @@ func keyPrefix[T any](tableID TableID, idx *Index[T], s T, buff []byte) []byte {
 }
 
 func keySuccessor(src, dst []byte) []byte {
-	dst = append(dst, src...)
-	for i := len(src) - 1; i > 0; i-- {
+	if dst != nil {
+		dst = append(dst, src...)
+	} else {
+		dst = src
+	}
+
+	for i := len(src) - 1; i >= 0; i-- {
 		if dst[i] != 0xFF {
 			dst[i]++
 			return dst
