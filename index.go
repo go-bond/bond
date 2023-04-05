@@ -234,11 +234,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
 		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
-		if bytes.Equal(lowerBound, upperBound) {
-			upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], upperBound[:0])
-		} else {
-			upperBound = keySuccessor(upperBound, upperBound[:0])
-		}
+		upperBound = keySuccessor(upperBound, upperBound[:0])
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -261,11 +257,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
 			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
-			if bytes.Equal(lowerBound, upperBound) {
-				upperBound = keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], upperBound[:0])
-			} else {
-				upperBound = keySuccessor(upperBound, upperBound[:0])
-			}
+			upperBound = keySuccessor(upperBound, upperBound[:0])
 
 			releaseBuffers := func() {
 				keyBufferPool.Put(lowerBound[:0])

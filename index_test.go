@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -531,6 +533,226 @@ func TestIndex_IndexKeyFunction(t *testing.T) {
 	assert.Equal(t, NameIndexID, NameIndex.IndexID)
 	assert.Equal(t, []byte{0x01, 't', 'e', 's', 't'}, NameIndex.IndexKeyFunction(NewKeyBuilder([]byte{}), testStructure))
 	assert.Equal(t, []byte{}, NameIndex.IndexOrderFunction(IndexOrder{NewKeyBuilder([]byte{})}, testStructure).Bytes())
+}
+
+func TestIndex_Iter(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	const (
+		_                                 = PrimaryIndexID
+		TokenBalanceAccountAddressIndexID = iota
+		TokenBalanceAccountAndContractAddressIndexID
+	)
+
+	var (
+		//TokenBalancePrimaryIndex        = tokenBalanceTable.PrimaryIndex()
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAddressIndexID,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAndContractAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   TokenBalanceAccountAndContractAddressIndexID,
+			IndexName: "account_and_contract_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.
+					AddStringField(tb.AccountAddress).
+					AddStringField(tb.ContractAddress).
+					Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
+				return tb.ContractAddress == "0xtestContract"
+			},
+		})
+	)
+
+	var TokenBalanceIndexes = []*Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAndContractAddressIndex,
+	}
+
+	err := tokenBalanceTable.AddIndex(TokenBalanceIndexes, false)
+	require.NoError(t, err)
+
+	// Insert test data
+	testTokenBalances := []*TokenBalance{
+		{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+		{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+		{3, 3, "0xtestContract", "0xtestAccount1", 300, 300},
+		{4, 4, "0xtestContract", "0xtestAccount1", 400, 400},
+		{5, 5, "0xtestContract", "0xtestAccount2", 500, 500},
+		{6, 6, "0xtestContract", "0xtestAccount2", 600, 600},
+		{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+		{8, 8, "0xtestContract", "0xtestAccount3", 800, 800},
+		{9, 9, "0xtestContract", "0xtestAccount3", 900, 900},
+		{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+	}
+
+	err = tokenBalanceTable.Insert(context.Background(), testTokenBalances)
+	require.NoError(t, err)
+
+	testInputs := []struct {
+		Name     string
+		IndexID  IndexID
+		Selector Selector[*TokenBalance]
+		Expected []*TokenBalance
+	}{
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorPoint",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorPoints",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorPoints(&TokenBalance{AccountAddress: "0xtestAccount"}, &TokenBalance{AccountAddress: "0xtestAccount1"}),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+				{3, 3, "0xtestContract", "0xtestAccount1", 300, 300},
+				{4, 4, "0xtestContract", "0xtestAccount1", 400, 400},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorRange",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRange(&TokenBalance{AccountAddress: "0xtestAccount", ID: 0}, &TokenBalance{AccountAddress: "0xtestAccount1", ID: math.MaxUint64}),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+				{3, 3, "0xtestContract", "0xtestAccount1", 300, 300},
+				{4, 4, "0xtestContract", "0xtestAccount1", 400, 400},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorRange_Low_Up_Bound_Same",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRange(&TokenBalance{AccountAddress: "0xtestAccount", ID: 0}, &TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64}),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorRange_ID_0_2",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRange(&TokenBalance{AccountAddress: "0xtestAccount", ID: 0}, &TokenBalance{AccountAddress: "0xtestAccount", ID: 2}),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorRange_ID_2_7",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRange(&TokenBalance{AccountAddress: "0xtestAccount", ID: 2}, &TokenBalance{AccountAddress: "0xtestAccount", ID: 7}),
+			Expected: []*TokenBalance{
+				{2, 2, "0xtestContract", "0xtestAccount", 200, 200},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+			},
+		},
+		{
+			Name:     "TokenBalanceAccountAddressIndexID_SelectorRange_Not_Exist",
+			IndexID:  TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRange(&TokenBalance{AccountAddress: "0xtestAccount", ID: 3}, &TokenBalance{AccountAddress: "0xtestAccount", ID: 6}),
+			Expected: []*TokenBalance{},
+		},
+		{
+			Name:    "TokenBalanceAccountAddressIndexID_SelectorRanges_ID_0_1_And_10_Max",
+			IndexID: TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRanges(
+				[]*TokenBalance{
+					{AccountAddress: "0xtestAccount", ID: 0}, {AccountAddress: "0xtestAccount", ID: 1},
+				},
+				[]*TokenBalance{
+					{AccountAddress: "0xtestAccount", ID: 10}, {AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				},
+			),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+			},
+		},
+		{
+			Name:    "TokenBalanceAccountAddressIndexID_SelectorRanges_ID_0_1_And_7_7_And_10_Max",
+			IndexID: TokenBalanceAccountAddressIndexID,
+			Selector: NewSelectorRanges(
+				[]*TokenBalance{
+					{AccountAddress: "0xtestAccount", ID: 0}, {AccountAddress: "0xtestAccount", ID: 1},
+				},
+				[]*TokenBalance{
+					{AccountAddress: "0xtestAccount", ID: 7}, {AccountAddress: "0xtestAccount", ID: 7},
+				},
+				[]*TokenBalance{
+					{AccountAddress: "0xtestAccount", ID: 10}, {AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				},
+			),
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
+			},
+		},
+	}
+
+	for _, testInput := range testInputs {
+		t.Run(testInput.Name, func(t *testing.T) {
+			iter := TokenBalanceAccountAddressIndex.Iter(
+				tokenBalanceTable,
+				testInput.Selector)
+			defer iter.Close()
+
+			var actual []*TokenBalance
+			for iter.First(); iter.Valid(); iter.Next() {
+				data, closer, err := db.Get(KeyBytes(iter.Key()).ToDataKeyBytes(nil))
+				require.NoError(t, err)
+
+				var tb *TokenBalance
+				err = tokenBalanceTable.Serializer().Deserialize(data, &tb)
+				require.NoError(t, err)
+				closer.Close()
+
+				actual = append(actual, tb)
+			}
+
+			spew.Dump(actual)
+
+			require.Equal(t, len(testInput.Expected), len(actual))
+			for i := 0; i < len(testInput.Expected); i++ {
+				assert.Equal(t, *testInput.Expected[i], *actual[i])
+			}
+		})
+	}
 }
 
 func TestBond_NewIndex_Ordered(t *testing.T) {
