@@ -192,6 +192,9 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
 		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+		if idx.IndexID == PrimaryIndexID {
+			upperBound = keySuccessor(lowerBound, upperBound[:0])
+		}
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -212,6 +215,9 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		for _, point := range sel.Points() {
 			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
 			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+			if idx.IndexID == PrimaryIndexID {
+				upperBound = keySuccessor(lowerBound, upperBound[:0])
+			}
 
 			releaseBuffers := func() {
 				keyBufferPool.Put(lowerBound[:0])
