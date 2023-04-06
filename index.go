@@ -302,10 +302,15 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		buff = buffs[0]
 	}
 
+	var deleteKey, setKey []byte
+	if idx.IndexFilterFunction(oldTr) {
+		deleteKey = encodeIndexKey(table, oldTr, idx, buff)
+	}
 	if idx.IndexFilterFunction(tr) {
-		deleteKey := encodeIndexKey(table, oldTr, idx, buff)
-		setKey := encodeIndexKey(table, tr, idx, buff2)
+		setKey = encodeIndexKey(table, tr, idx, buff2)
+	}
 
+	if deleteKey != nil && setKey != nil {
 		if !bytes.Equal(deleteKey, setKey) {
 			err := batch.Delete(deleteKey, Sync)
 			if err != nil {
@@ -317,7 +322,18 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 				return err
 			}
 		}
+	} else if deleteKey != nil {
+		err := batch.Delete(deleteKey, Sync)
+		if err != nil {
+			return err
+		}
+	} else if setKey != nil {
+		err := batch.Set(setKey, _indexKeyValue, Sync)
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 

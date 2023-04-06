@@ -954,115 +954,141 @@ func TestIndex_Callbacks(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name        string
-		op          string
-		index       *Index[*TokenBalance]
-		existingRow *TokenBalance
-		newRow      *TokenBalance
+		name               string
+		op                 string
+		index              *Index[*TokenBalance]
+		existingRow        *TokenBalance
+		newRow             *TokenBalance
+		setCallExpected    bool
+		deleteCallExpected bool
 	}{
 		{
-			name:   "Index_1_OnInsert",
-			op:     "insert",
-			index:  idx1,
-			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:            "Index_1_OnInsert",
+			op:              "insert",
+			index:           idx1,
+			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected: true,
 		},
 		{
-			name:        "Index_1_OnUpdate",
-			op:          "update",
-			index:       idx1,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_1_OnUpdate",
+			op:                 "update",
+			index:              idx1,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_1_OnUpdate_Same",
-			op:          "update",
-			index:       idx1,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+			name:               "Index_1_OnUpdate_Same",
+			op:                 "update",
+			index:              idx1,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_1_OnDelete",
-			op:          "delete",
-			index:       idx1,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_1_OnDelete",
+			op:                 "delete",
+			index:              idx1,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			deleteCallExpected: true,
 		},
 		{
-			name:   "Index_2_Ordered_OnInsert",
-			op:     "insert",
-			index:  idx2Ordered,
-			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:            "Index_2_Ordered_OnInsert",
+			op:              "insert",
+			index:           idx2Ordered,
+			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected: true,
 		},
 		{
-			name:        "Index_2_Ordered_OnUpdate",
-			op:          "update",
-			index:       idx2Ordered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_2_Ordered_OnUpdate",
+			op:                 "update",
+			index:              idx2Ordered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected:    true,
+			deleteCallExpected: true,
 		},
 		{
-			name:        "Index_2_Ordered_OnUpdate_Same",
-			op:          "update",
-			index:       idx2Ordered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+			name:               "Index_2_Ordered_OnUpdate_Same",
+			op:                 "update",
+			index:              idx2Ordered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_2_Ordered_OnDelete",
-			op:          "delete",
-			index:       idx2Ordered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_2_Ordered_OnDelete",
+			op:                 "delete",
+			index:              idx2Ordered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			deleteCallExpected: true,
 		},
 		{
-			name:   "Index_3_Filtered_OnInsert",
-			op:     "insert",
-			index:  idx3Filtered,
-			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:            "Index_3_Filtered_OnInsert",
+			op:              "insert",
+			index:           idx3Filtered,
+			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected: false,
 		},
 		{
-			name:        "Index_3_Filtered_OnUpdate",
-			op:          "update",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_3_Filtered_OnUpdate",
+			op:                 "update",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_3_Filtered_OnUpdate_Same",
-			op:          "update",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+			name:               "Index_3_Filtered_OnUpdate_Same",
+			op:                 "update",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_3_Filtered_OnDelete",
-			op:          "delete",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			name:               "Index_3_Filtered_OnDelete",
+			op:                 "delete",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			deleteCallExpected: false,
 		},
 		{
-			name:   "Index_3_Filtered_2_OnInsert",
-			op:     "insert",
-			index:  idx3Filtered,
-			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			name:            "Index_3_Filtered_2_OnInsert",
+			op:              "insert",
+			index:           idx3Filtered,
+			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			setCallExpected: true,
 		},
 		{
-			name:        "Index_3_Filtered_2_OnUpdate",
-			op:          "update",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			name:               "Index_3_Filtered_2_OnUpdate",
+			op:                 "update",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			setCallExpected:    true,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_3_Filtered_2_OnUpdate_Same",
-			op:          "update",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
-			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			name:               "Index_3_Filtered_2_OnUpdate_Same",
+			op:                 "update",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			setCallExpected:    false,
+			deleteCallExpected: false,
 		},
 		{
-			name:        "Index_3_Filtered_2_OnDelete",
-			op:          "delete",
-			index:       idx3Filtered,
-			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			name:               "Index_3_Filtered_2_OnDelete",
+			op:                 "delete",
+			index:              idx3Filtered,
+			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			deleteCallExpected: true,
 		},
 	}
 
@@ -1072,7 +1098,7 @@ func TestIndex_Callbacks(t *testing.T) {
 
 			switch tc.op {
 			case "insert":
-				if tc.index.IndexFilterFunction(tc.newRow) {
+				if tc.setCallExpected {
 					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
@@ -1081,13 +1107,11 @@ func TestIndex_Callbacks(t *testing.T) {
 
 				mockBatch.AssertExpectations(t)
 			case "update":
-				if tc.index.IndexFilterFunction(tc.newRow) {
-					if !bytes.Equal(
-						encodeIndexKey(tokenBalanceTable, tc.existingRow, tc.index, []byte{}),
-						encodeIndexKey(tokenBalanceTable, tc.newRow, tc.index, []byte{})) {
-						mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-						mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-					}
+				if tc.setCallExpected {
+					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				}
+				if tc.deleteCallExpected {
+					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
 				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, &mockBatch)
@@ -1095,7 +1119,7 @@ func TestIndex_Callbacks(t *testing.T) {
 
 				mockBatch.AssertExpectations(t)
 			case "delete":
-				if tc.index.IndexFilterFunction(tc.existingRow) {
+				if tc.deleteCallExpected {
 					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 

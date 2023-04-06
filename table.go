@@ -828,8 +828,8 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	case SelectorTypePoint:
 		tr := sel.(SelectorPoint[T]).Point()
 
-		keyBuffer := t.db.getKeyBufferPool().Get()
-		defer t.db.getKeyBufferPool().Put(keyBuffer)
+		keyBuffer := t.db.getKeyBufferPool().Get()[:0]
+		defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
 		key := t.key(tr, keyBuffer[:0])
 

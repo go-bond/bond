@@ -147,6 +147,92 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
+
+	// after update
+	tokenBalanceAccount1.Balance = 200
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
+}
+
+func TestBond_Query_OnFilterIndex(t *testing.T) {
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	TokenBalanceFilterIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   lastIndex.IndexID + 1,
+		IndexName: "account_address_filter_bal_idx",
+		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddStringField(tb.AccountAddress).Bytes()
+		},
+		IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		IndexFilterFunc: func(tb *TokenBalance) bool {
+			return tb.Balance > 10
+		},
+	})
+
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceFilterIndex})
+	require.NoError(t, err)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	err = TokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+
+	tokenBalanceAccount1.Balance = 5
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 0, len(tokenBalances))
+
+	tokenBalanceAccount1.Balance = 20
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 }
 
 func TestBond_Query_Context_Canceled(t *testing.T) {
