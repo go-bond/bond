@@ -44,13 +44,13 @@ func (m *MockBatch) Get(key []byte, batch ...Batch) (data []byte, closer io.Clos
 }
 
 func (m *MockBatch) Set(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
-	//TODO implement me
-	panic("implement me")
+	args := m.Called(key, value, opt, batch)
+	return args.Error(0)
 }
 
 func (m *MockBatch) Delete(key []byte, opt WriteOptions, batch ...Batch) error {
-	//TODO implement me
-	panic("implement me")
+	args := m.Called(key, opt, batch)
+	return args.Error(0)
 }
 
 func (m *MockBatch) DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error {

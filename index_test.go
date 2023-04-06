@@ -12,6 +12,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -898,6 +899,210 @@ func TestIndex_Iter(t *testing.T) {
 			require.Equal(t, len(testInput.Expected), len(actual))
 			for i := 0; i < len(testInput.Expected); i++ {
 				assert.Equal(t, testInput.Expected[i], actual[i])
+			}
+		})
+	}
+}
+
+func TestIndex_Callbacks(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	var (
+		idx1 = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   1,
+			IndexName: "test",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		idx2Ordered = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   2,
+			IndexName: "test",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: func(o IndexOrder, t *TokenBalance) IndexOrder {
+				return o.OrderUint64(t.Balance, IndexOrderTypeDESC)
+			},
+		})
+		idx3Filtered = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   3,
+			IndexName: "test",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+			IndexFilterFunc: func(tb *TokenBalance) bool {
+				return tb.Balance > 100
+			},
+		})
+	)
+
+	testCases := []struct {
+		name        string
+		op          string
+		index       *Index[*TokenBalance]
+		existingRow *TokenBalance
+		newRow      *TokenBalance
+	}{
+		{
+			name:   "Index_1_OnInsert",
+			op:     "insert",
+			index:  idx1,
+			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_1_OnUpdate",
+			op:          "update",
+			index:       idx1,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_1_OnUpdate_Same",
+			op:          "update",
+			index:       idx1,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+		},
+		{
+			name:        "Index_1_OnDelete",
+			op:          "delete",
+			index:       idx1,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:   "Index_2_Ordered_OnInsert",
+			op:     "insert",
+			index:  idx2Ordered,
+			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_2_Ordered_OnUpdate",
+			op:          "update",
+			index:       idx2Ordered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_2_Ordered_OnUpdate_Same",
+			op:          "update",
+			index:       idx2Ordered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+		},
+		{
+			name:        "Index_2_Ordered_OnDelete",
+			op:          "delete",
+			index:       idx2Ordered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:   "Index_3_Filtered_OnInsert",
+			op:     "insert",
+			index:  idx3Filtered,
+			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_3_Filtered_OnUpdate",
+			op:          "update",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:        "Index_3_Filtered_OnUpdate_Same",
+			op:          "update",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test"},
+		},
+		{
+			name:        "Index_3_Filtered_OnDelete",
+			op:          "delete",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+		},
+		{
+			name:   "Index_3_Filtered_2_OnInsert",
+			op:     "insert",
+			index:  idx3Filtered,
+			newRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+		},
+		{
+			name:        "Index_3_Filtered_2_OnUpdate",
+			op:          "update",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test"},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+		},
+		{
+			name:        "Index_3_Filtered_2_OnUpdate_Same",
+			op:          "update",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+			newRow:      &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+		},
+		{
+			name:        "Index_3_Filtered_2_OnDelete",
+			op:          "delete",
+			index:       idx3Filtered,
+			existingRow: &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockBatch := MockBatch{}
+
+			switch tc.op {
+			case "insert":
+				if tc.index.IndexFilterFunction(tc.newRow) {
+					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				}
+
+				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, &mockBatch)
+				require.NoError(t, err)
+
+				mockBatch.AssertExpectations(t)
+			case "update":
+				if tc.index.IndexFilterFunction(tc.newRow) {
+					if !bytes.Equal(
+						encodeIndexKey(tokenBalanceTable, tc.existingRow, tc.index, []byte{}),
+						encodeIndexKey(tokenBalanceTable, tc.newRow, tc.index, []byte{})) {
+						mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+						mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+					}
+				}
+
+				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, &mockBatch)
+				require.NoError(t, err)
+
+				mockBatch.AssertExpectations(t)
+			case "delete":
+				if tc.index.IndexFilterFunction(tc.existingRow) {
+					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				}
+
+				err := tc.index.OnDelete(tokenBalanceTable, tc.existingRow, &mockBatch)
+				require.NoError(t, err)
+
+				mockBatch.AssertExpectations(t)
 			}
 		})
 	}
