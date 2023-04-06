@@ -643,26 +643,28 @@ func TestIndex_Iter(t *testing.T) {
 				{10, 10, "0xtestContract2", "0xtestAccount", 1000, 1000},
 			},
 		},
-		// Primary index test with points selector
-		// The points selector does not make sense with primary index
-		// The iterator would produce duplicate results
 		{
 			Name:     "TokenBalancePrimaryIndex_SelectorPoints",
 			Index:    TokenBalancePrimaryIndex,
 			Selector: NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 7}),
-			Expected: nil,
+			Expected: []*TokenBalance{
+				{1, 1, "0xtestContract", "0xtestAccount", 100, 100},
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+			},
 		},
 		{
 			Name:     "TokenBalancePrimaryIndex_SelectorPoints_Not_Exist",
 			Index:    TokenBalancePrimaryIndex,
 			Selector: NewSelectorPoints(&TokenBalance{ID: 11}, &TokenBalance{ID: 15}),
-			Expected: nil,
+			Expected: []*TokenBalance{},
 		},
 		{
 			Name:     "TokenBalancePrimaryIndex_SelectorPoints_ID_7_And_11",
 			Index:    TokenBalancePrimaryIndex,
 			Selector: NewSelectorPoints(&TokenBalance{ID: 7}, &TokenBalance{ID: 11}),
-			Expected: nil,
+			Expected: []*TokenBalance{
+				{7, 7, "0xtestContract1", "0xtestAccount", 700, 700},
+			},
 		},
 		{
 			Name:     "TokenBalancePrimaryIndex_SelectorRange",

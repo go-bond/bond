@@ -173,11 +173,6 @@ func (idx *Index[T]) Name() string {
 }
 
 // Iter returns an iterator for the index.
-// The iterator will iterate over all the keys in the index.
-// If the selector is a point selector, the iterator will iterate over a single index key.
-// If the selector is a range selector, the iterator will iterate over all the index keys in the range.
-// The iterator will return the index keys in the order specified by the index.
-// The iterator will return data if created for primary index.
 func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
 	var iterConstructor Iterationer = table.DB()
 	if len(optBatch) > 0 {
@@ -208,14 +203,13 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	case SelectorTypePoints:
 		sel := selector.(SelectorPoints[T])
 
-		if idx.IndexID == PrimaryIndexID {
-			return errIterator{err: fmt.Errorf("cannot iterate over primary index with points selector")}
-		}
-
 		var pebbleOpts []*IterOptions
 		for _, point := range sel.Points() {
 			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
 			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+			if idx.IndexID == PrimaryIndexID {
+				upperBound = keySuccessor(lowerBound, upperBound[:0])
+			}
 
 			releaseBuffers := func() {
 				keyBufferPool.Put(lowerBound[:0])
@@ -289,7 +283,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+	if idx.IndexFilterFunction(tr) {
 		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
 	return nil
@@ -308,7 +302,7 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+	if idx.IndexFilterFunction(tr) {
 		deleteKey := encodeIndexKey(table, oldTr, idx, buff)
 		setKey := encodeIndexKey(table, tr, idx, buff2)
 
@@ -333,7 +327,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
+	if idx.IndexFilterFunction(tr) {
 		err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
 		if err != nil {
 			return err
