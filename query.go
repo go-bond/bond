@@ -20,7 +20,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 // Example:
 //
 //	t.Query().
-//		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
+//		With(ContractTypeIndex, bond.NewSelectorPoint(&Contract{ContractType: ContractTypeERC20})).
 //		Filter(func(c *Contract) bool {
 //			return c.Balance > 25
 //		}).
