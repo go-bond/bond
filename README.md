@@ -117,7 +117,7 @@ if err != nil {
 Query:
 ```go
 var exampleStructsFromQuery []*ExampleStruct
-err := ExampleStructTable.Query().Execute(context.Background(), &exampleStructsFromQuery)
+err := ExampleStructTable.Query().Execute(context.Background(), bond.NewSelectorPoint(&exampleStructsFromQuery))
 if err != nil {
     panic(err)
 }
@@ -126,7 +126,7 @@ if err != nil {
 Query using index:
 ```go
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
     Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
     panic(err)
@@ -136,7 +136,7 @@ if err != nil {
 Query using index with filter:
 ```go
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
     Filter(func(es *ExampleStruct) bool {
         return es.Amount > 5
     }).
@@ -149,7 +149,7 @@ if err != nil {
 Query using index with filter and order:
 ```go
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
     Filter(func(es *ExampleStruct) bool {
         return es.Amount > 5
     }).
@@ -165,7 +165,7 @@ if err != nil {
 Query using index with offset and limit:
 ```go
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
     Offset(1).
     Limit(2).
     Execute(context.Background(), &exampleStructsFromQuery)
@@ -180,7 +180,7 @@ var exampleStructsFromQuery []*ExampleStruct
 
 // page 1, page size 10
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
     Limit(10).
     Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
@@ -189,7 +189,7 @@ if err != nil {
 
 // page 2, page size 10
 err := ExampleStructTable.Query().
-    With(ExampleStructTypeIndex, exampleStructsFromQuery[9]).
+    With(ExampleStructTypeIndex, bond.NewSelectorPoint(exampleStructsFromQuery[9])).
     Limit(10).
     Execute(context.Background(), &exampleStructsFromQuery)
 if err != nil {
