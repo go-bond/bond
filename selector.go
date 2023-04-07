@@ -32,6 +32,7 @@ type SelectorPoints[T any] interface {
 // SelectorRange is the interface for range selector.
 // The range is represented as a two-element slice.
 // The first element is the start of the range, and the second element is the end of the range.
+// The range is inclusive on both ends.
 type SelectorRange[T any] interface {
 	Selector[T]
 	Range() (T, T)
@@ -41,6 +42,7 @@ type SelectorRange[T any] interface {
 // SelectorRanges is the interface for multi-range selector.
 // The ranges are represented as a slice of two-element slices.
 // The first element of each slice is the start of the range, and the second element is the end of the range.
+// The range is inclusive on both ends.
 type SelectorRanges[T any] interface {
 	Selector[T]
 	Ranges() [][]T
