@@ -139,11 +139,6 @@ func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
 }
 
 func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, error) {
-	// todo: after works with ordered query
-	if q.isAfter && q.orderLessFunc != nil {
-		return nil, fmt.Errorf("after can not be used with order")
-	}
-
 	var (
 		hasFilter = q.filterFunc != nil
 		hasSort   = q.orderLessFunc != nil
@@ -169,6 +164,14 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 
 			_, upper := rngSelector.Range()
 			selector = NewSelectorRange(q.afterSelector, upper)
+		case SelectorTypeRanges:
+			rngsSelector := q.indexSelector.(SelectorRanges[T])
+
+			var newRanges [][]T
+			for _, rng := range rngsSelector.Ranges() {
+				newRanges = append(newRanges, []T{q.afterSelector, rng[1]})
+			}
+			selector = NewSelectorRanges(newRanges...)
 		default:
 			return nil, fmt.Errorf("unsupported selector type")
 		}
@@ -243,9 +246,13 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
-			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
-			if bytes.Compare(afterKey, recordKey) == 0 {
-				records = records[minInt(index+1, len(records)):]
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey[:0]), record)
+			if bytes.Equal(afterKey, recordKey) {
+				if index+1 == len(records) {
+					records = make([]T, 0)
+				} else {
+					records = records[index+1:]
+				}
 				break
 			}
 		}
@@ -348,9 +355,13 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
-			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
-			if bytes.Compare(afterKey, recordKey) == 0 {
-				records = records[minInt(index+1, len(records)):]
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey[:0]), record)
+			if bytes.Equal(afterKey, recordKey) {
+				if index+1 == len(records) {
+					records = make([]T, 0)
+				} else {
+					records = records[index+1:]
+				}
 				break
 			}
 		}

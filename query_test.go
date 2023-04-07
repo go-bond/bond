@@ -509,6 +509,26 @@ func TestBond_Query_After(t *testing.T) {
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
+		Order(func(tb, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).Limit(2)
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
+		Order(func(tb, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).Limit(2).After(tokenBalances[1])
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 0, len(tokenBalances))
 }
 
 func TestBond_Query_After_With_Order_Error(t *testing.T) {
