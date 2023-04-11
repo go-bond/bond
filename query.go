@@ -156,28 +156,14 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	// after
 	selector := q.indexSelector
 	if hasAfter && !hasSort {
-		switch q.indexSelector.Type() {
-		case SelectorTypePoint:
-			selector = NewSelectorPoint(q.afterSelector)
-		case SelectorTypeRange:
-			rngSelector := q.indexSelector.(SelectorRange[T])
-
-			_, upper := rngSelector.Range()
-			selector = NewSelectorRange(q.afterSelector, upper)
-		case SelectorTypeRanges:
-			rngsSelector := q.indexSelector.(SelectorRanges[T])
-
-			var newRanges [][]T
-			for _, rng := range rngsSelector.Ranges() {
-				newRanges = append(newRanges, []T{q.afterSelector, rng[1]})
-			}
-			selector = NewSelectorRanges(newRanges...)
-		default:
-			return nil, fmt.Errorf("unsupported selector type")
+		var err error
+		selector, err = q.selectorWithAfter()
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	var records []T
+	var records = make([]T, 0, DefaultScanPrefetchSize)
 	count := uint64(0)
 	skippedFirstRow := false
 	err := q.table.ScanIndexForEach(ctx, q.index, selector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
@@ -425,4 +411,49 @@ func (q Query[T]) selectors() []Selector[T] {
 		sels = append(sels, inter.indexSelector)
 	}
 	return sels
+}
+
+func (q Query[T]) selectorWithAfter() (Selector[T], error) {
+	switch q.indexSelector.Type() {
+	case SelectorTypePoint:
+		return NewSelectorPoint(q.afterSelector), nil
+	case SelectorTypePoints:
+		afterKey := encodeIndexKey[T](q.table, q.afterSelector, q.index, []byte{})
+
+		var newPoints []T
+		pntsSelector := q.indexSelector.(SelectorPoints[T])
+		for _, pnt := range pntsSelector.Points() {
+			pntKey := encodeIndexKey[T](q.table, pnt, q.index, []byte{})
+			if bytes.Compare(afterKey, pntKey) < 0 {
+				newPoints = append(newPoints, pnt)
+			} else if bytes.Compare(afterKey, pntKey) >= 0 &&
+				bytes.Compare(afterKey[:_KeyPrefixSplitIndex(afterKey)], pntKey[:_KeyPrefixSplitIndex(pntKey)]) == 0 {
+				newPoints = append(newPoints, q.afterSelector)
+			}
+		}
+		return NewSelectorPoints(newPoints...), nil
+	case SelectorTypeRange:
+		rngSelector := q.indexSelector.(SelectorRange[T])
+
+		_, upper := rngSelector.Range()
+		return NewSelectorRange(q.afterSelector, upper), nil
+	case SelectorTypeRanges:
+		afterKey := encodeIndexKey[T](q.table, q.afterSelector, q.index, []byte{})
+
+		var newRanges [][]T
+		rngsSelector := q.indexSelector.(SelectorRanges[T])
+		for _, rng := range rngsSelector.Ranges() {
+			lowerKey := encodeIndexKey[T](q.table, rng[0], q.index, []byte{})
+			upperKey := encodeIndexKey[T](q.table, rng[1], q.index, []byte{})
+
+			if bytes.Compare(afterKey, lowerKey) < 0 {
+				newRanges = append(newRanges, rng)
+			} else if bytes.Compare(afterKey, lowerKey) >= 0 && bytes.Compare(afterKey, upperKey) <= 0 {
+				newRanges = append(newRanges, []T{q.afterSelector, rng[1]})
+			}
+		}
+		return NewSelectorRanges(newRanges...), nil
+	default:
+		return nil, fmt.Errorf("unsupported selector type")
+	}
 }

@@ -1624,3 +1624,265 @@ func BenchmarkQuery_Intersects(b *testing.B) {
 		}
 	})
 }
+
+func TestQuery_Selectors(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, _ /*TokenBalanceContractAddressIndex*/, _ /*TokenBalanceAccountAndContractAddress*/ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	TokenBalanceTablePrimaryIndex := TokenBalanceTable.PrimaryIndex()
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	testCases := []struct {
+		name  string
+		query Query[*TokenBalance]
+		want  []*TokenBalance
+	}{
+		{
+			name:  "SelectorPoint",
+			query: TokenBalanceTable.Query(),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoint_From_ID_4",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceTablePrimaryIndex, NewSelectorPoint(&TokenBalance{ID: 4})),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoint_AccountAddressIndex_0xtestAccount",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorPoint_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance3",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance1Account2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance1Account2),
+			want: []*TokenBalance{},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance3",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance1Account2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance1Account2),
+			want: []*TokenBalance{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var tokenBalances []*TokenBalance
+			err = tc.query.Execute(context.Background(), &tokenBalances)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, tokenBalances)
+		})
+	}
+}
