@@ -172,31 +172,108 @@ func (idx *Index[T]) Name() string {
 	return idx.IndexName
 }
 
-func (idx *Index[T]) Iter(table Table[T], sel T, optBatch ...Batch) Iterator {
-	lowerBound := encodeIndexKey(table, sel, idx, table.DB().getKeyBufferPool().Get()[:0])
-	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], table.DB().getKeyBufferPool().Get()[:0])
-
-	releaseBuffers := func() {
-		table.DB().getKeyBufferPool().Put(lowerBound[:0])
-		table.DB().getKeyBufferPool().Put(upperBound[:0])
+// Iter returns an iterator for the index.
+func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
+	var iterConstructor Iterationer = table.DB()
+	if len(optBatch) > 0 {
+		iterConstructor = optBatch[0]
 	}
 
-	if len(optBatch) > 0 {
-		return optBatch[0].Iter(&IterOptions{
+	keyBufferPool := table.DB().getKeyBufferPool()
+
+	switch selector.Type() {
+	case SelectorTypePoint:
+		sel := selector.(SelectorPoint[T])
+
+		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
+		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+
+		releaseBuffers := func() {
+			keyBufferPool.Put(lowerBound[:0])
+			keyBufferPool.Put(upperBound[:0])
+		}
+
+		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
 				UpperBound: upperBound,
 			},
 			releaseBufferOnClose: releaseBuffers,
 		})
-	} else {
-		return table.DB().Iter(&IterOptions{
+	case SelectorTypePoints:
+		sel := selector.(SelectorPoints[T])
+
+		var pebbleOpts []*IterOptions
+		for _, point := range sel.Points() {
+			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
+			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+			if idx.IndexID == PrimaryIndexID {
+				upperBound = keySuccessor(lowerBound, upperBound[:0])
+			}
+
+			releaseBuffers := func() {
+				keyBufferPool.Put(lowerBound[:0])
+				keyBufferPool.Put(upperBound[:0])
+			}
+
+			pebbleOpts = append(pebbleOpts, &IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: lowerBound,
+					UpperBound: upperBound,
+				},
+				releaseBufferOnClose: releaseBuffers,
+			})
+		}
+
+		return newIteratorMulti(iterConstructor, pebbleOpts)
+	case SelectorTypeRange:
+		sel := selector.(SelectorRange[T])
+		low, up := sel.Range()
+
+		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
+		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+		upperBound = keySuccessor(upperBound, nil)
+
+		releaseBuffers := func() {
+			keyBufferPool.Put(lowerBound[:0])
+			keyBufferPool.Put(upperBound[:0])
+		}
+
+		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
 				UpperBound: upperBound,
 			},
 			releaseBufferOnClose: releaseBuffers,
 		})
+	case SelectorTypeRanges:
+		sel := selector.(SelectorRanges[T])
+
+		var pebbleOpts []*IterOptions
+		for _, r := range sel.Ranges() {
+			low, up := r[0], r[1]
+
+			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
+			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+			upperBound = keySuccessor(upperBound, nil)
+
+			releaseBuffers := func() {
+				keyBufferPool.Put(lowerBound[:0])
+				keyBufferPool.Put(upperBound[:0])
+			}
+
+			pebbleOpts = append(pebbleOpts, &IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: lowerBound,
+					UpperBound: upperBound,
+				},
+				releaseBufferOnClose: releaseBuffers,
+			})
+		}
+
+		return newIteratorMulti(iterConstructor, pebbleOpts)
+	default:
+		return errIterator{err: fmt.Errorf("unknown selector type: %v", selector.Type())}
 	}
 }
 
@@ -206,8 +283,8 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		return batch.Set(encodeIndexKey[T](table, tr, idx, buff), _indexKeyValue, Sync)
+	if idx.IndexFilterFunction(tr) {
+		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
 	return nil
 }
@@ -225,11 +302,16 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		deleteKey := encodeIndexKey[T](table, oldTr, idx, buff)
-		setKey := encodeIndexKey[T](table, tr, idx, buff2)
+	var deleteKey, setKey []byte
+	if idx.IndexFilterFunction(oldTr) {
+		deleteKey = encodeIndexKey(table, oldTr, idx, buff)
+	}
+	if idx.IndexFilterFunction(tr) {
+		setKey = encodeIndexKey(table, tr, idx, buff2)
+	}
 
-		if bytes.Compare(deleteKey, setKey) != 0 {
+	if deleteKey != nil && setKey != nil {
+		if !bytes.Equal(deleteKey, setKey) {
 			err := batch.Delete(deleteKey, Sync)
 			if err != nil {
 				return err
@@ -240,7 +322,18 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 				return err
 			}
 		}
+	} else if deleteKey != nil {
+		err := batch.Delete(deleteKey, Sync)
+		if err != nil {
+			return err
+		}
+	} else if setKey != nil {
+		err := batch.Set(setKey, _indexKeyValue, Sync)
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -250,8 +343,8 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction == nil || (idx.IndexFilterFunction != nil && idx.IndexFilterFunction(tr)) {
-		err := batch.Delete(encodeIndexKey[T](table, tr, idx, buff), Sync)
+	if idx.IndexFilterFunction(tr) {
+		err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
 		if err != nil {
 			return err
 		}
@@ -259,7 +352,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel T, indexes []*Index[T], sels []T, optBatch ...Batch) ([][]byte, error) {
+func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector[T], indexes []*Index[T], sels []Selector[T], optBatch ...Batch) ([][]byte, error) {
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}
 
@@ -324,6 +417,6 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		func(b []byte) []byte {
 			return table.PrimaryKey(NewKeyBuilder(b), tr)
 		},
-		buff[:0],
+		buff,
 	)
 }

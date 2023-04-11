@@ -35,10 +35,11 @@ type TableInfo interface {
 	Name() string
 	Indexes() []IndexInfo
 	EntryType() reflect.Type
+	SelectorPointType() reflect.Type
 }
 
 type TableGetter[T any] interface {
-	Get(tr T, optBatch ...Batch) (T, error)
+	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
 }
 
 type TableExistChecker[T any] interface {
@@ -51,13 +52,13 @@ type TableQuerier[T any] interface {
 
 type TableScanner[T any] interface {
 	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
-	ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error
+	ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, optBatch ...Batch) error
 	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
 }
 
 type TableIterationer[T any] interface {
-	Iter(opt *IterOptions, optBatch ...Batch) Iterator
+	Iter(sel Selector[T], optBatch ...Batch) Iterator
 }
 
 type TableReader[T any] interface {
@@ -208,6 +209,10 @@ func (t *_table[T]) Indexes() []IndexInfo {
 
 func (t *_table[T]) EntryType() reflect.Type {
 	return reflect.TypeOf(t.valueEmpty)
+}
+
+func (t *_table[T]) SelectorPointType() reflect.Type {
+	return reflect.TypeOf(NewSelectorPoint(t.valueEmpty))
 }
 
 func (t *_table[T]) DB() DB {
@@ -811,7 +816,7 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
-func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
+func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error) {
 	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
@@ -819,32 +824,91 @@ func (t *_table[T]) Get(tr T, optBatch ...Batch) (T, error) {
 		batch = nil
 	}
 
-	keyBuffer := t.db.getKeyBufferPool().Get()
-	defer t.db.getKeyBufferPool().Put(keyBuffer)
+	switch sel.Type() {
+	case SelectorTypePoint:
+		tr := sel.(SelectorPoint[T]).Point()
 
-	key := t.key(tr, keyBuffer[:0])
+		keyBuffer := t.db.getKeyBufferPool().Get()[:0]
+		defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
-	bCtx := ContextWithBatch(context.Background(), batch)
-	if t.filter != nil && !t.filter.MayContain(bCtx, key) {
-		return t.valueNil, fmt.Errorf("not found")
+		key := t.key(tr, keyBuffer[:0])
+
+		bCtx := ContextWithBatch(context.Background(), batch)
+		if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+			return nil, fmt.Errorf("not found")
+		}
+
+		record, closer, err := t.db.Get(key, batch)
+		if err != nil {
+			return nil, fmt.Errorf("not found")
+		}
+		defer closer.Close()
+
+		var rtr T
+		err = t.serializer.Deserialize(record, &rtr)
+		if err != nil {
+			return nil, fmt.Errorf("get failed to deserialize: %w", err)
+		}
+
+		return []T{rtr}, nil
+	case SelectorTypePoints:
+		selPoints := sel.(SelectorPoints[T]).Points()
+
+		keyArray := t.db.getKeyArray(len(selPoints))
+		defer t.db.putKeyArray(keyArray)
+
+		valueArray := t.db.getKeyArray(len(selPoints))
+		defer t.db.putKeyArray(valueArray)
+
+		var trs []T
+		err := batched[T](selPoints, t.scanPrefetchSize, func(selPoints []T) error {
+			keys := t.keysExternal(selPoints, keyArray)
+
+			order := t.sortKeys(keys)
+
+			values, err := t.get(keys, batch, valueArray, false)
+			if err != nil {
+				return err
+			}
+
+			t.reorderValues(values, order)
+			for _, value := range values {
+				if len(value) == 0 {
+					trs = append(trs, t.valueNil)
+					continue
+				}
+
+				var tr T
+				err = t.serializer.Deserialize(value, &tr)
+				if err != nil {
+					return err
+				}
+
+				trs = append(trs, tr)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return trs, nil
+	case SelectorTypeRange, SelectorTypeRanges:
+		var trs []T
+
+		err := t.ScanIndex(ctx, t.primaryIndex, sel, &trs, optBatch...)
+		if err != nil {
+			return nil, err
+		}
+
+		return trs, nil
+	default:
+		return nil, fmt.Errorf("invalid selector type")
 	}
-
-	record, closer, err := t.db.Get(key, batch)
-	if err != nil {
-		return t.valueNil, fmt.Errorf("not found")
-	}
-	defer closer.Close()
-
-	var rtr T
-	err = t.serializer.Deserialize(record, &rtr)
-	if err != nil {
-		return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
-	}
-
-	return rtr, nil
 }
 
-func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, error) {
+func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotExist bool) ([][]byte, error) {
 	if len(keys) == 0 {
 		return [][]byte{}, nil
 	}
@@ -862,7 +926,12 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, 
 
 	for i := 0; i < len(keys); i++ {
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
-			return nil, fmt.Errorf("not found")
+			if errorOnNotExist {
+				return nil, fmt.Errorf("not found")
+			} else {
+				values[i] = values[i][:0]
+				continue
+			}
 		}
 
 		iterValue := iter.Value()
@@ -881,22 +950,8 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte) ([][]byte, 
 	return values, nil
 }
 
-func (t *_table[T]) Iter(opt *IterOptions, optBatch ...Batch) Iterator {
-	if opt == nil {
-		opt = &IterOptions{}
-	}
-
-	lower := KeyEncode(Key{TableID: t.id}, nil)
-	upper := KeyEncode(Key{TableID: t.id + 1}, nil)
-	opt.LowerBound = lower
-	opt.UpperBound = upper
-
-	if len(optBatch) > 0 && optBatch[0] != nil {
-		batch := optBatch[0]
-		return batch.Iter(opt)
-	} else {
-		return t.db.Iter(opt)
-	}
+func (t *_table[T]) Iter(sel Selector[T], optBatch ...Batch) Iterator {
+	return t.primaryIndex.Iter(t, sel, optBatch...)
 }
 
 func (t *_table[T]) Query() Query[T] {
@@ -904,10 +959,10 @@ func (t *_table[T]) Query() Query[T] {
 }
 
 func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error {
-	return t.ScanIndex(ctx, t.primaryIndex, t.valueEmpty, tr, optBatch...)
+	return t.ScanIndex(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), tr, optBatch...)
 }
 
-func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, optBatch ...Batch) error {
+func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, optBatch ...Batch) error {
 	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
@@ -919,10 +974,10 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s T, tr *[]T, op
 }
 
 func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
-	return t.ScanIndexForEach(ctx, t.primaryIndex, t.valueEmpty, f, optBatch...)
+	return t.ScanIndexForEach(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), f, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	if idx.IndexID == PrimaryIndexID {
 		return t.scanForEachPrimaryIndex(ctx, idx, s, f, optBatch...)
 	} else {
@@ -930,7 +985,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s T, f 
 	}
 }
 
-func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 
 	getValue := func() (T, error) {
@@ -960,7 +1015,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	return it.Close()
 }
 
-func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s T, f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 
 	var batch Batch
@@ -1021,7 +1076,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		}
 
 		var err error
-		prefetchedValues, err = t.get(keys, batch, valuesBuffer)
+		prefetchedValues, err = t.get(keys, batch, valuesBuffer, true)
 		if err != nil {
 			return t.valueNil, err
 		}
@@ -1134,8 +1189,13 @@ func keyPrefix[T any](tableID TableID, idx *Index[T], s T, buff []byte) []byte {
 }
 
 func keySuccessor(src, dst []byte) []byte {
-	dst = append(dst, src...)
-	for i := len(src) - 1; i > 0; i-- {
+	if dst != nil {
+		dst = append(dst, src...)
+	} else {
+		dst = src
+	}
+
+	for i := len(src) - 1; i >= 0; i-- {
 		if dst[i] != 0xFF {
 			dst[i]++
 			return dst

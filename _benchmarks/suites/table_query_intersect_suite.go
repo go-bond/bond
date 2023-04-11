@@ -158,7 +158,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 
 		var queryInputs = []struct {
 			index     *bond.Index[*TokenBalance]
-			selector  *TokenBalance
+			selector  bond.Selector[*TokenBalance]
 			indexName string
 			filter    func(tb *TokenBalance) bool
 			order     func(tb *TokenBalance, tb2 *TokenBalance) bool
@@ -166,17 +166,17 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			limit     int
 		}{
 			// AccountAddress Index
-			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: &TokenBalance{ContractAddress: "0xtestContract0"}, offset: 0, limit: 0},
-			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: &TokenBalance{ContractAddress: "0xtestContract0"}, offset: 0, limit: 500},
-			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: &TokenBalance{ContractAddress: "0xtestContract0"}, offset: 0, limit: 1000},
-			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: &TokenBalance{ContractAddress: "0xtestContract0"}, offset: 0, limit: 5000},
-			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: &TokenBalance{ContractAddress: "0xtestContract0"}, offset: 0, limit: 10000},
+			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: bond.NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract0"}), offset: 0, limit: 0},
+			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: bond.NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract0"}), offset: 0, limit: 500},
+			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: bond.NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract0"}), offset: 0, limit: 1000},
+			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: bond.NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract0"}), offset: 0, limit: 5000},
+			{index: TokenBalanceContractAddressIndex, indexName: "TokenBalanceContractAddressIndex", filter: filter, selector: bond.NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract0"}), offset: 0, limit: 10000},
 		}
 
 		for _, v := range queryInputs {
 			var selectorID = uint64(0)
 			if v.selector != nil {
-				selectorID = v.selector.ID
+				selectorID = v.selector.(bond.SelectorPoint[*TokenBalance]).Point().ID
 			}
 
 			results = append(results,
@@ -195,25 +195,25 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			index     *bond.Index[*TokenBalance]
 			index2    *bond.Index[*TokenBalance]
 			indexName string
-			selector  *TokenBalance
-			selector2 *TokenBalance
+			selector  bond.Selector[*TokenBalance]
+			selector2 bond.Selector[*TokenBalance]
 			filter    func(tb *TokenBalance) bool
 			order     func(tb *TokenBalance, tb2 *TokenBalance) bool
 			offset    int
 			limit     int
 		}{
 			// AccountAddress Index
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: selector, selector2: selector, offset: 0, limit: 0},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: selector, selector2: selector, offset: 0, limit: 500},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: selector, selector2: selector, offset: 0, limit: 1000},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: selector, selector2: selector, offset: 0, limit: 5000},
-			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: selector, selector2: selector, offset: 0, limit: 10000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: bond.NewSelectorPoint(selector), selector2: bond.NewSelectorPoint(selector), offset: 0, limit: 0},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: bond.NewSelectorPoint(selector), selector2: bond.NewSelectorPoint(selector), offset: 0, limit: 500},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: bond.NewSelectorPoint(selector), selector2: bond.NewSelectorPoint(selector), offset: 0, limit: 1000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: bond.NewSelectorPoint(selector), selector2: bond.NewSelectorPoint(selector), offset: 0, limit: 5000},
+			{index: TokenBalanceAccountAddressIndex, index2: TokenBalanceContractAddressTokenIDIndex, indexName: "AccountAddress_And_ContractAddress_TokenID", selector: bond.NewSelectorPoint(selector), selector2: bond.NewSelectorPoint(selector), offset: 0, limit: 10000},
 		}
 
 		for _, v := range queryInputs2 {
 			var selectorID = uint64(0)
 			if v.selector != nil {
-				selectorID = v.selector.ID
+				selectorID = v.selector.(bond.SelectorPoint[*TokenBalance]).Point().ID
 			}
 
 			results = append(results,
@@ -230,25 +230,25 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 			index     *bond.Index[*TokenBalance]
 			index2    *bond.Index[*TokenBalance]
 			indexName string
-			selector  *TokenBalance
-			selector2 *TokenBalance
+			selector  bond.Selector[*TokenBalance]
+			selector2 bond.Selector[*TokenBalance]
 			filter    func(tb *TokenBalance) bool
 			order     func(tb *TokenBalance, tb2 *TokenBalance) bool
 			offset    int
 			limit     int
 		}{
 			// AccountAddress Index
-			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: selector, offset: 0, limit: 0},
-			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: selector, offset: 0, limit: 500},
-			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: selector, offset: 0, limit: 1000},
-			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: selector, offset: 0, limit: 5000},
-			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: selector, offset: 0, limit: 10000},
+			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: bond.NewSelectorPoint(selector), offset: 0, limit: 0},
+			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: bond.NewSelectorPoint(selector), offset: 0, limit: 500},
+			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: bond.NewSelectorPoint(selector), offset: 0, limit: 1000},
+			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: bond.NewSelectorPoint(selector), offset: 0, limit: 5000},
+			{index: TokenBalanceContractAddressAccountAddressTokenIDIndex, indexName: "TokenBalanceContractAddressAccountAddressTokenID", selector: bond.NewSelectorPoint(selector), offset: 0, limit: 10000},
 		}
 
 		for _, v := range queryInputs3 {
 			var selectorID = uint64(0)
 			if v.selector != nil {
-				selectorID = v.selector.ID
+				selectorID = v.selector.(bond.SelectorPoint[*TokenBalance]).Point().ID
 			}
 
 			results = append(results,
@@ -267,7 +267,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 	return results
 }
 
-func QueryIntersectWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, idx2 *bond.Index[*TokenBalance], sel2 *TokenBalance, offset int, limit int) func(b *testing.B) {
+func QueryIntersectWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel bond.Selector[*TokenBalance], idx2 *bond.Index[*TokenBalance], sel2 bond.Selector[*TokenBalance], offset int, limit int) func(b *testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
@@ -303,7 +303,7 @@ func QueryIntersectWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*Toke
 	}
 }
 
-func QueryFilterWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel *TokenBalance, filter func(tb *TokenBalance) bool, offset int, limit int) func(b *testing.B) {
+func QueryFilterWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBalance], sel bond.Selector[*TokenBalance], filter func(tb *TokenBalance) bool, offset int, limit int) func(b *testing.B) {
 	return func(b *testing.B) {
 		b.ReportAllocs()
 

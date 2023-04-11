@@ -136,7 +136,7 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructIsActivePartialIndex, &ExampleStruct{IsActive: true}).
+		With(ExampleStructIsActivePartialIndex, bond.NewSelectorPoint(&ExampleStruct{IsActive: true})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
@@ -147,7 +147,7 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructTypeIndex, &ExampleStruct{Type: "test"}).
+		With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
@@ -158,7 +158,7 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructOrderAmountDESCIndex, &ExampleStruct{}).
+		With(ExampleStructOrderAmountDESCIndex, bond.NewSelectorPoint(&ExampleStruct{})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
@@ -169,7 +169,7 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructOrderAmountDESCIndex, &ExampleStruct{Amount: 3}).
+		With(ExampleStructOrderAmountDESCIndex, bond.NewSelectorPoint(&ExampleStruct{Amount: 3})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
@@ -192,7 +192,7 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructTable.PrimaryIndex(), &ExampleStruct{}).
+		With(ExampleStructTable.PrimaryIndex(), bond.NewSelectorPoint(&ExampleStruct{})).
 		Limit(2).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
@@ -205,7 +205,7 @@ func main() {
 	spew.Dump(exampleStructsFromQuery)
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
+		With(ExampleStructTable.PrimaryIndex(), bond.NewSelectorPoint(exampleStructsFromQuery[1])).
 		Limit(2).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
@@ -216,7 +216,7 @@ func main() {
 	spew.Dump(exampleStructsFromQuery)
 
 	err = ExampleStructTable.Query().
-		With(ExampleStructTable.PrimaryIndex(), exampleStructsFromQuery[1]).
+		With(ExampleStructTable.PrimaryIndex(), bond.NewSelectorPoint(exampleStructsFromQuery[1])).
 		Limit(2).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {

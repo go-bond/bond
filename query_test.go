@@ -138,7 +138,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
 
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
@@ -147,6 +147,92 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
+
+	// after update
+	tokenBalanceAccount1.Balance = 200
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
+}
+
+func TestBond_Query_OnFilterIndex(t *testing.T) {
+	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	TokenBalanceFilterIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   lastIndex.IndexID + 1,
+		IndexName: "account_address_filter_bal_idx",
+		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddStringField(tb.AccountAddress).Bytes()
+		},
+		IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		IndexFilterFunc: func(tb *TokenBalance) bool {
+			return tb.Balance > 10
+		},
+	})
+
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceFilterIndex})
+	require.NoError(t, err)
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	err = TokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalance
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
+
+	tokenBalanceAccount1.Balance = 5
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 0, len(tokenBalances))
+
+	tokenBalanceAccount1.Balance = 20
+
+	err = TokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccount1})
+	require.NoError(t, err)
+
+	err = TokenBalanceTable.Query().
+		With(TokenBalanceFilterIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+		Limit(50).
+		Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(tokenBalances))
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 }
 
 func TestBond_Query_Context_Canceled(t *testing.T) {
@@ -214,7 +300,7 @@ func TestBond_Query_Context_Canceled(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
 
 	err = query.Execute(ctx, &tokenBalances)
 	require.Error(t, err)
@@ -284,7 +370,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
 
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
@@ -295,7 +381,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, tokenBalances[1])
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(tokenBalances[1]))
 
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
@@ -304,7 +390,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, tokenBalances[1])
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(tokenBalances[1]))
 
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
@@ -375,7 +461,7 @@ func TestBond_Query_After(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}))
 
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
@@ -386,7 +472,7 @@ func TestBond_Query_After(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
 		After(tokenBalances[1])
 
 	err = query.Execute(context.Background(), &tokenBalances)
@@ -396,7 +482,7 @@ func TestBond_Query_After(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
 		After(tokenBalances[0])
 
 	err = query.Execute(context.Background(), &tokenBalances)
@@ -407,7 +493,7 @@ func TestBond_Query_After(t *testing.T) {
 	require.NoError(t, err)
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
 		After(tokenBalance3Account1)
 
 	err = query.Execute(context.Background(), &tokenBalances)
@@ -415,7 +501,7 @@ func TestBond_Query_After(t *testing.T) {
 	require.Equal(t, 1, len(tokenBalances))
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
 		Filter(func(r *TokenBalance) bool {
 			return r.AccountAddress == "0xtestAccount"
 		}).After(tokenBalance3Account1)
@@ -423,80 +509,26 @@ func TestBond_Query_After(t *testing.T) {
 	err = query.Execute(context.Background(), &tokenBalances)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(tokenBalances))
-}
 
-func TestBond_Query_After_With_Order_Error(t *testing.T) {
-	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
-
-	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
-		IndexID:   lastIndex.IndexID + 1,
-		IndexName: "account_address_ord_desc_bal_idx",
-		IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddStringField(tb.AccountAddress).Bytes()
-		},
-		IndexOrderFunc: func(o IndexOrder, tb *TokenBalance) IndexOrder {
-			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
-		},
-	})
-
-	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
-	require.NoError(t, err)
-
-	tokenBalanceAccount1 := &TokenBalance{
-		ID:              1,
-		AccountID:       1,
-		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount",
-		Balance:         5,
-	}
-
-	tokenBalance2Account1 := &TokenBalance{
-		ID:              2,
-		AccountID:       1,
-		ContractAddress: "0xtestContract2",
-		AccountAddress:  "0xtestAccount",
-		Balance:         15,
-	}
-
-	tokenBalance3Account1 := &TokenBalance{
-		ID:              3,
-		AccountID:       1,
-		ContractAddress: "0xtestContract3",
-		AccountAddress:  "0xtestAccount",
-		Balance:         7,
-	}
-
-	tokenBalance1Account2 := &TokenBalance{
-		ID:              4,
-		AccountID:       2,
-		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount2",
-		Balance:         4,
-	}
-
-	err = TokenBalanceTable.Insert(
-		context.Background(),
-		[]*TokenBalance{
-			tokenBalanceAccount1,
-			tokenBalance2Account1,
-			tokenBalance3Account1,
-			tokenBalance1Account2,
-		},
-	)
-	require.NoError(t, err)
-
-	var tokenBalances []*TokenBalance
-
-	query := TokenBalanceTable.Query().
-		With(TokenBalanceOrderedIndex, &TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64}).
-		After(tokenBalance2Account1).
-		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
-			return tb.ID < tb2.ID
-		})
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
+		Order(func(tb, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).Limit(2)
 
 	err = query.Execute(context.Background(), &tokenBalances)
-	require.Error(t, err)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(tokenBalances))
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
+		Order(func(tb, tb2 *TokenBalance) bool {
+			return tb.Balance > tb2.Balance
+		}).Limit(2).After(tokenBalances[1])
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 0, len(tokenBalances))
 }
 
 func TestBond_Query_Where(t *testing.T) {
@@ -1013,7 +1045,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
+		With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
 		Filter(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		}).
@@ -1027,7 +1059,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"}).
+		With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
 		Filter(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		}).
@@ -1046,7 +1078,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	query = TokenBalanceTable.Query().
 		With(
 			TokenBalanceAccountAndContractAddressIndex,
-			&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract"},
+			NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract"}),
 		).
 		Filter(func(tb *TokenBalance) bool {
 			return tb.Balance < 15
@@ -1118,8 +1150,8 @@ func TestBond_Query_Indexes_Intersect(t *testing.T) {
 		},
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 	var tokenBalances []*TokenBalance
 
@@ -1192,8 +1224,8 @@ func TestBond_Query_Indexes_Intersect_Offset_Limit(t *testing.T) {
 		tokenBalance4Account1TokenID2,
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 	var tokenBalances []*TokenBalance
 
@@ -1284,8 +1316,8 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 		tokenBalance4Account1TokenID2,
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 	var tokenBalances []*TokenBalance
 
@@ -1390,8 +1422,8 @@ func TestBond_Query_Indexes_Intersect_Sort(t *testing.T) {
 		tokenBalance2Account1,
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 	var tokenBalances []*TokenBalance
 
@@ -1487,8 +1519,8 @@ func TestBond_Query_Indexes_Intersect_After(t *testing.T) {
 		tokenBalance2Account1,
 	}
 
-	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+	q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+	q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 	var tokenBalances []*TokenBalance
 
@@ -1561,7 +1593,10 @@ func BenchmarkQuery_Intersects(b *testing.B) {
 	}
 
 	b.Run("NoIntersect", func(b *testing.B) {
-		q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAndContractAddress, &TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract2"})
+		q1 := TokenBalanceTable.Query().With(
+			TokenBalanceAccountAndContractAddress,
+			NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract2"}),
+		)
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -1575,8 +1610,8 @@ func BenchmarkQuery_Intersects(b *testing.B) {
 	})
 
 	b.Run("Intersect_2", func(b *testing.B) {
-		q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, &TokenBalance{AccountAddress: "0xtestAccount"})
-		q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, &TokenBalance{ContractAddress: "0xtestContract2"})
+		q1 := TokenBalanceTable.Query().With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}))
+		q2 := TokenBalanceTable.Query().With(TokenBalanceContractAddressIndex, NewSelectorPoint(&TokenBalance{ContractAddress: "0xtestContract2"}))
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -1588,4 +1623,266 @@ func BenchmarkQuery_Intersects(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestQuery_Selectors(t *testing.T) {
+	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, _ /*TokenBalanceContractAddressIndex*/, _ /*TokenBalanceAccountAndContractAddress*/ := setupDatabaseForQuery()
+	defer tearDownDatabase(db)
+
+	TokenBalanceTablePrimaryIndex := TokenBalanceTable.PrimaryIndex()
+
+	tokenBalanceAccount1 := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tokenBalance2Account1 := &TokenBalance{
+		ID:              2,
+		AccountID:       1,
+		ContractAddress: "0xtestContract2",
+		AccountAddress:  "0xtestAccount",
+		Balance:         15,
+	}
+
+	tokenBalance3Account1 := &TokenBalance{
+		ID:              3,
+		AccountID:       1,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	tokenBalance1Account2 := &TokenBalance{
+		ID:              4,
+		AccountID:       2,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount2",
+		Balance:         4,
+	}
+
+	err := TokenBalanceTable.Insert(
+		context.Background(),
+		[]*TokenBalance{
+			tokenBalanceAccount1,
+			tokenBalance2Account1,
+			tokenBalance3Account1,
+			tokenBalance1Account2,
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	testCases := []struct {
+		name  string
+		query Query[*TokenBalance]
+		want  []*TokenBalance
+	}{
+		{
+			name:  "SelectorPoint",
+			query: TokenBalanceTable.Query(),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoint_From_ID_4",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceTablePrimaryIndex, NewSelectorPoint(&TokenBalance{ID: 4})),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoint_AccountAddressIndex_0xtestAccount",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorPoint_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance3",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance1Account2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).
+				After(tokenBalance1Account2),
+			want: []*TokenBalance{},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+			},
+		},
+		{
+			name: "SelectorRange_AccountAddressIndex_0xtestAccount_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRange(
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: 0},
+					&TokenBalance{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance2Account1),
+			want: []*TokenBalance{
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance3",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance3Account1),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorRanges_AccountAddressIndex_After_tokenBalance1Account2",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorRanges(
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount", ID: 0},
+						{AccountAddress: "0xtestAccount", ID: math.MaxUint64},
+					},
+					[]*TokenBalance{
+						{AccountAddress: "0xtestAccount2", ID: 0},
+						{AccountAddress: "0xtestAccount2", ID: math.MaxUint64},
+					},
+				)).
+				After(tokenBalance1Account2),
+			want: []*TokenBalance{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var tokenBalances []*TokenBalance
+			err = tc.query.Execute(context.Background(), &tokenBalances)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, tokenBalances)
+		})
+	}
 }

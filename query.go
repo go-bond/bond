@@ -20,7 +20,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 // Example:
 //
 //	t.Query().
-//		With(ContractTypeIndex, &Contract{ContractType: ContractTypeERC20}).
+//		With(ContractTypeIndex, bond.NewSelectorPoint(&Contract{ContractType: ContractTypeERC20})).
 //		Filter(func(c *Contract) bool {
 //			return c.Balance > 25
 //		}).
@@ -28,7 +28,7 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 type Query[T any] struct {
 	table         *_table[T]
 	index         *Index[T]
-	indexSelector T
+	indexSelector Selector[T]
 
 	filterFunc    FilterFunc[T]
 	orderLessFunc OrderLessFunc[T]
@@ -44,7 +44,7 @@ func newQuery[T any](t *_table[T], i *Index[T]) Query[T] {
 	return Query[T]{
 		table:         t,
 		index:         i,
-		indexSelector: utils.MakeNew[T](),
+		indexSelector: NewSelectorPoint[T](utils.MakeNew[T]()),
 		afterSelector: utils.MakeNew[T](),
 		filterFunc:    nil,
 		orderLessFunc: nil,
@@ -66,7 +66,7 @@ func (q Query[T]) Table() Table[T] {
 //
 // WARNING: if we have DESC order on ID field, and we try to query with a selector
 // that has ID set to 0 it will start from the last row.
-func (q Query[T]) With(idx *Index[T], selector T) Query[T] {
+func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 	q.index = idx
 	q.indexSelector = selector
 	return q
@@ -139,11 +139,6 @@ func (q Query[T]) Intersects(queries ...Query[T]) Query[T] {
 }
 
 func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, error) {
-	// todo: after works with ordered query
-	if q.isAfter && q.orderLessFunc != nil {
-		return nil, fmt.Errorf("after can not be used with order")
-	}
-
 	var (
 		hasFilter = q.filterFunc != nil
 		hasSort   = q.orderLessFunc != nil
@@ -161,10 +156,14 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	// after
 	selector := q.indexSelector
 	if hasAfter && !hasSort {
-		selector = q.afterSelector
+		var err error
+		selector, err = q.selectorWithAfter()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	var records []T
+	var records = make([]T, 0, DefaultScanPrefetchSize)
 	count := uint64(0)
 	skippedFirstRow := false
 	err := q.table.ScanIndexForEach(ctx, q.index, selector, func(key KeyBytes, lazy Lazy[T]) (bool, error) {
@@ -176,7 +175,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
 			rowIdxKey := key.ToKey()
-			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, selector, q.index, keyBuffer[:0])).ToKey()
+			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, q.afterSelector, q.index, keyBuffer[:0])).ToKey()
 			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
 				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
 				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
@@ -230,12 +229,16 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 	}
 
 	if hasAfter && !afterApplied {
-		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.indexSelector)
+		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
-			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
-			if bytes.Compare(afterKey, recordKey) == 0 {
-				records = records[minInt(index+1, len(records)):]
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey[:0]), record)
+			if bytes.Equal(afterKey, recordKey) {
+				if index+1 == len(records) {
+					records = make([]T, 0)
+				} else {
+					records = records[index+1:]
+				}
 				break
 			}
 		}
@@ -307,7 +310,7 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 	}
 
 	// get data
-	values, err := q.table.get(keys, nil, make([][]byte, len(keys)))
+	values, err := q.table.get(keys, nil, make([][]byte, len(keys)), true)
 	if err != nil {
 		return nil, err
 	}
@@ -338,9 +341,13 @@ func (q Query[T]) executeIntersect(ctx context.Context, optBatch ...Batch) ([]T,
 		afterKey := q.table.PrimaryKey(NewKeyBuilder([]byte{}), q.afterSelector)
 		recordKey := []byte{}
 		for index, record := range records {
-			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey), record)
-			if bytes.Compare(afterKey, recordKey) == 0 {
-				records = records[minInt(index+1, len(records)):]
+			recordKey = q.table.PrimaryKey(NewKeyBuilder(recordKey[:0]), record)
+			if bytes.Equal(afterKey, recordKey) {
+				if index+1 == len(records) {
+					records = make([]T, 0)
+				} else {
+					records = records[index+1:]
+				}
 				break
 			}
 		}
@@ -398,10 +405,55 @@ func (q Query[T]) indexes() []*Index[T] {
 	return indexes
 }
 
-func (q Query[T]) selectors() []T {
-	sels := make([]T, 0, len(q.intersects))
+func (q Query[T]) selectors() []Selector[T] {
+	sels := make([]Selector[T], 0, len(q.intersects))
 	for _, inter := range q.intersects {
 		sels = append(sels, inter.indexSelector)
 	}
 	return sels
+}
+
+func (q Query[T]) selectorWithAfter() (Selector[T], error) {
+	switch q.indexSelector.Type() {
+	case SelectorTypePoint:
+		return NewSelectorPoint(q.afterSelector), nil
+	case SelectorTypePoints:
+		afterKey := encodeIndexKey[T](q.table, q.afterSelector, q.index, []byte{})
+
+		var newPoints []T
+		pntsSelector := q.indexSelector.(SelectorPoints[T])
+		for _, pnt := range pntsSelector.Points() {
+			pntKey := encodeIndexKey[T](q.table, pnt, q.index, []byte{})
+			if bytes.Compare(afterKey, pntKey) < 0 {
+				newPoints = append(newPoints, pnt)
+			} else if bytes.Compare(afterKey, pntKey) >= 0 &&
+				bytes.Compare(afterKey[:_KeyPrefixSplitIndex(afterKey)], pntKey[:_KeyPrefixSplitIndex(pntKey)]) == 0 {
+				newPoints = append(newPoints, q.afterSelector)
+			}
+		}
+		return NewSelectorPoints(newPoints...), nil
+	case SelectorTypeRange:
+		rngSelector := q.indexSelector.(SelectorRange[T])
+
+		_, upper := rngSelector.Range()
+		return NewSelectorRange(q.afterSelector, upper), nil
+	case SelectorTypeRanges:
+		afterKey := encodeIndexKey[T](q.table, q.afterSelector, q.index, []byte{})
+
+		var newRanges [][]T
+		rngsSelector := q.indexSelector.(SelectorRanges[T])
+		for _, rng := range rngsSelector.Ranges() {
+			lowerKey := encodeIndexKey[T](q.table, rng[0], q.index, []byte{})
+			upperKey := encodeIndexKey[T](q.table, rng[1], q.index, []byte{})
+
+			if bytes.Compare(afterKey, lowerKey) < 0 {
+				newRanges = append(newRanges, rng)
+			} else if bytes.Compare(afterKey, lowerKey) >= 0 && bytes.Compare(afterKey, upperKey) <= 0 {
+				newRanges = append(newRanges, []T{q.afterSelector, rng[1]})
+			}
+		}
+		return NewSelectorRanges(newRanges...), nil
+	default:
+		return nil, fmt.Errorf("unsupported selector type")
+	}
 }

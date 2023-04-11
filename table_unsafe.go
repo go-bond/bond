@@ -37,11 +37,13 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 	// key
 	var (
-		keyBuffer      = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()
+		keyBuffer       = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
 	)
-	defer t.db.getKeyBufferPool().Put(keyBuffer)
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer)
+	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
@@ -82,7 +84,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 		// update indexes
 		for _, idx := range indexes {
-			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0])
+			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 			if err != nil {
 				return err
 			}

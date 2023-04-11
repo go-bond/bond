@@ -92,7 +92,10 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 			return nil, err
 		}
 
-		queryValue = queryValue.MethodByName("With").Call([]reflect.Value{indexValue, indexSelectorValue})[0]
+		selectorPoint := utils.MakeValue(tableInfo.SelectorPointType())
+		selectorPoint.MethodByName("SetPoint").Call([]reflect.Value{indexSelectorValue})
+
+		queryValue = queryValue.MethodByName("With").Call([]reflect.Value{indexValue, selectorPoint})[0]
 	}
 
 	if filter != nil {
