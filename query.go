@@ -29,6 +29,7 @@ type Query[T any] struct {
 	table         *_table[T]
 	index         *Index[T]
 	indexSelector Selector[T]
+	reverse       bool
 
 	filterFunc    FilterFunc[T]
 	orderLessFunc OrderLessFunc[T]
@@ -82,6 +83,15 @@ func (q Query[T]) Filter(filter FilterFunc[T]) Query[T] {
 // Order sets order of the records.
 func (q Query[T]) Order(less OrderLessFunc[T]) Query[T] {
 	q.orderLessFunc = less
+	return q
+}
+
+// Reverse reverses the order of the records.
+// If not defined the order will be ASC.
+// If defined it will be DESC.
+// If defined twice it will be ASC again.
+func (q Query[T]) Reverse() Query[T] {
+	q.reverse = !q.reverse
 	return q
 }
 
@@ -216,7 +226,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 		}
 
 		return next, nil
-	}, optBatch...)
+	}, q.reverse, optBatch...)
 	if err != nil {
 		return nil, err
 	}

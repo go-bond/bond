@@ -65,7 +65,7 @@ func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterSto
 			err = scanner.ScanForEach(ctx, func(keyBytes KeyBytes, lazy Lazy[any]) (bool, error) {
 				filter.Add(ctx, keyBytes)
 				return true, nil
-			})
+			}, false)
 			if err != nil {
 				return fmt.Errorf("filter initialization failed: %w", err)
 			}

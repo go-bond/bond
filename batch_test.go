@@ -84,7 +84,7 @@ func Test_Batch_ResetRetained(t *testing.T) {
 	require.NoError(t, err)
 
 	var tokenBalances []*TokenBalance
-	err = t1.Scan(context.Background(), &tokenBalances)
+	err = t1.Scan(context.Background(), &tokenBalances, false)
 	require.NoError(t, err)
 	assert.Equal(t, inserts, tokenBalances)
 }

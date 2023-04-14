@@ -1194,13 +1194,22 @@ func TestBondTable_Scan(t *testing.T) {
 	require.NoError(t, err)
 
 	var tokenBalances []*TokenBalance
-	err = tokenBalanceTable.Scan(context.Background(), &tokenBalances)
+	err = tokenBalanceTable.Scan(context.Background(), &tokenBalances, false)
 	require.NoError(t, err)
 	require.Equal(t, len(tokenBalances), 3)
 
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
+
+	tokenBalances = nil
+	err = tokenBalanceTable.Scan(context.Background(), &tokenBalances, true)
+	require.NoError(t, err)
+	require.Equal(t, len(tokenBalances), 3)
+
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalance1Account2, tokenBalances[0])
 }
 
 func TestBondTable_Scan_Context_Canceled(t *testing.T) {
@@ -1258,7 +1267,7 @@ func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 	cancel()
 
 	var tokenBalances []*TokenBalance
-	err = tokenBalanceTable.Scan(ctx, &tokenBalances)
+	err = tokenBalanceTable.Scan(ctx, &tokenBalances, false)
 	require.Error(t, err)
 }
 
@@ -1335,7 +1344,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 
 	var tokenBalances []*TokenBalance
 	err = tokenBalanceTable.ScanIndex(context.Background(), TokenBalanceAccountAddressIndex,
-		NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}), &tokenBalances)
+		NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"}), &tokenBalances, false)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(tokenBalances))
 

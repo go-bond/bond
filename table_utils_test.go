@@ -53,7 +53,7 @@ func TestTableAnyScanner(t *testing.T) {
 
 	// scan all TokenBalances
 	var scannedAnyTokenBalances []any
-	err = anyScanner.Scan(context.Background(), &scannedAnyTokenBalances)
+	err = anyScanner.Scan(context.Background(), &scannedAnyTokenBalances, false)
 	require.NoError(t, err)
 	assert.Equal(t, len(tokenBalances), len(scannedAnyTokenBalances))
 
