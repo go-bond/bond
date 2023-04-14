@@ -51,10 +51,10 @@ type TableQuerier[T any] interface {
 }
 
 type TableScanner[T any] interface {
-	Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error
-	ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, optBatch ...Batch) error
-	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error
-	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error
+	Scan(ctx context.Context, tr *[]T, reverse bool, optBatch ...Batch) error
+	ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, reverse bool, optBatch ...Batch) error
+	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
+	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
 }
 
 type TableIterationer[T any] interface {
@@ -897,7 +897,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	case SelectorTypeRange, SelectorTypeRanges:
 		var trs []T
 
-		err := t.ScanIndex(ctx, t.primaryIndex, sel, &trs, optBatch...)
+		err := t.ScanIndex(ctx, t.primaryIndex, sel, &trs, false, optBatch...)
 		if err != nil {
 			return nil, err
 		}
@@ -958,11 +958,11 @@ func (t *_table[T]) Query() Query[T] {
 	return newQuery(t, t.primaryIndex)
 }
 
-func (t *_table[T]) Scan(ctx context.Context, tr *[]T, optBatch ...Batch) error {
-	return t.ScanIndex(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), tr, optBatch...)
+func (t *_table[T]) Scan(ctx context.Context, tr *[]T, reverse bool, optBatch ...Batch) error {
+	return t.ScanIndex(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), tr, reverse, optBatch...)
 }
 
-func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, optBatch ...Batch) error {
+func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, reverse bool, optBatch ...Batch) error {
 	return t.ScanIndexForEach(ctx, i, s, func(keyBytes KeyBytes, lazy Lazy[T]) (bool, error) {
 		if record, err := lazy.Get(); err == nil {
 			*tr = append(*tr, record)
@@ -970,23 +970,39 @@ func (t *_table[T]) ScanIndex(ctx context.Context, i *Index[T], s Selector[T], t
 		} else {
 			return false, err
 		}
-	}, optBatch...)
+	}, reverse, optBatch...)
 }
 
-func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), optBatch ...Batch) error {
-	return t.ScanIndexForEach(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), f, optBatch...)
+func (t *_table[T]) ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
+	return t.ScanIndexForEach(ctx, t.primaryIndex, NewSelectorPoint(t.valueEmpty), f, reverse, optBatch...)
 }
 
-func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	if idx.IndexID == PrimaryIndexID {
-		return t.scanForEachPrimaryIndex(ctx, idx, s, f, optBatch...)
+		return t.scanForEachPrimaryIndex(ctx, idx, s, f, reverse, optBatch...)
 	} else {
-		return t.scanForEachSecondaryIndex(ctx, idx, s, f, optBatch...)
+		return t.scanForEachSecondaryIndex(ctx, idx, s, f, reverse, optBatch...)
 	}
 }
 
-func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
+
+	first := func() bool {
+		if reverse {
+			return it.Last()
+		} else {
+			return it.First()
+		}
+	}
+
+	next := func() bool {
+		if reverse {
+			return it.Prev()
+		} else {
+			return it.Next()
+		}
+	}
 
 	getValue := func() (T, error) {
 		var record T
@@ -997,7 +1013,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 
 		return record, nil
 	}
-	for it.First(); it.Valid(); it.Next() {
+	for first(); it.Valid(); next() {
 		select {
 		case <-ctx.Done():
 			_ = it.Close()
@@ -1015,8 +1031,24 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	return it.Close()
 }
 
-func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), optBatch ...Batch) error {
+func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
+
+	first := func() bool {
+		if reverse {
+			return it.Last()
+		} else {
+			return it.First()
+		}
+	}
+
+	next := func() bool {
+		if reverse {
+			return it.Prev()
+		} else {
+			return it.Next()
+		}
+	}
 
 	var batch Batch
 	if len(optBatch) > 0 {
@@ -1056,20 +1088,20 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 	prefetchAndGetValue := func() (T, error) {
 		// prefetch the required data keys.
-		next := multiKeyBuffer
+		nextBuff := multiKeyBuffer
 		for it.Valid() {
 			iterKey := it.Key()
 
-			indexKey := append(next[:0], iterKey...)
+			indexKey := append(nextBuff[:0], iterKey...)
 			indexKeys = append(indexKeys, indexKey)
-			next = indexKey[len(indexKey):]
+			nextBuff = indexKey[len(indexKey):]
 
-			key := KeyBytes(iterKey).ToDataKeyBytes(next[:0])
+			key := KeyBytes(iterKey).ToDataKeyBytes(nextBuff[:0])
 			keys = append(keys, key)
 
-			next = key[len(key):]
+			nextBuff = key[len(key):]
 			if len(keys) < t.scanPrefetchSize {
-				it.Next()
+				next()
 				continue
 			}
 			break
@@ -1084,7 +1116,7 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		return getPrefetchedValue()
 	}
 
-	for it.First(); it.Valid(); it.Next() {
+	for first(); it.Valid(); next() {
 		select {
 		case <-ctx.Done():
 			_ = it.Close()

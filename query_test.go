@@ -164,6 +164,18 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	assert.Equal(t, tokenBalanceAccount1, tokenBalances[0])
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
+
+	query = TokenBalanceTable.Query().
+		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
+		Reverse()
+
+	err = query.Execute(context.Background(), &tokenBalances)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tokenBalances))
+
+	assert.Equal(t, tokenBalance3Account1, tokenBalances[0])
+	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalances[2])
 }
 
 func TestBond_Query_OnFilterIndex(t *testing.T) {
