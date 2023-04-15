@@ -10,12 +10,16 @@ import (
 	"github.com/go-bond/bond/utils"
 )
 
-// EvaluableFunc is the function template to be used for record filtering.
-type EvaluableFunc[R any] func(r R) bool
+type _evaluableFunc[R any] func(r R) bool
 
 // Eval implements Evaluable interface.
-func (e EvaluableFunc[R]) Eval(r R) bool {
+func (e _evaluableFunc[R]) Eval(r R) bool {
 	return e(r)
+}
+
+// EvaluableFunc is the function template to be used for record filtering.
+func EvaluableFunc[R any](f func(r R) bool) Evaluable[R] {
+	return _evaluableFunc[R](f)
 }
 
 // OrderLessFunc is the function template to be used for record sorting.
@@ -37,7 +41,7 @@ type Query[T any] struct {
 	indexSelector Selector[T]
 	reverse       bool
 
-	filterFunc    EvaluableFunc[T]
+	filterFunc    _evaluableFunc[T]
 	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
@@ -73,10 +77,10 @@ func (q Query[T]) EvaluableFuncType() reflect.Type {
 
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
-// indexed _and order fields set. This is very important as selector also defines
+// indexed and order fields set. This is very important as selector also defines
 // the row at which we start the query.
 //
-// WARNING: if we have DESC order on ID field, _and we try to query with a selector
+// WARNING: if we have DESC order on ID field, and we try to query with a selector
 // that has ID set to 0 it will start from the last row.
 func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 	q.index = idx
@@ -112,7 +116,7 @@ func (q Query[T]) Reverse() Query[T] {
 // that are skipped. This may take a long time. Bond allows to use
 // more efficient way to do that by passing last received row to
 // With method as a selector. This will jump to that row instantly
-// _and start iterating from that point.
+// and start iterating from that point.
 func (q Query[T]) Offset(offset uint64) Query[T] {
 	q.offset = offset
 	return q
@@ -211,7 +215,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			return true, nil
 		}
 
-		// get _and deserialize
+		// get and deserialize
 		record, err := lazy.Get()
 		if err != nil {
 			return false, err
