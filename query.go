@@ -4,103 +4,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"github.com/go-bond/bond/utils"
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/constraints"
 )
 
-// Evaluable is the interface used to simplify Query.Filter usage
-type Evaluable[R any] interface {
-	Eval(r R) bool
+// EvaluableFunc is the function template to be used for record filtering.
+type EvaluableFunc[R any] func(r R) bool
+
+// Eval implements Evaluable interface.
+func (e EvaluableFunc[R]) Eval(r R) bool {
+	return e(r)
 }
-
-type Value[R any, V any] func(r R) V
-
-type Eq[R any, V any] struct {
-	Record Value[R, V]
-	Equal  V
-}
-
-func (e *Eq[R, V]) Eval(r R) bool {
-	return assert.ObjectsAreEqual(e.Record(r), e.Equal)
-}
-
-type Gt[R any, V constraints.Ordered] struct {
-	Record  Value[R, V]
-	Greater V
-}
-
-func (g *Gt[R, V]) Eval(r R) bool {
-	return g.Record(r) > g.Greater
-}
-
-type Gte[R any, V constraints.Ordered] struct {
-	Record       Value[R, V]
-	GreaterEqual V
-}
-
-func (g *Gte[R, V]) Eval(r R) bool {
-	return g.Record(r) >= g.GreaterEqual
-}
-
-type Lt[R any, V constraints.Ordered] struct {
-	Record Value[R, V]
-	Less   V
-}
-
-func (l *Lt[R, V]) Eval(r R) bool {
-	return l.Record(r) < l.Less
-}
-
-type Lte[R any, V constraints.Ordered] struct {
-	Record    Value[R, V]
-	LessEqual V
-}
-
-func (l *Lte[R, V]) Eval(r R) bool {
-	return l.Record(r) <= l.LessEqual
-}
-
-type and[R any] []any
-
-func (a *and[R]) Eval(r R) bool {
-	evalReturn := true
-	for _, evaluable := range *a {
-		evalReturn = evalReturn && evaluable.(Evaluable[R]).Eval(r)
-	}
-	return evalReturn
-}
-
-func And[R any](evalList ...Evaluable[R]) Evaluable[R] {
-	var e and[R]
-	for _, eval := range evalList {
-		e = append(e, eval)
-	}
-	return &e
-}
-
-type or[R any] []any
-
-func (o *or[R]) Eval(r R) bool {
-	evalReturn := false
-	for _, evaluable := range *o {
-		evalReturn = evalReturn || evaluable.(Evaluable[R]).Eval(r)
-	}
-	return evalReturn
-}
-
-func Or[R any](evalList ...Evaluable[R]) Evaluable[R] {
-	var e or[R]
-	for _, eval := range evalList {
-		e = append(e, eval)
-	}
-	return &e
-}
-
-// FilterFunc is the function template to be used for record filtering.
-type FilterFunc[R any] func(r R) bool
 
 // OrderLessFunc is the function template to be used for record sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
@@ -121,7 +37,7 @@ type Query[T any] struct {
 	indexSelector Selector[T]
 	reverse       bool
 
-	filterFunc    FilterFunc[T]
+	filterFunc    EvaluableFunc[T]
 	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
@@ -150,12 +66,17 @@ func (q Query[T]) Table() Table[T] {
 	return q.table
 }
 
+// EvaluableFuncType returns the type of the filter function.
+func (q Query[T]) EvaluableFuncType() reflect.Type {
+	return reflect.TypeOf(q.filterFunc)
+}
+
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
-// indexed and order fields set. This is very important as selector also defines
+// indexed _and order fields set. This is very important as selector also defines
 // the row at which we start the query.
 //
-// WARNING: if we have DESC order on ID field, and we try to query with a selector
+// WARNING: if we have DESC order on ID field, _and we try to query with a selector
 // that has ID set to 0 it will start from the last row.
 func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 	q.index = idx
@@ -165,8 +86,8 @@ func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 
 // Filter adds additional filtering to the query. The conditions can be built with
 // structures that implement Evaluable interface.
-func (q Query[T]) Filter(filter FilterFunc[T]) Query[T] {
-	q.filterFunc = filter
+func (q Query[T]) Filter(filter Evaluable[T]) Query[T] {
+	q.filterFunc = filter.Eval
 	return q
 }
 
@@ -191,7 +112,7 @@ func (q Query[T]) Reverse() Query[T] {
 // that are skipped. This may take a long time. Bond allows to use
 // more efficient way to do that by passing last received row to
 // With method as a selector. This will jump to that row instantly
-// and start iterating from that point.
+// _and start iterating from that point.
 func (q Query[T]) Offset(offset uint64) Query[T] {
 	q.offset = offset
 	return q
@@ -290,7 +211,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			return true, nil
 		}
 
-		// get and deserialize
+		// get _and deserialize
 		record, err := lazy.Get()
 		if err != nil {
 			return false, err

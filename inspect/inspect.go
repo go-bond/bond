@@ -84,6 +84,11 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 	tableValue := reflect.ValueOf(tableInfo)
 	queryValue := tableValue.MethodByName("Query").Call([]reflect.Value{})[0]
 
+	type queryEvalTypeFuncInterface interface {
+		EvaluableFuncType() reflect.Type
+	}
+	queryEvalFuncType := queryValue.Interface().(queryEvalTypeFuncInterface).EvaluableFuncType()
+
 	if indexInfo.Name() != bond.PrimaryIndexName {
 		indexValue := reflect.ValueOf(indexInfo)
 		indexSelectorValue := utils.MakeValue(tableInfo.EntryType())
@@ -130,6 +135,7 @@ func (in *inspect) Query(ctx context.Context, table string, index string, indexS
 			return []reflect.Value{reflect.ValueOf(ret)}
 		})
 
+		filterFunc = filterFunc.Convert(queryEvalFuncType)
 		queryValue = queryValue.MethodByName("Filter").Call([]reflect.Value{filterFunc})[0]
 	}
 
