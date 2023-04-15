@@ -201,7 +201,7 @@ func ScanElements(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, numberToSc
 
 		for i := 0; i < b.N; i++ {
 			var tokenBalances []*TokenBalance
-			err = tbt.Scan(context.Background(), &tokenBalances)
+			err = tbt.Scan(context.Background(), &tokenBalances, false)
 			if err != nil {
 				panic(err)
 			}
@@ -229,7 +229,7 @@ func ScanIndexElements(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBala
 
 		for i := 0; i < b.N; i++ {
 			var tokenBalances []*TokenBalance
-			err = tbt.ScanIndex(context.Background(), idx, sel, &tokenBalances)
+			err = tbt.ScanIndex(context.Background(), idx, sel, &tokenBalances, false)
 		}
 
 		b.StopTimer()
@@ -266,7 +266,7 @@ func ScanSkipThrough(tbt bond.Table[*TokenBalance], numberToSkip int, numberToRe
 
 				tokenBalances = append(tokenBalances, tb)
 				return true, nil
-			})
+			}, false)
 			if err != nil {
 				panic(err)
 			}
@@ -299,7 +299,7 @@ func ScanIndexSkipThrough(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenB
 
 				tokenBalances = append(tokenBalances, tb)
 				return true, nil
-			})
+			}, false)
 			if err != nil {
 				panic(err)
 			}

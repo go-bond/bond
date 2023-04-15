@@ -229,9 +229,9 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		Filter(func(es *ExampleStruct) bool {
+		Filter(bond.EvaluableFunc(func(es *ExampleStruct) bool {
 			return es.Amount > 5
-		}).
+		})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)
