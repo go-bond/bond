@@ -7,6 +7,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/cond"
 )
 
 type ExampleStruct struct {
@@ -229,9 +230,9 @@ func main() {
 	fmt.Println("")
 
 	err = ExampleStructTable.Query().
-		Filter(func(es *ExampleStruct) bool {
+		Filter(cond.Func(func(es *ExampleStruct) bool {
 			return es.Amount > 5
-		}).
+		})).
 		Execute(context.Background(), &exampleStructsFromQuery)
 	if err != nil {
 		panic(err)

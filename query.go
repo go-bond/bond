@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 
+	"github.com/go-bond/bond/cond"
 	"github.com/go-bond/bond/utils"
 )
-
-// FilterFunc is the function template to be used for record filtering.
-type FilterFunc[R any] func(r R) bool
 
 // OrderLessFunc is the function template to be used for record sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
@@ -21,9 +20,9 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 //
 //	t.Query().
 //		With(ContractTypeIndex, bond.NewSelectorPoint(&Contract{ContractType: ContractTypeERC20})).
-//		Filter(func(c *Contract) bool {
+//		Filter(cond.Func(func(c *Contract) bool {
 //			return c.Balance > 25
-//		}).
+//		})).
 //		Limit(50)
 type Query[T any] struct {
 	table         *_table[T]
@@ -31,7 +30,7 @@ type Query[T any] struct {
 	indexSelector Selector[T]
 	reverse       bool
 
-	filterFunc    FilterFunc[T]
+	filterFunc    cond.CondFunc[T]
 	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
@@ -60,6 +59,11 @@ func (q Query[T]) Table() Table[T] {
 	return q.table
 }
 
+// CondFuncType returns the type of the filter function.
+func (q Query[T]) CondFuncType() reflect.Type {
+	return reflect.TypeOf(q.filterFunc)
+}
+
 // With selects index for query execution. If not stated the default index will
 // be used. The index need to be supplemented with a record selector that has
 // indexed and order fields set. This is very important as selector also defines
@@ -74,9 +78,9 @@ func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 }
 
 // Filter adds additional filtering to the query. The conditions can be built with
-// structures that implement Evaluable interface.
-func (q Query[T]) Filter(filter FilterFunc[T]) Query[T] {
-	q.filterFunc = filter
+// structures that implement Cond interface.
+func (q Query[T]) Filter(cond cond.Cond[T]) Query[T] {
+	q.filterFunc = cond.Eval
 	return q
 }
 
