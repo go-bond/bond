@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/_benchmarks/bench"
+	"github.com/go-bond/bond/cond"
 	"github.com/go-bond/bond/serializers"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -310,7 +311,7 @@ func QueryFilterWithOpts(tbt bond.Table[*TokenBalance], idx *bond.Index[*TokenBa
 		for i := 0; i < b.N; i++ {
 			var tokenBalances []*TokenBalance
 
-			q := tbt.Query().Filter(bond.EvaluableFunc(filter))
+			q := tbt.Query().Filter(cond.Func(filter))
 			if idx != nil && sel != nil {
 				q = q.With(idx, sel)
 			}

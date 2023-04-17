@@ -7,20 +7,9 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/go-bond/bond/cond"
 	"github.com/go-bond/bond/utils"
 )
-
-type _evaluableFunc[R any] func(r R) bool
-
-// Eval implements Evaluable interface.
-func (e _evaluableFunc[R]) Eval(r R) bool {
-	return e(r)
-}
-
-// EvaluableFunc is the function template to be used for record filtering.
-func EvaluableFunc[R any](f func(r R) bool) Evaluable[R] {
-	return _evaluableFunc[R](f)
-}
 
 // OrderLessFunc is the function template to be used for record sorting.
 type OrderLessFunc[R any] func(r, r2 R) bool
@@ -31,9 +20,9 @@ type OrderLessFunc[R any] func(r, r2 R) bool
 //
 //	t.Query().
 //		With(ContractTypeIndex, bond.NewSelectorPoint(&Contract{ContractType: ContractTypeERC20})).
-//		Filter(func(c *Contract) bool {
+//		Filter(cond.Func(func(c *Contract) bool {
 //			return c.Balance > 25
-//		}).
+//		})).
 //		Limit(50)
 type Query[T any] struct {
 	table         *_table[T]
@@ -41,7 +30,7 @@ type Query[T any] struct {
 	indexSelector Selector[T]
 	reverse       bool
 
-	filterFunc    _evaluableFunc[T]
+	filterFunc    cond.CondFunc[T]
 	orderLessFunc OrderLessFunc[T]
 	offset        uint64
 	limit         uint64
@@ -70,8 +59,8 @@ func (q Query[T]) Table() Table[T] {
 	return q.table
 }
 
-// EvaluableFuncType returns the type of the filter function.
-func (q Query[T]) EvaluableFuncType() reflect.Type {
+// CondFuncType returns the type of the filter function.
+func (q Query[T]) CondFuncType() reflect.Type {
 	return reflect.TypeOf(q.filterFunc)
 }
 
@@ -89,9 +78,9 @@ func (q Query[T]) With(idx *Index[T], selector Selector[T]) Query[T] {
 }
 
 // Filter adds additional filtering to the query. The conditions can be built with
-// structures that implement Evaluable interface.
-func (q Query[T]) Filter(filter Evaluable[T]) Query[T] {
-	q.filterFunc = filter.Eval
+// structures that implement Cond interface.
+func (q Query[T]) Filter(cond cond.Cond[T]) Query[T] {
+	q.filterFunc = cond.Eval
 	return q
 }
 

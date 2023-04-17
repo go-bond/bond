@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/go-bond/bond/cond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -514,7 +515,7 @@ func TestBond_Query_After(t *testing.T) {
 
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceOrderedIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", Balance: math.MaxUint64})).
-		Filter(EvaluableFunc(func(r *TokenBalance) bool {
+		Filter(CondFunc(func(r *TokenBalance) bool {
 			return r.AccountAddress == "0xtestAccount"
 		})).After(tokenBalance3Account1)
 
@@ -593,7 +594,7 @@ func TestBond_Query_Where(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance > 10
 		})).
 		Limit(50)
@@ -605,7 +606,7 @@ func TestBond_Query_Where(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[0])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.AccountAddress == "0xtestAccount"
 		})).
 		Limit(50)
@@ -758,7 +759,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.AccountAddress == "0xtestAccount"
 		})).
 		Limit(2)
@@ -771,7 +772,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.AccountAddress == "0xtestAccount"
 		})).
 		Offset(1).
@@ -785,7 +786,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.AccountAddress == "0xtestAccount"
 		})).
 		Offset(3).
@@ -796,7 +797,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	require.Equal(t, 0, len(tokenBalances))
 }
 
-func TestBond_Query_Where_Offset_Limit_With_Filter_With_Evaluable(t *testing.T) {
+func TestBond_Query_Where_Offset_Limit_With_Filter_With_Cond(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
 	defer tearDownDatabase(db)
 
@@ -850,7 +851,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter_With_Evaluable(t *testing.T) 
 	}
 
 	query := TokenBalanceTable.Query().
-		Filter(Eq(AccountAddressGetter, "0xtestAccount")).
+		Filter(cond.Eq(AccountAddressGetter, "0xtestAccount")).
 		Limit(2)
 
 	err = query.Execute(context.Background(), &tokenBalances)
@@ -861,7 +862,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter_With_Evaluable(t *testing.T) 
 	assert.Equal(t, tokenBalance2Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Filter(Eq(AccountAddressGetter, "0xtestAccount")).
+		Filter(cond.Eq(AccountAddressGetter, "0xtestAccount")).
 		Offset(1).
 		Limit(2)
 
@@ -873,7 +874,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter_With_Evaluable(t *testing.T) 
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[1])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(cond.Func(func(tb *TokenBalance) bool {
 			return tb.AccountAddress == "0xtestAccount"
 		})).
 		Offset(3).
@@ -1035,7 +1036,7 @@ func TestBond_Query_Order(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		})).
 		Limit(50)
@@ -1049,7 +1050,7 @@ func TestBond_Query_Order(t *testing.T) {
 	assert.Equal(t, tokenBalance1Account2, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		})).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
@@ -1066,7 +1067,7 @@ func TestBond_Query_Order(t *testing.T) {
 	assert.Equal(t, tokenBalance3Account1, tokenBalances[2])
 
 	query = TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		})).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
@@ -1133,7 +1134,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 	var tokenBalances []*TokenBalance
 
 	query := TokenBalanceTable.Query().
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance > 10
 		})).
 		Limit(50)
@@ -1146,7 +1147,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		})).
 		Limit(50)
@@ -1160,7 +1161,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 
 	query = TokenBalanceTable.Query().
 		With(TokenBalanceAccountAddressIndex, NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount"})).
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 10
 		})).
 		Order(func(tb *TokenBalance, tb2 *TokenBalance) bool {
@@ -1180,7 +1181,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 			TokenBalanceAccountAndContractAddressIndex,
 			NewSelectorPoint(&TokenBalance{AccountAddress: "0xtestAccount", ContractAddress: "0xtestContract"}),
 		).
-		Filter(EvaluableFunc(func(tb *TokenBalance) bool {
+		Filter(CondFunc(func(tb *TokenBalance) bool {
 			return tb.Balance < 15
 		})).
 		Limit(50)
@@ -1421,7 +1422,7 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 
 	var tokenBalances []*TokenBalance
 
-	err = q1.Intersects(q2).Filter(EvaluableFunc(func(r *TokenBalance) bool {
+	err = q1.Intersects(q2).Filter(CondFunc(func(r *TokenBalance) bool {
 		return r.AccountAddress == "0xtestAccount"
 	})).Execute(context.Background(), &tokenBalances)
 	require.NoError(t, err)
@@ -1432,7 +1433,7 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 		tokenBalance2Account1,
 	}
 
-	err = q1.Intersects(q2).Filter(EvaluableFunc(func(r *TokenBalance) bool {
+	err = q1.Intersects(q2).Filter(CondFunc(func(r *TokenBalance) bool {
 		return r.AccountAddress == "0xtestAccount"
 	})).Limit(1).Execute(context.Background(), &tokenBalances)
 	require.NoError(t, err)
@@ -1443,7 +1444,7 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 		tokenBalance4Account1TokenID2,
 	}
 
-	err = q1.Intersects(q2).Filter(EvaluableFunc(func(r *TokenBalance) bool {
+	err = q1.Intersects(q2).Filter(CondFunc(func(r *TokenBalance) bool {
 		return r.AccountAddress == "0xtestAccount"
 	})).Offset(1).Execute(context.Background(), &tokenBalances)
 	require.NoError(t, err)
@@ -1452,7 +1453,7 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 
 	expectedTokenBalances = []*TokenBalance{}
 
-	err = q1.Intersects(q2).Filter(EvaluableFunc(func(r *TokenBalance) bool {
+	err = q1.Intersects(q2).Filter(CondFunc(func(r *TokenBalance) bool {
 		return r.AccountAddress == "0xtestAccount2"
 	})).Offset(1).Execute(context.Background(), &tokenBalances)
 	require.NoError(t, err)

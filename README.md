@@ -137,7 +137,7 @@ Query using index with filter:
 ```go
 err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
-    Filter(bond.EvaluableFunc(func(es *ExampleStruct) bool {
+    Filter(cond.Func(func(es *ExampleStruct) bool {
         return es.Amount > 5
     })).
     Execute(context.Background(), &exampleStructsFromQuery)
@@ -150,7 +150,7 @@ Query using index with filter and order:
 ```go
 err := ExampleStructTable.Query().
     With(ExampleStructTypeIndex, bond.NewSelectorPoint(&ExampleStruct{Type: "test"})).
-    Filter(bond.EvaluableFunc(func(es *ExampleStruct) bool {
+    Filter(cond.Func(func(es *ExampleStruct) bool {
         return es.Amount > 5
     })).
     Order(func(es *ExampleStruct, es2 *ExampleStruct) bool {
