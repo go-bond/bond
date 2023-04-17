@@ -80,3 +80,20 @@ func TestBond_Not(t *testing.T) {
 	assert.True(t, cond.Eval(&TokenBalance{AccountID: 4}))
 	assert.False(t, cond.Eval(&TokenBalance{AccountID: 5}))
 }
+
+func TestBond_Mix(t *testing.T) {
+	cond := And(
+		Or(
+			Gte(TokenBalanceAccountID, 5),
+			Lt(TokenBalanceAccountID, 3),
+		),
+		Not(
+			Gte(TokenBalanceAccountID, 5),
+		),
+	)
+
+	assert.True(t, cond.Eval(&TokenBalance{AccountID: 2}))
+	assert.False(t, cond.Eval(&TokenBalance{AccountID: 3}))
+	assert.False(t, cond.Eval(&TokenBalance{AccountID: 4}))
+	assert.False(t, cond.Eval(&TokenBalance{AccountID: 5}))
+}
