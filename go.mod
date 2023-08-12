@@ -1,6 +1,6 @@
 module github.com/go-bond/bond
 
-go 1.18
+go 1.19
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
