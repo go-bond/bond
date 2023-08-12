@@ -59,7 +59,7 @@ func DefaultPebbleOptions() *pebble.Options {
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
 
-	opts.Experimental.MinDeletionRate = 128 << 20 // 128 MB
+	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
 	opts.Experimental.MaxWriterConcurrency = DefaultMaxWriterConcurrency
 
 	for i := 0; i < len(opts.Levels); i++ {
