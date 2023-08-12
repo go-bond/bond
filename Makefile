@@ -1,5 +1,5 @@
 SHELL            = bash -o pipefail
-TEST_FLAGS       ?= -p 1 -v
+TEST_FLAGS       ?= -p 1 -v -race
 
 
 all:
