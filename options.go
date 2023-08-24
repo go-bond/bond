@@ -46,6 +46,7 @@ func DefaultPebbleOptions() *pebble.Options {
 		TableCache:                  pTableCache,
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
+		Merger:                      defaultMerger.Merger,
 		L0CompactionThreshold:       2,
 		L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB

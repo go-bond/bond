@@ -10,7 +10,7 @@ import (
 const dbName = "test_db"
 
 func setupDatabase(serializer ...Serializer[any]) DB {
-	options := &Options{}
+	options := DefaultOptions()
 	if len(serializer) > 0 && serializer[0] != nil {
 		options.Serializer = serializer[0]
 	}

@@ -34,6 +34,10 @@ type Setter interface {
 	Set(key []byte, value []byte, opt WriteOptions, batch ...Batch) error
 }
 
+type Merger interface {
+	Merge(key []byte, value []byte, opt WriteOptions, batch ...Batch) error
+}
+
 type Deleter interface {
 	Delete(key []byte, opt WriteOptions, batch ...Batch) error
 }
@@ -76,8 +80,13 @@ type internalPools interface {
 	putValueArray(arr [][]byte)
 }
 
+type mergerGetter interface {
+	getMerger() *bondMerger
+}
+
 type DB interface {
 	internalPools
+	mergerGetter
 
 	Backend() *pebble.DB
 	Serializer() Serializer[any]
@@ -99,6 +108,7 @@ type DB interface {
 type _db struct {
 	pebble *pebble.DB
 
+	merger     *bondMerger
 	serializer Serializer[any]
 
 	keyBufferPool      *utils.PreAllocatedPool[[]byte]
@@ -134,6 +144,7 @@ func Open(dirname string, opts *Options) (DB, error) {
 
 	db := &_db{
 		pebble:     pdb,
+		merger:     defaultMerger,
 		serializer: serializer,
 		keyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize)
@@ -230,6 +241,10 @@ func (db *_db) notifyOnClose() {
 	for _, onClose := range db.onCloseCallbacks {
 		onClose(db)
 	}
+}
+
+func (db *_db) getMerger() *bondMerger {
+	return db.merger
 }
 
 func (db *_db) getKeyBufferPool() *utils.PreAllocatedPool[[]byte] {

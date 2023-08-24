@@ -28,6 +28,10 @@ func TableUpsertOnConflictReplace[T any](_, new T) T {
 	return new
 }
 
+func TableUpsertOnConflictReplaceNew(old, new map[string]any) (map[string]any, map[string]struct{}, error) {
+	return new, nil, nil
+}
+
 func primaryIndexKey[T any](b KeyBuilder, _ T) []byte { return b.Bytes() }
 
 type TableInfo interface {
@@ -116,6 +120,8 @@ type TableOptions[T any] struct {
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[any]
 
+	OnConflictsNotTyped func(old, new map[string]any) (map[string]any, map[string]struct{}, error)
+
 	ScanPrefetchSize int
 
 	Filter Filter
@@ -147,10 +153,12 @@ type _table[T any] struct {
 }
 
 func NewTable[T any](opt TableOptions[T]) Table[T] {
-	var serializer = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
+	var anySerializer = opt.DB.Serializer()
 	if opt.Serializer != nil {
-		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer}
+		anySerializer = opt.Serializer
 	}
+
+	var serializer = &SerializerAnyWrapper[*T]{Serializer: anySerializer}
 
 	scanPrefetchSize := DefaultScanPrefetchSize
 	if opt.ScanPrefetchSize != 0 {
@@ -158,6 +166,12 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 	}
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
+
+	if opt.OnConflictsNotTyped != nil {
+		opt.DB.getMerger().registerTable(opt.TableID, anySerializer, opt.OnConflictsNotTyped)
+	} else {
+		opt.DB.getMerger().registerTable(opt.TableID, anySerializer, TableUpsertOnConflictReplaceNew)
+	}
 
 	table := &_table[T]{
 		db:             opt.DB,
@@ -648,8 +662,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// key buffers
-	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
-	defer t.db.putKeyArray(keysBuffer)
+	keysBuffer := t.db.getKeyBufferPool().Get()[:0]
+	defer t.db.getKeyBufferPool().Put(keysBuffer[:0])
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
@@ -662,107 +676,34 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	// reusable object
-	var oldTr T
-
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
-		// keys
-		keys := t.keysExternal(trs, keysBuffer)
-
-		// order keys
-		keyOrder := t.sortKeys(keys)
-
-		// iter
-		iter := t.db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
-			},
-		}, batch)
-		defer iter.Close()
-
-		for i := 0; i < len(keys); {
-			tr := trs[keyOrder[i]]
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
-			}
-
-			// update key
-			key := keys[i]
-
-			// old record
-			var (
-				isUpdate bool
-				err      error
-			)
-			if t.exist(key, batch, iter) {
-				err := t.serializer.Deserialize(iter.Value(), &oldTr)
-				if err != nil {
-					return err
-				}
-				isUpdate = true
-			}
-
-			// handle upsert
-			if isUpdate {
-				tr = onConflict(oldTr, tr)
-			}
-
-			// apply conficts recursively if duplicate exist
-			for i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
-				oldTr = tr
-				i++
-				tr = onConflict(oldTr, trs[i])
-				continue
-			}
-
-			// serialize
-			data, err := serialize(&tr)
-			if err != nil {
-				return err
-			}
-
-			// update entry
-			err = batch.Set(key, data, Sync)
-			if err != nil {
-				return err
-			}
-
-			// update indexes
-			if isUpdate {
-				for _, idx := range indexes {
-					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
-					if err != nil {
-						return err
-					}
-				}
-			} else {
-				for _, idx := range indexes {
-					err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
-					if err != nil {
-						return err
-					}
-				}
-			}
-
-			// add to bloom filter
-			if t.filter != nil && !isUpdate {
-				t.filter.Add(batchCtx, key)
-			}
-
-			i++
+	for _, tr := range trs {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context done: %w", ctx.Err())
+		default:
 		}
 
-		return nil
-	})
-	if err != nil {
-		return err
+		key := t.key(tr, keysBuffer[:0])
+
+		// serialize
+		data, err := serialize(&tr)
+		if err != nil {
+			return err
+		}
+
+		// update entry
+		err = batch.Merge(key, data, Sync)
+		if err != nil {
+			return err
+		}
+
+		if t.filter != nil {
+			t.filter.Add(batchCtx, key)
+		}
 	}
 
 	if !externalBatch {
-		err = batch.Commit(Sync)
+		err := batch.Commit(Sync)
 		if err != nil {
 			return err
 		}

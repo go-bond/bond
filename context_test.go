@@ -48,6 +48,11 @@ func (m *MockBatch) Set(key []byte, value []byte, opt WriteOptions, batch ...Bat
 	return args.Error(0)
 }
 
+func (m *MockBatch) Merge(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockBatch) Delete(key []byte, opt WriteOptions, batch ...Batch) error {
 	args := m.Called(key, opt, batch)
 	return args.Error(0)
