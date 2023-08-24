@@ -697,6 +697,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			return err
 		}
 
+		// todo: ?how to update indexes?
+
 		if t.filter != nil {
 			t.filter.Add(batchCtx, key)
 		}
