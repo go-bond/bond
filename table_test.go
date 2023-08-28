@@ -411,7 +411,7 @@ func TestBondTable_Insert(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -489,7 +489,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.Error(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -540,7 +540,7 @@ func TestBondTable_Update(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -559,7 +559,7 @@ func TestBondTable_Update(t *testing.T) {
 	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.NoError(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -612,7 +612,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -634,7 +634,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	err = tokenBalanceTable.Update(ctx, []*TokenBalance{tokenBalanceAccountUpdated})
 	require.Error(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -695,7 +695,7 @@ func TestBondTable_Upsert(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -717,7 +717,7 @@ func TestBondTable_Upsert(t *testing.T) {
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -782,7 +782,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -807,7 +807,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.Error(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -879,7 +879,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -911,7 +911,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -984,7 +984,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -1016,7 +1016,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -1064,10 +1064,13 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 
 	err := tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated})
 	require.Error(t, err)
-	assert.False(t, db.Backend().NewIter(&pebble.IterOptions{
+
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
-	}).First())
+	})
+
+	assert.False(t, it.First())
 }
 
 func TestBondTable_Delete(t *testing.T) {
@@ -1101,10 +1104,11 @@ func TestBondTable_Delete(t *testing.T) {
 	err = tokenBalanceTable.Delete(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	assert.False(t, db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
-	}).First())
+	})
+	assert.False(t, it.First())
 }
 
 func TestBondTable_Exist(t *testing.T) {
@@ -1397,7 +1401,7 @@ func TestBond_Batch(t *testing.T) {
 	err = batch.Commit(Sync)
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})

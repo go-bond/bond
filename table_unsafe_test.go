@@ -45,7 +45,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	it := db.Backend().NewIter(&pebble.IterOptions{
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
@@ -71,7 +71,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	it = db.Backend().NewIter(&pebble.IterOptions{
+	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})

@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
-	github.com/cockroachdb/pebble v0.0.0-20230811190520-77e81e806c8b
+	github.com/cockroachdb/pebble v0.0.0-20230824192853-9bb0864bdb98
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0
 	github.com/fxamacker/cbor/v2 v2.4.0
