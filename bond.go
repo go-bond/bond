@@ -46,7 +46,7 @@ type Batcher interface {
 	Batch() Batch
 }
 
-type Iterationer interface {
+type Iterationer interface { // TODO: weird name
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
 
@@ -169,7 +169,7 @@ func (db *_db) Serializer() Serializer[any] {
 }
 
 func (db *_db) Get(key []byte, batch ...Batch) (data []byte, closer io.Closer, err error) {
-	if batch != nil && len(batch) > 0 && batch[0] != nil {
+	if len(batch) > 0 && batch[0] != nil {
 		data, closer, err = batch[0].Get(key)
 	} else {
 		data, closer, err = db.pebble.Get(key)
@@ -178,7 +178,7 @@ func (db *_db) Get(key []byte, batch ...Batch) (data []byte, closer io.Closer, e
 }
 
 func (db *_db) Set(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
-	if batch != nil && len(batch) > 0 && batch[0] != nil {
+	if len(batch) > 0 && batch[0] != nil {
 		return batch[0].Set(key, value, opt)
 	} else {
 		return db.pebble.Set(key, value, pebbleWriteOptions(opt))
@@ -186,7 +186,7 @@ func (db *_db) Set(key []byte, value []byte, opt WriteOptions, batch ...Batch) e
 }
 
 func (db *_db) Delete(key []byte, opts WriteOptions, batch ...Batch) error {
-	if batch != nil && len(batch) > 0 && batch[0] != nil {
+	if len(batch) > 0 && batch[0] != nil {
 		return batch[0].Delete(key, opts)
 	} else {
 		return db.pebble.Delete(key, pebbleWriteOptions(opts))
@@ -194,7 +194,7 @@ func (db *_db) Delete(key []byte, opts WriteOptions, batch ...Batch) error {
 }
 
 func (db *_db) DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error {
-	if batch != nil && len(batch) > 0 && batch[0] != nil {
+	if len(batch) > 0 && batch[0] != nil {
 		return batch[0].DeleteRange(start, end, opt)
 	} else {
 		return db.pebble.DeleteRange(start, end, pebbleWriteOptions(opt))
@@ -202,7 +202,7 @@ func (db *_db) DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...
 }
 
 func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
-	if batch != nil && len(batch) > 0 && batch[0] != nil {
+	if len(batch) > 0 && batch[0] != nil {
 		return batch[0].Iter(opt)
 	} else {
 		return newIterator(db.pebble, opt)

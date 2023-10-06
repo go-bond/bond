@@ -15,7 +15,7 @@ import (
 
 var _indexKeyValue = []byte{}
 
-const ReindexBatchSize = 10000
+const ReindexBatchSize = 10_000
 
 const DefaultScanPrefetchSize = 100
 
