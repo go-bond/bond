@@ -70,7 +70,7 @@ func DefaultPebbleOptions() *pebble.Options {
 
 		l.BlockSize = 32 << 10       // 32 KB
 		l.IndexBlockSize = 256 << 10 // 256 KB
-		l.Compression = pebble.ZstdCompression
+		// l.Compression = pebble.ZstdCompression
 		l.FilterPolicy = bloom.FilterPolicy(10)
 		l.FilterType = pebble.TableFilter
 		if i > 0 {
