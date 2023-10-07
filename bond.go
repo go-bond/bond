@@ -205,7 +205,7 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 	if batch != nil && len(batch) > 0 && batch[0] != nil {
 		return batch[0].Iter(opt)
 	} else {
-		return newIterator(db.pebble, opt)
+		return newIterator(&_bondIterConstructor{pebbleConstructor: db.pebble}, opt)
 	}
 }
 
