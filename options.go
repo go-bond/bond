@@ -32,12 +32,12 @@ func DefaultOptions() *Options {
 }
 
 func DefaultPebbleOptions() *pebble.Options {
-	var maxOpenFileLimit = 10000
+	// TODO: query this with syscall to get file descriptor limit,
+	// and set the value to 80%. We should also record this value on /status
+	var maxOpenFileLimit = 5_000
 
-	pCache := pebble.NewCache(128 << 20) // 128 MB
-	defer func() {
-		pCache.Unref()
-	}()
+	pCache := pebble.NewCache(256 << 20) // 256 MB
+	defer pCache.Unref()
 
 	pTableCache := pebble.NewTableCache(pCache, runtime.GOMAXPROCS(0), maxOpenFileLimit)
 
@@ -47,12 +47,12 @@ func DefaultPebbleOptions() *pebble.Options {
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
 		L0CompactionThreshold:       2,
-		L0StopWritesThreshold:       1000,     // TODO: why..?
+		L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
-		Levels:                      make([]pebble.LevelOptions, 7), // TODO: how many levels do we want..?
-		MaxConcurrentCompactions:    func() int { return DefaultMaxConcurrentCompactions },
-		MemTableSize:                64 << 20, // 64 MB
+		Levels:                      make([]pebble.LevelOptions, 7),
+		MaxConcurrentCompactions:    func() int { return runtime.NumCPU() },
+		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
 	}
 	opts.EnsureDefaults()
@@ -60,9 +60,17 @@ func DefaultPebbleOptions() *pebble.Options {
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
 	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
-	opts.Experimental.MaxWriterConcurrency = DefaultMaxWriterConcurrency
 
-	// opts.EventListener // TODO: listen on compactions ,etc.
+	opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
+	opts.Experimental.ReadSamplingMultiplier = -1
+
+	// TODO, collect these stats
+	// opts.EventListener = &pebble.EventListener{
+	// 	CompactionBegin: db.onCompactionBegin,
+	// 	CompactionEnd:   db.onCompactionEnd,
+	// 	WriteStallBegin: db.onWriteStallBegin,
+	// 	WriteStallEnd:   db.onWriteStallEnd,
+	// }
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -70,10 +78,15 @@ func DefaultPebbleOptions() *pebble.Options {
 
 		l.BlockSize = 32 << 10       // 32 KB
 		l.IndexBlockSize = 256 << 10 // 256 KB
+
+		// TODO/NOTE: benchmarks fail with background error whenever
+		// using zstd compression
 		// l.Compression = pebble.ZstdCompression
+
 		l.FilterPolicy = bloom.FilterPolicy(10)
 		l.FilterType = pebble.TableFilter
 		if i > 0 {
+			// L0 is 2MB, and grows from there
 			l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
 		}
 	}

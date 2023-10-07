@@ -4,25 +4,25 @@ go 1.21.1
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
-	github.com/cockroachdb/pebble v0.0.0-20231006020618-790e49c914df
+	github.com/cockroachdb/pebble v0.0.0-20231007004400-803507a71849
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0
-	github.com/fxamacker/cbor/v2 v2.4.0
-	github.com/go-resty/resty/v2 v2.7.0
-	github.com/google/uuid v1.3.0
+	github.com/fxamacker/cbor/v2 v2.5.0
+	github.com/go-resty/resty/v2 v2.9.1
+	github.com/google/uuid v1.3.1
 	github.com/klauspost/compress v1.17.0
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
 	github.com/urfave/cli/v2 v2.25.7
-	github.com/vmihailenco/msgpack/v5 v5.3.5
-	golang.org/x/exp v0.0.0-20231005195138-3e424a577f31
+	github.com/vmihailenco/msgpack/v5 v5.4.0
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 )
 
 require (
 	github.com/DataDog/zstd v1.5.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.8.0 // indirect
+	github.com/bits-and-blooms/bitset v1.9.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.11.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -50,7 +50,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
-	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/net v0.16.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect

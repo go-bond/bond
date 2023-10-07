@@ -39,7 +39,10 @@ func setupDatabase(serializer ...bond.Serializer[any]) bond.DB {
 		options.Serializer = serializer[0]
 	}
 
-	db, _ := bond.Open(dbName, options)
+	db, err := bond.Open(dbName, options)
+	if err != nil {
+		panic(err)
+	}
 	return db
 }
 
