@@ -51,7 +51,7 @@ func DefaultPebbleOptions() *pebble.Options {
 		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
-		MaxConcurrentCompactions:    func() int { return runtime.NumCPU() },
+		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
 	}
