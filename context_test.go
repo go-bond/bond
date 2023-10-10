@@ -83,6 +83,10 @@ func (m *MockBatch) OnCommit(f func(b Batch) error) {
 	panic("implement me")
 }
 
+func (m *MockBatch) Merge(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
+	panic("implement me")
+}
+
 func (m *MockBatch) OnCommitted(f func(b Batch)) {
 	//TODO implement me
 	panic("implement me")

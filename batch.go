@@ -29,6 +29,7 @@ type Batch interface {
 	Getter
 	Setter
 	Deleter
+	Merger
 	DeleterWithRange
 	Iterationer
 
@@ -100,6 +101,10 @@ func (b *_batch) Set(key []byte, value []byte, opt WriteOptions, _ ...Batch) err
 
 func (b *_batch) Delete(key []byte, opts WriteOptions, _ ...Batch) error {
 	return b.Batch.Delete(key, pebbleWriteOptions(opts))
+}
+
+func (b *_batch) Merge(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
+	return b.Batch.Merge(key, value, pebbleWriteOptions(opt))
 }
 
 func (b *_batch) DeleteRange(start []byte, end []byte, opt WriteOptions, _ ...Batch) error {

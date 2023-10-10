@@ -49,8 +49,12 @@ type DeleterWithRange interface {
 type Batcher interface {
 	Batch() Batch
 }
+type Merger interface {
+	Merge(key []byte, value []byte, opt WriteOptions, batch ...Batch) error
+}
 
 type Iterationer interface { // TODO: weird name
+
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
 
