@@ -259,3 +259,97 @@ func TestBtreeUpdate(t *testing.T) {
 	require.Equal(t, encodeIndexKey(tokenBalanceTable, updatedEntry, tokenBalanceContractIndex, []byte{}), key)
 	require.False(t, itr.Next())
 }
+
+func TestBtreeSelectorPoints(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalaceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalaceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+			return builder.AddInt64Field(int64(t.ID)).Bytes()
+		},
+	})
+
+	tokenBalanceContractIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_balance_contract_index",
+		IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+			return builder.AddStringField(t.ContractAddress).Bytes()
+		},
+		IndexFilterFunc: func(t *TokenBalance) bool {
+			return true
+		},
+	})
+
+	entries := []*TokenBalance{{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xcontract1",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, {
+		ID:              2,
+		AccountID:       2,
+		ContractAddress: "0xcontract1",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, {
+		ID:              3,
+		AccountID:       3,
+		ContractAddress: "0xcontract1",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, {
+		ID:              4,
+		AccountID:       4,
+		ContractAddress: "0xcontract2",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, {
+		ID:              5,
+		AccountID:       5,
+		ContractAddress: "0xcontract2",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, {
+		ID:              6,
+		AccountID:       6,
+		ContractAddress: "0xcontract3",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}}
+
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{}
+	batch := db.Batch()
+	for _, entry := range entries {
+		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, entry, batch)
+		require.NoError(t, err)
+	}
+
+	err := batch.Commit(Sync)
+	require.NoError(t, err)
+
+	itr := btreeIndex.Iter(tokenBalanceTable, tokenBalanceContractIndex, NewSelectorPoints(&TokenBalance{
+		ContractAddress: "0xcontract1",
+	}, &TokenBalance{
+		ContractAddress: "0xcontract2",
+	}, &TokenBalance{
+		ContractAddress: "0xcontract3",
+	}))
+	defer itr.Close()
+
+	for idx, entry := range entries {
+		key := itr.Key()
+		require.Equal(t, encodeIndexKey(tokenBalanceTable, entry, tokenBalanceContractIndex, []byte{}), key, "failed at idx", idx)
+		if idx < len(entries)-1 {
+			require.True(t, itr.Next(), "failed at index", idx)
+		}
+	}
+}

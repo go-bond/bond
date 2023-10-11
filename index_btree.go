@@ -115,6 +115,31 @@ func (ie *IndexTypeBtree[T]) Iter(table Table[T], idx *Index[T], selector Select
 			releaseBufferOnClose: releaseBuffer,
 		})
 		return NewBtreeIter(itr)
+	case SelectorTypePoints:
+		sel := selector.(SelectorPoints[T])
+
+		var pebbleOpts []*IterOptions
+		for _, point := range sel.Points() {
+			lowerBound := encodeBtreeKey(table, point, idx, keyBufferPool.Get()[:0])
+			upperBound := btreeKeySuccessor(lowerBound, keyBufferPool.Get()[:0])
+			if idx.IndexID == PrimaryIndexID {
+				upperBound = keySuccessor(lowerBound, upperBound[:0])
+			}
+
+			releaseBuffers := func() {
+				keyBufferPool.Put(lowerBound[:0])
+				keyBufferPool.Put(upperBound[:0])
+			}
+
+			pebbleOpts = append(pebbleOpts, &IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: lowerBound,
+					UpperBound: upperBound,
+				},
+				releaseBufferOnClose: releaseBuffers,
+			})
+		}
+		return newIteratorMulti(&BtreeIterConstructor{iterConstructor: iterConstructor}, pebbleOpts)
 	default:
 		panic("not implemented")
 	}
@@ -173,6 +198,14 @@ type BtreeIter struct {
 	source    Iterator
 	prunedIDS map[string]struct{}
 	chunkItr  *ChunkIterator
+}
+
+type BtreeIterConstructor struct {
+	iterConstructor Iterationer
+}
+
+func (b *BtreeIterConstructor) Iter(opt *IterOptions, batch ...Batch) Iterator {
+	return NewBtreeIter(b.iterConstructor.Iter(opt, batch...))
 }
 
 var _ Iterator = &BtreeIter{}
