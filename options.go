@@ -54,6 +54,7 @@ func DefaultPebbleOptions() *pebble.Options {
 		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
+		Merger:                      defaultMerger.Merger,
 	}
 	opts.EnsureDefaults()
 
