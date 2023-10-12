@@ -3,6 +3,7 @@ package bond
 import (
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 )
 
@@ -215,7 +216,11 @@ func TestBtreeUpdate(t *testing.T) {
 		Balance:         100,
 	}}
 
-	btreeIndex := &IndexTypeBtree[*TokenBalance]{}
+	locker := NewLocker()
+
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{
+		locker: locker,
+	}
 	batch := db.Batch()
 	for _, entry := range entries {
 		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, entry, batch)
@@ -326,7 +331,8 @@ func TestBtreeSelectorPoints(t *testing.T) {
 		Balance:         100,
 	}}
 
-	btreeIndex := &IndexTypeBtree[*TokenBalance]{}
+	locker := NewLocker()
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{locker: locker}
 	batch := db.Batch()
 	for _, entry := range entries {
 		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, entry, batch)
@@ -352,4 +358,99 @@ func TestBtreeSelectorPoints(t *testing.T) {
 			require.True(t, itr.Next(), "failed at index", idx)
 		}
 	}
+}
+
+func TestBondIndexChunker(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalaceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalaceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+			return builder.AddInt64Field(int64(t.ID)).Bytes()
+		},
+	})
+
+	tokenBalanceContractIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_balance_contract_index",
+		IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+			return builder.AddStringField(t.ContractAddress).Bytes()
+		},
+		IndexFilterFunc: func(t *TokenBalance) bool {
+			return true
+		},
+	})
+
+	locker := NewLocker()
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{locker: locker}
+	for i := 0; i < 2000; i++ {
+		batch := db.Batch()
+		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, &TokenBalance{
+			ID:              uint64(i),
+			AccountID:       uint32(i),
+			ContractAddress: "0xcontract1",
+			AccountAddress:  "0xaccount1",
+			Balance:         100,
+		}, batch)
+		require.NoError(t, err)
+		require.NoError(t, batch.Commit(Sync))
+	}
+	// now default idx should have 2000 index.
+	indexkKey, _ := encodeBtreeIndex(tokenBalanceTable, &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xcontract1",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, tokenBalanceContractIndex, DEFAULT_CHUNK_ID, []byte{})
+	data, closer, err := db.Get(indexkKey)
+	require.NoError(t, err)
+	chunkItr := NewChunkIterator(data, map[string]struct{}{})
+	require.Equal(t, 2000, len(chunkItr.lens))
+	closer.Close()
+
+	chunker := &BtreeIndexChunker{
+		_db:    db,
+		locker: locker,
+	}
+	// this will create two index with 1000 entries each.
+	chunker.Chunk(indexkKey)
+	batch := db.Batch()
+	err = btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, &TokenBalance{
+		ID:              2000,
+		AccountID:       2000,
+		ContractAddress: "0xcontract1",
+		AccountAddress:  "0xaccount1",
+		Balance:         100,
+	}, batch)
+	require.NoError(t, err)
+	require.NoError(t, batch.Commit(Sync))
+
+	itr := db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: indexkKey,
+			UpperBound: btreeKeySuccessor(indexkKey, []byte{}),
+		},
+	})
+	i := 0
+	for itr.First(); itr.Valid(); itr.Next() {
+		if i == 0 {
+			itr := NewChunkIterator(itr.Value(), map[string]struct{}{})
+			require.Equal(t, len(itr.lens), 1)
+			i++
+			continue
+		}
+		itr := NewChunkIterator(itr.Value(), map[string]struct{}{})
+		require.Equal(t, len(itr.lens), 1000)
+		i++
+	}
+	require.Equal(t, 3, i)
+	require.NoError(t, itr.Close())
 }

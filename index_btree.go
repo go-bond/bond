@@ -13,6 +13,7 @@ const DELETE_CHUNK_ID = 0
 const DEFAULT_CHUNK_ID = 1
 
 type IndexTypeBtree[T any] struct {
+	locker *KeyLocker
 }
 
 // draft Idea:
@@ -42,6 +43,8 @@ func (ie *IndexTypeBtree[T]) OnInsert(table Table[T], idx *Index[T], tr T, batch
 
 	if idx.IndexFilterFunction(tr) {
 		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DEFAULT_CHUNK_ID, buff)
+		ie.locker.RLockKey(indexKey)
+		defer ie.locker.RUnlockKey(indexKey)
 		return batch.Merge(indexKey, primaryKey, Sync)
 	}
 	return nil
@@ -62,16 +65,22 @@ func (ie *IndexTypeBtree[T]) OnUpdate(table Table[T], idx *Index[T], oldTr T, tr
 
 	if idx.IndexFilterFunction(tr) {
 		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DEFAULT_CHUNK_ID, buff)
+		ie.locker.RLockKey(indexKey)
 		if err := batch.Merge(indexKey, primaryKey, Sync); err != nil {
+			ie.locker.RUnlockKey(indexKey)
 			return err
 		}
+		ie.locker.RUnlockKey(indexKey)
 	}
 
 	if idx.IndexFilterFunction(oldTr) {
 		indexKey, primaryKey := encodeBtreeIndex(table, oldTr, idx, DELETE_CHUNK_ID, buff2)
+		ie.locker.RLockKey(indexKey)
 		if err := batch.Merge(indexKey, primaryKey, Sync); err != nil {
+			ie.locker.RUnlockKey(indexKey)
 			return err
 		}
+		ie.locker.RUnlockKey(indexKey)
 	}
 	return nil
 }
@@ -84,6 +93,8 @@ func (ie *IndexTypeBtree[T]) OnDelete(table Table[T], idx *Index[T], tr T, batch
 
 	if idx.IndexFilterFunction(tr) {
 		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DELETE_CHUNK_ID, buff)
+		ie.locker.RLockKey(indexKey)
+		defer ie.locker.RUnlockKey(indexKey)
 		if err := batch.Merge(indexKey, primaryKey, Sync); err != nil {
 			return err
 		}
@@ -401,4 +412,73 @@ func (c *ChunkIterator) Value() []byte {
 	idx := c.lens[c.pos]
 	idxLen := binary.BigEndian.Uint32(c.chunk[idx : idx+4])
 	return c.chunk[idx+4 : idx+4+int(idxLen)]
+}
+
+func (c *ChunkIterator) Chunk() []byte {
+	idx := c.lens[c.pos]
+	idxLen := binary.BigEndian.Uint32(c.chunk[idx : idx+4])
+	return c.chunk[idx : idx+4+int(idxLen)]
+}
+
+type BtreeIndexChunker struct {
+	locker *KeyLocker
+	_db    DB
+}
+
+func (c *BtreeIndexChunker) Chunk(key []byte) {
+	c.locker.LockKey(key)
+	defer c.locker.UnlockKey(key)
+	lowerBound := key
+	upperBound := btreeKeySuccessor(lowerBound, []byte{})
+	itr := c._db.Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: lowerBound,
+			UpperBound: upperBound,
+		},
+	})
+	defer itr.Close()
+	LAST_CHUNK_ID := uint8(0)
+	for itr.First(); itr.Valid(); itr.Next() {
+		key := itr.Key()
+		LAST_CHUNK_ID = key[len(key)-1]
+	}
+	LAST_CHUNK_ID++
+	// move all the chunks from DEFAULT CHUNKS TO SUBSEQUENET
+	// CHUNKS
+	batch := c._db.Batch()
+	data, closer, err := c._db.Get(key)
+	if err != nil {
+		panic("error while retriving default chunk")
+	}
+	defer closer.Close()
+	chunkIter := NewChunkIterator(data, map[string]struct{}{})
+	chunk := make([]byte, 0)
+	count := 0
+	for chunkIter.First(); chunkIter.Valid(); chunkIter.Next() {
+		chunk = append(chunk, chunkIter.Chunk()...)
+		count++
+		if count >= 1000 {
+			key[len(key)-1] = LAST_CHUNK_ID
+			if err := batch.Set(key, chunk, Sync); err != nil {
+				panic(err)
+			}
+			LAST_CHUNK_ID++
+			chunk = chunk[:0]
+			count = 0
+		}
+	}
+	if count > 0 {
+		key[len(key)-1] = LAST_CHUNK_ID
+		if err := batch.Set(key, chunk, Sync); err != nil {
+			panic(err)
+		}
+	}
+	key[len(key)-1] = DEFAULT_CHUNK_ID
+	if err := batch.Delete(key, Sync); err != nil {
+		panic(err)
+	}
+	err = batch.Commit(Sync)
+	if err != nil {
+		panic(err)
+	}
 }
