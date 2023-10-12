@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const dbName = "test_db"
+var dbName = "test_db"
 
 func setupDatabase(serializer ...Serializer[any]) DB {
 	options := &Options{}
