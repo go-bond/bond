@@ -8,7 +8,6 @@ import (
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/_benchmarks/bench"
 	"github.com/go-bond/bond/serializers"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 func init() {
@@ -19,8 +18,8 @@ func init() {
 }
 
 func BenchmarkTableDeleteSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
-	msgpack.GetEncoder().SetCustomStructTag("json")
-	msgpack.GetDecoder().SetCustomStructTag("json")
+	// msgpack.GetEncoder().SetCustomStructTag("json")
+	// msgpack.GetDecoder().SetCustomStructTag("json")
 
 	var serializers = []struct {
 		Name       string
@@ -90,9 +89,9 @@ func BenchmarkTableDeleteSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 			{batchSize: 10},
 			{batchSize: 100},
 			{batchSize: 1000},
-			{batchSize: 10000},
-			{batchSize: 100000},
-			{batchSize: 1000000},
+			// {batchSize: 10000},
+			// {batchSize: 100000},
+			// {batchSize: 1000000},
 		}
 
 		for _, v := range deleteBatches {
