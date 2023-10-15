@@ -233,7 +233,7 @@ func TestFilter_Upsert(t *testing.T) {
 
 	dbTr, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(tokenBalanceAccountUpdated))
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccountUpdated, dbTr[0])
+	assert.Equal(t, tokenBalanceAccountUpdated, dbTr)
 
 	mFilter.AssertExpectations(t)
 }
@@ -283,7 +283,7 @@ func TestFilter_Get(t *testing.T) {
 
 	dbTr, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(tokenBalanceAccount))
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccount, dbTr[0])
+	assert.Equal(t, tokenBalanceAccount, dbTr)
 
 	mFilter.AssertExpectations(t)
 }

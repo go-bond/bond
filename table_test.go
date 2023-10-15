@@ -204,7 +204,7 @@ func TestBondTable_Get(t *testing.T) {
 	// get token balance
 	tokenBalance, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(&TokenBalance{ID: tokenBalanceAccount1.ID}))
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccount1, tokenBalance[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalance)
 
 	// get token balance with non-existing id
 	tokenBalance, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoint(&TokenBalance{ID: 2}))
@@ -253,13 +253,13 @@ func TestBondTable_Get_Range(t *testing.T) {
 	require.NoError(t, err)
 
 	// get token balances with range
-	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorRange(&TokenBalance{ID: 1}, &TokenBalance{ID: 2}))
+	tokenBalances, err := tokenBalanceTable.GetAll(context.Background(), NewSelectorRange(&TokenBalance{ID: 1}, &TokenBalance{ID: 2}))
 	require.NoError(t, err)
 	require.Equal(t, len(expectedTokenBalances), len(tokenBalances))
 	assert.Equal(t, expectedTokenBalances, tokenBalances)
 
 	// get token balance with non-existing id range
-	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorRange(&TokenBalance{ID: 3}, &TokenBalance{ID: 4}))
+	tokenBalances, err = tokenBalanceTable.GetAll(context.Background(), NewSelectorRange(&TokenBalance{ID: 3}, &TokenBalance{ID: 4}))
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(tokenBalances))
 }
@@ -305,14 +305,14 @@ func TestBondTable_Get_Points(t *testing.T) {
 	require.NoError(t, err)
 
 	// get token balances with points
-	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 3}))
+	tokenBalances, err := tokenBalanceTable.GetAll(context.Background(), NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 3}))
 	require.NoError(t, err)
 	require.Equal(t, len(insertTokenBalances), len(tokenBalances))
 
 	assert.Equal(t, insertTokenBalances, tokenBalances)
 
 	// get token balance with non-existing points
-	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 2}))
+	tokenBalances, err = tokenBalanceTable.GetAll(context.Background(), NewSelectorPoints(&TokenBalance{ID: 2}))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(tokenBalances))
 
@@ -372,13 +372,13 @@ func TestBondTable_Get_Ranges(t *testing.T) {
 	}
 
 	// get token balances with range
-	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 0}, {ID: 1}}, []*TokenBalance{{ID: 3}, {ID: math.MaxUint64}}))
+	tokenBalances, err := tokenBalanceTable.GetAll(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 0}, {ID: 1}}, []*TokenBalance{{ID: 3}, {ID: math.MaxUint64}}))
 	require.NoError(t, err)
 	require.Equal(t, len(expectedTokenBalances), len(tokenBalances))
 	assert.Equal(t, expectedTokenBalances, tokenBalances)
 
 	// get token balance with non-existing id range
-	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 5}, {ID: 5}}))
+	tokenBalances, err = tokenBalanceTable.GetAll(context.Background(), NewSelectorRanges([]*TokenBalance{{ID: 5}, {ID: 5}}))
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(tokenBalances))
 }
@@ -1409,9 +1409,9 @@ func TestBond_Batch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, tokenBalance)
 
-	tokenBalance[0].Balance += 20
+	tokenBalance.Balance += 20
 
-	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance[0]}, batch)
+	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance}, batch)
 	require.NoError(t, err)
 
 	err = batch.Commit(Sync)
@@ -1429,6 +1429,6 @@ func TestBond_Batch(t *testing.T) {
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
 		require.NoError(t, err)
-		assert.Equal(t, tokenBalance[0], &tokenBalanceAccountFromDB)
+		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
 }

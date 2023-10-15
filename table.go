@@ -39,7 +39,8 @@ type TableInfo interface {
 }
 
 type TableGetter[T any] interface {
-	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
+	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) (T, error)
+	GetAll(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
 }
 
 type TableExistChecker[T any] interface {
@@ -816,7 +817,22 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
-func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error) {
+func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch) (T, error) {
+	var tr T
+	if sel.Type() != SelectorTypePoint {
+		return tr, fmt.Errorf("selector must be SelectorTypePoint type")
+	}
+	trs, err := t.GetAll(ctx, sel, optBatch...)
+	if err != nil {
+		return tr, err
+	}
+	if len(trs) == 0 {
+		return tr, ErrNotFound
+	}
+	return trs[0], nil
+}
+
+func (t *_table[T]) GetAll(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error) {
 	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
@@ -825,6 +841,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	}
 
 	switch sel.Type() {
+
 	case SelectorTypePoint:
 		tr := sel.(SelectorPoint[T]).Point()
 
@@ -835,12 +852,12 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 
 		bCtx := ContextWithBatch(context.Background(), batch)
 		if t.filter != nil && !t.filter.MayContain(bCtx, key) {
-			return nil, fmt.Errorf("not found")
+			return nil, ErrNotFound
 		}
 
 		record, closer, err := t.db.Get(key, batch)
 		if err != nil {
-			return nil, fmt.Errorf("not found")
+			return nil, ErrNotFound
 		}
 		defer closer.Close()
 
@@ -851,6 +868,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		}
 
 		return []T{rtr}, nil
+
 	case SelectorTypePoints:
 		selPoints := sel.(SelectorPoints[T]).Points()
 
@@ -894,6 +912,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		}
 
 		return trs, nil
+
 	case SelectorTypeRange, SelectorTypeRanges:
 		var trs []T
 
@@ -903,6 +922,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		}
 
 		return trs, nil
+
 	default:
 		return nil, fmt.Errorf("invalid selector type")
 	}
@@ -927,7 +947,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 	for i := 0; i < len(keys); i++ {
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			if errorOnNotExist {
-				return nil, fmt.Errorf("not found")
+				return nil, ErrNotFound
 			} else {
 				values[i] = values[i][:0]
 				continue

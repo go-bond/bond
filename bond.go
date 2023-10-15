@@ -17,6 +17,10 @@ const (
 	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
 )
 
+var (
+	ErrNotFound = fmt.Errorf("bond: not found")
+)
+
 type WriteOptions struct {
 	Sync bool
 }
