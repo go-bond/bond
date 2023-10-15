@@ -39,8 +39,8 @@ type TableInfo interface {
 }
 
 type TableGetter[T any] interface {
-	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) (T, error)
-	GetAll(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
+	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
+	GetPoint(ctx context.Context, sel SelectorPoint[T], optBatch ...Batch) (T, error)
 }
 
 type TableExistChecker[T any] interface {
@@ -817,12 +817,9 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
-func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch) (T, error) {
+func (t *_table[T]) GetPoint(ctx context.Context, sel SelectorPoint[T], optBatch ...Batch) (T, error) {
 	var tr T
-	if sel.Type() != SelectorTypePoint {
-		return tr, fmt.Errorf("selector must be SelectorTypePoint type")
-	}
-	trs, err := t.GetAll(ctx, sel, optBatch...)
+	trs, err := t.Get(ctx, sel, optBatch...)
 	if err != nil {
 		return tr, err
 	}
@@ -832,7 +829,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	return trs[0], nil
 }
 
-func (t *_table[T]) GetAll(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error) {
+func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error) {
 	var batch Batch
 	if len(optBatch) > 0 && optBatch[0] != nil {
 		batch = optBatch[0]
