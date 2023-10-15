@@ -40,7 +40,7 @@ type TableInfo interface {
 
 type TableGetter[T any] interface {
 	Get(ctx context.Context, sel Selector[T], optBatch ...Batch) ([]T, error)
-	GetPoint(ctx context.Context, sel SelectorPoint[T], optBatch ...Batch) (T, error)
+	GetPoint(ctx context.Context, sel T, optBatch ...Batch) (T, error)
 }
 
 type TableExistChecker[T any] interface {
@@ -817,9 +817,9 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
 }
 
-func (t *_table[T]) GetPoint(ctx context.Context, sel SelectorPoint[T], optBatch ...Batch) (T, error) {
+func (t *_table[T]) GetPoint(ctx context.Context, in T, optBatch ...Batch) (T, error) {
 	var tr T
-	trs, err := t.Get(ctx, sel, optBatch...)
+	trs, err := t.Get(ctx, NewSelectorPoint(in), optBatch...)
 	if err != nil {
 		return tr, err
 	}

@@ -202,12 +202,12 @@ func TestBondTable_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	// get token balance
-	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), NewSelectorPoint(&TokenBalance{ID: tokenBalanceAccount1.ID}))
+	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: tokenBalanceAccount1.ID})
 	require.NoError(t, err)
 	assert.Equal(t, tokenBalanceAccount1, tokenBalance)
 
 	// get token balance with non-existing id
-	tokenBalance, err = tokenBalanceTable.GetPoint(context.Background(), NewSelectorPoint(&TokenBalance{ID: 2}))
+	tokenBalance, err = tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: 2})
 	require.Error(t, err)
 	assert.Nil(t, tokenBalance)
 }
@@ -1405,7 +1405,7 @@ func TestBond_Batch(t *testing.T) {
 	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)
 
-	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), NewSelectorPoint(&TokenBalance{ID: 1}), batch)
+	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: 1}, batch)
 	require.NoError(t, err)
 	require.NotNil(t, tokenBalance)
 
