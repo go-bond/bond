@@ -2,6 +2,7 @@ package bond
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/dustin/go-humanize"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,8 +61,8 @@ func TestBtreeIndexOnInsert(t *testing.T) {
 		AccountAddress:  "0xaccount1",
 		Balance:         100,
 	}}
-
-	btreeIndex := &IndexTypeBtree[*TokenBalance]{}
+	locker := NewLocker()
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{locker: locker}
 	batch := db.Batch()
 	for _, entry := range entries {
 		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, entry, batch)
@@ -137,7 +139,8 @@ func TestBtreeDelete(t *testing.T) {
 		Balance:         100,
 	}}
 
-	btreeIndex := &IndexTypeBtree[*TokenBalance]{}
+	locker := NewLocker()
+	btreeIndex := &IndexTypeBtree[*TokenBalance]{locker: locker}
 	batch := db.Batch()
 	for _, entry := range entries {
 		err := btreeIndex.OnInsert(tokenBalanceTable, tokenBalanceContractIndex, entry, batch)
@@ -461,39 +464,60 @@ func TestBondIndexChunker(t *testing.T) {
 }
 
 func TestIndexBenchSize(t *testing.T) {
-
 	ingestIndex := func(n int, index *Index[*TokenBalance], table Table[*TokenBalance], chunker *BtreeIndexChunker) {
+		batch := table.DB().Batch()
 		for i := 0; i < n; i++ {
-			batch := table.DB().Batch()
-			index.OnInsert(table, &TokenBalance{
+			entry := &TokenBalance{
 				ID:              uint64(i),
 				AccountID:       uint32(i),
 				ContractAddress: "0xcontract1",
-				AccountAddress:  "0xaccount1",
+				AccountAddress:  RandomString(10),
 				Balance:         100,
-			}, batch)
-			err := batch.Commit(Sync)
-			require.NoError(t, err)
-			if i%2000 == 0 && chunker != nil {
-				indexkKey, _ := encodeBtreeIndex(table, &TokenBalance{
-					ID:              1,
-					AccountID:       1,
-					ContractAddress: "0xcontract1",
-					AccountAddress:  "0xaccount1",
-					Balance:         100,
-				}, index, DEFAULT_CHUNK_ID, []byte{})
-				chunker._db = table.DB()
-				chunker.Chunk(indexkKey)
+			}
+			index.OnInsert(table, entry, batch)
+			if i%100 == 0 {
+				err := batch.Commit(Sync)
+				require.NoError(t, err)
+				batch = table.DB().Batch()
+			}
+
+			if i%2000 == 0 {
+				// if chunker != nil {
+
+				// 	indexkKey, _ := encodeBtreeIndex(table, &TokenBalance{
+				// 		ID:              1,
+				// 		AccountID:       1,
+				// 		ContractAddress: "0xcontract1",
+				// 		AccountAddress:  "0xaccount1",
+				// 		Balance:         100,
+				// 	}, index, DEFAULT_CHUNK_ID, []byte{})
+				// 	chunker._db = table.DB()
+				// 	chunker.Chunk(indexkKey)
+				// }
+				fmt.Println("insereted", i)
 			}
 		}
+
+		err := batch.Commit(Sync)
+		require.NoError(t, err)
+
 		maxKey := KeyEncode(Key{
 			TableID: 0xff,
 			IndexID: 0xff,
 		})
-		err := table.DB().Backend().Compact(nil, maxKey, true)
+		err = table.DB().Backend().Compact(nil, maxKey, true)
 		require.NoError(t, err)
 		time.Sleep(time.Second * 10)
 		// wait for sometime for comeplete compaction
+		// check all the index exist for not.
+		iter := index.Iter(table, NewSelectorPoint(&TokenBalance{
+			ContractAddress: "0xcontract1",
+		}))
+		count := 0
+		for iter.First(); iter.Valid(); iter.Next() {
+			count++
+		}
+		require.Equal(t, count, n)
 	}
 
 	locker := NewLocker()
@@ -501,33 +525,36 @@ func TestIndexBenchSize(t *testing.T) {
 		index   *Index[T]
 		chunker *BtreeIndexChunker
 	}
-	testCases := []TestCase[*TokenBalance]{{
-		index: NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
-			IndexID:   PrimaryIndexID + 1,
-			IndexName: "token_balance_contract_index",
-			IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
-				return builder.AddStringField(t.ContractAddress).Bytes()
-			},
-			IndexFilterFunc: func(t *TokenBalance) bool {
-				return true
-			},
-		}),
-	}, {
-		index: NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
-			IndexID:   PrimaryIndexID + 2,
-			IndexName: "token_balance_contract_index_btree",
-			IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
-				return builder.AddStringField(t.ContractAddress).Bytes()
-			},
-			IndexFilterFunc: func(t *TokenBalance) bool {
-				return true
-			},
-			IndexType: &IndexTypeBtree[*TokenBalance]{locker: locker},
-		}),
-		chunker: &BtreeIndexChunker{
-			locker: locker,
+	testCases := []TestCase[*TokenBalance]{
+		{
+			index: NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+				IndexID:   PrimaryIndexID + 1,
+				IndexName: "token_balance_contract_index",
+				IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+					return builder.AddStringField(t.ContractAddress).Bytes()
+				},
+				IndexFilterFunc: func(t *TokenBalance) bool {
+					return true
+				},
+			}),
 		},
-	}}
+		{
+			index: NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+				IndexID:   PrimaryIndexID + 2,
+				IndexName: "token_balance_contract_index_btree",
+				IndexKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
+					return builder.AddStringField(t.ContractAddress).Bytes()
+				},
+				IndexFilterFunc: func(t *TokenBalance) bool {
+					return true
+				},
+				IndexType: &IndexTypeBtree[*TokenBalance]{locker: locker},
+			}),
+			chunker: &BtreeIndexChunker{
+				locker: locker,
+			},
+		},
+	}
 
 	DirSize := func(path string) (int64, error) {
 		var size int64
@@ -544,6 +571,7 @@ func TestIndexBenchSize(t *testing.T) {
 		return size, err
 	}
 
+	sizes := []int64{}
 	for idx, testCase := range testCases {
 		dbName = fmt.Sprintf("%s_%d", dbName, idx)
 		db := setupDatabase()
@@ -556,15 +584,30 @@ func TestIndexBenchSize(t *testing.T) {
 			TableID:   TokenBalaceTableID,
 			TableName: "token_balance",
 			TablePrimaryKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
-				return builder.AddInt64Field(int64(t.ID)).Bytes()
+				return builder.AddStringField(t.AccountAddress).Bytes()
 			},
 		})
-		ingestIndex(10^10000, testCase.index, tokenBalanceTable, testCase.chunker)
+		//8000000
+		ingestIndex(8000000, testCase.index, tokenBalanceTable, testCase.chunker)
 		db.Backend().Flush()
 		size, err := DirSize(dbName)
 		require.NoError(t, err)
-		fmt.Println("case ", idx, "size", size)
+		sizes = append(sizes, size)
 		db.Close()
 	}
+	for idx, size := range sizes {
 
+		fmt.Println("case", idx, "size", humanize.Bytes(uint64(size)))
+	}
+
+}
+
+func RandomString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
 }

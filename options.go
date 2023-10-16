@@ -42,12 +42,12 @@ func DefaultPebbleOptions() *pebble.Options {
 	pTableCache := pebble.NewTableCache(pCache, runtime.GOMAXPROCS(0), maxOpenFileLimit)
 
 	opts := &pebble.Options{
-		Cache:                       pCache,
-		TableCache:                  pTableCache,
-		FS:                          vfs.Default,
-		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       2,
-		L0StopWritesThreshold:       1000,
+		Cache:      pCache,
+		TableCache: pTableCache,
+		FS:         vfs.Default,
+		Comparer:   DefaultKeyComparer(),
+		//	L0CompactionThreshold:       2,
+		//	L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
@@ -86,10 +86,10 @@ func DefaultPebbleOptions() *pebble.Options {
 
 		l.FilterPolicy = bloom.FilterPolicy(10)
 		l.FilterType = pebble.TableFilter
-		if i > 0 {
-			// L0 is 2MB, and grows from there
-			l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
-		}
+		// if i > 0 {
+		// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
+		// }
+		l.EnsureDefaults()
 	}
 
 	return opts

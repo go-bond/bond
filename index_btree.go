@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 
@@ -8,9 +9,22 @@ import (
 	"github.com/go-bond/bond/utils"
 )
 
-const DELETE_CHUNK_ID = 0
+const DELETE_CHUNK_ID = uint32(0)
 
-const DEFAULT_CHUNK_ID = 1
+var DEFAULT_CHUNK_ID = uint32(1)
+
+var CURRENT_CHUNK_ID = uint32(1)
+
+var DEFAULT_CHUNK_ID_BUF = [4]byte{}
+
+var count = uint64(1)
+
+var DELETE_CHUNK_ID_BUF = [4]byte{}
+
+func init() {
+	binary.BigEndian.PutUint32(DEFAULT_CHUNK_ID_BUF[:], DEFAULT_CHUNK_ID)
+	binary.BigEndian.PutUint32(DELETE_CHUNK_ID_BUF[:], DELETE_CHUNK_ID)
+}
 
 type IndexTypeBtree[T any] struct {
 	locker *KeyLocker
@@ -42,10 +56,21 @@ func (ie *IndexTypeBtree[T]) OnInsert(table Table[T], idx *Index[T], tr T, batch
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DEFAULT_CHUNK_ID, buff)
-		ie.locker.RLockKey(indexKey)
-		defer ie.locker.RUnlockKey(indexKey)
-		return batch.Merge(indexKey, primaryKey, Sync)
+		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, CURRENT_CHUNK_ID, buff)
+		data, closer, err := batch.Get(indexKey)
+		if err != nil {
+			return batch.Set(indexKey, primaryKey, Sync)
+		}
+		defer closer.Close()
+		// animating merge method.
+		dst := append([]byte{}, data...)
+		dst = append(dst, primaryKey...)
+		count++
+		if count > 1000 {
+			count = 0
+			CURRENT_CHUNK_ID++
+		}
+		return batch.Set(indexKey, dst, Sync)
 	}
 	return nil
 }
@@ -163,7 +188,7 @@ func (ie *IndexTypeBtree[T]) Intersect(ctx context.Context, table Table[T], idx 
 
 var _ IndexType[any] = (*IndexTypeBtree[any])(nil)
 
-func encodeBtreeIndex[T any](table Table[T], tr T, idx *Index[T], chunkID uint8, buff []byte) ([]byte, []byte) {
+func encodeBtreeIndex[T any](table Table[T], tr T, idx *Index[T], chunkID uint32, buff []byte) ([]byte, []byte) {
 	buff = KeyEncodeRaw(table.ID(),
 		idx.IndexID,
 		func(b []byte) []byte {
@@ -172,13 +197,15 @@ func encodeBtreeIndex[T any](table Table[T], tr T, idx *Index[T], chunkID uint8,
 		nil,
 		nil,
 		buff)
-	buff = append(buff, chunkID)
+	buf := [4]byte{}
+	binary.BigEndian.PutUint32(buf[:], chunkID)
+	buff = append(buff, buf[:]...)
 	indexLen := len(buff)
 
 	// placeholder for primary key len
-	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
-	buff = table.PrimaryKey(NewKeyBuilder(buff), tr)
-	binary.BigEndian.PutUint32(buff[indexLen:indexLen+4], uint32(len(buff)-(indexLen+4)))
+	primaryKey := table.PrimaryKey(NewKeyBuilder([]byte{}), tr)
+	buff = binary.AppendUvarint(buff, uint64(len(primaryKey)))
+	buff = append(buff, primaryKey...)
 	return buff[:indexLen], buff[indexLen:]
 }
 
@@ -191,7 +218,9 @@ func encodeBtreeKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		nil,
 		nil,
 		buff)
-	buff = append(buff, DELETE_CHUNK_ID)
+	buf := [4]byte{}
+	binary.BigEndian.PutUint32(buf[:], DEFAULT_CHUNK_ID)
+	buff = append(buff, buf[:]...)
 	return buff
 }
 
@@ -201,7 +230,10 @@ func btreeKeySuccessor(src []byte, dst []byte) []byte {
 	} else {
 		dst = src
 	}
-	dst[len(src)-1] = 0xff
+	for i := len(src) - 1; i >= len(src)-4; i-- {
+		dst[i] = 0xff
+	}
+
 	return dst
 }
 
@@ -237,7 +269,7 @@ func (b *BtreeIter) First() bool {
 	}
 
 	for chunkIdx := b.source.Key(); b.source.Valid(); b.source.Next() {
-		if chunkIdx[len(chunkIdx)-1] == DELETE_CHUNK_ID {
+		if bytes.Equal(chunkIdx[len(chunkIdx)-4:len(chunkIdx)], DELETE_CHUNK_ID_BUF[:]) {
 			if len(b.prunedIDS) != 0 {
 				continue
 			}
@@ -263,7 +295,7 @@ func (b *BtreeIter) Key() []byte {
 	}
 	// construct indexKey as per index_bond.go
 	indexKey := make([]byte, 0)
-	indexKey = append(indexKey, b.source.Key()[:len(b.source.Key())-1]...)
+	indexKey = append(indexKey, b.source.Key()[:len(b.source.Key())-4]...)
 	indexKey = append(indexKey, []byte{0x00, 0x00, 0x00, 0x00}...)
 	indexKey = append(indexKey, b.chunkItr.Value()...)
 	return indexKey
@@ -346,10 +378,10 @@ type ChunkIterator struct {
 func NewChunkIterator(buf []byte, prunedIDS map[string]struct{}) *ChunkIterator {
 	lens := []int{}
 	current := 0
-	for current+4 < len(buf) {
-		idLen := binary.BigEndian.Uint32(buf[current : current+4])
+	for current < len(buf) {
+		size, n := binary.Uvarint(buf[current:])
 		lens = append(lens, current)
-		current = current + 4 + int(idLen)
+		current = current + n + int(size)
 	}
 	return &ChunkIterator{
 		chunk:     buf,
@@ -410,14 +442,14 @@ func (c *ChunkIterator) Prev() bool {
 
 func (c *ChunkIterator) Value() []byte {
 	idx := c.lens[c.pos]
-	idxLen := binary.BigEndian.Uint32(c.chunk[idx : idx+4])
-	return c.chunk[idx+4 : idx+4+int(idxLen)]
+	size, n := binary.Uvarint(c.chunk[idx:])
+	return c.chunk[idx+n : idx+n+int(size)]
 }
 
 func (c *ChunkIterator) Chunk() []byte {
 	idx := c.lens[c.pos]
-	idxLen := binary.BigEndian.Uint32(c.chunk[idx : idx+4])
-	return c.chunk[idx : idx+4+int(idxLen)]
+	size, n := binary.Uvarint(c.chunk[idx:])
+	return c.chunk[idx : idx+n+int(size)]
 }
 
 type BtreeIndexChunker struct {
@@ -437,10 +469,10 @@ func (c *BtreeIndexChunker) Chunk(key []byte) {
 		},
 	})
 	defer itr.Close()
-	LAST_CHUNK_ID := uint8(0)
+	LAST_CHUNK_ID := uint32(0)
 	for itr.First(); itr.Valid(); itr.Next() {
 		key := itr.Key()
-		LAST_CHUNK_ID = key[len(key)-1]
+		LAST_CHUNK_ID = binary.BigEndian.Uint32(key[len(key)-4 : len(key)])
 	}
 	LAST_CHUNK_ID++
 	// move all the chunks from DEFAULT CHUNKS TO SUBSEQUENET
@@ -458,7 +490,7 @@ func (c *BtreeIndexChunker) Chunk(key []byte) {
 		chunk = append(chunk, chunkIter.Chunk()...)
 		count++
 		if count >= 1000 {
-			key[len(key)-1] = LAST_CHUNK_ID
+			binary.BigEndian.PutUint32(key[len(key)-4:len(key)], LAST_CHUNK_ID)
 			if err := batch.Set(key, chunk, Sync); err != nil {
 				panic(err)
 			}
@@ -468,12 +500,12 @@ func (c *BtreeIndexChunker) Chunk(key []byte) {
 		}
 	}
 	if count > 0 {
-		key[len(key)-1] = LAST_CHUNK_ID
+		binary.BigEndian.PutUint32(key[len(key)-4:len(key)], LAST_CHUNK_ID)
 		if err := batch.Set(key, chunk, Sync); err != nil {
 			panic(err)
 		}
 	}
-	key[len(key)-1] = DEFAULT_CHUNK_ID
+	binary.BigEndian.PutUint32(key[len(key)-4:len(key)], DEFAULT_CHUNK_ID)
 	if err := batch.Delete(key, Sync); err != nil {
 		panic(err)
 	}
