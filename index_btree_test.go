@@ -1,6 +1,8 @@
 package bond
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"os"
@@ -421,7 +423,7 @@ func TestBondIndexChunker(t *testing.T) {
 	data, closer, err := db.Get(indexkKey)
 	require.NoError(t, err)
 	chunkItr := NewChunkIterator(data, map[string]struct{}{})
-	require.Equal(t, 2000, len(chunkItr.lens))
+	require.Equal(t, 2000, len(chunkItr.items))
 	closer.Close()
 
 	chunker := &BtreeIndexChunker{
@@ -451,12 +453,12 @@ func TestBondIndexChunker(t *testing.T) {
 	for itr.First(); itr.Valid(); itr.Next() {
 		if i == 0 {
 			itr := NewChunkIterator(itr.Value(), map[string]struct{}{})
-			require.Equal(t, len(itr.lens), 1)
+			require.Equal(t, len(itr.items), 1)
 			i++
 			continue
 		}
 		itr := NewChunkIterator(itr.Value(), map[string]struct{}{})
-		require.Equal(t, len(itr.lens), 1000)
+		require.Equal(t, len(itr.items), 1000)
 		i++
 	}
 	require.Equal(t, 3, i)
@@ -584,11 +586,11 @@ func TestIndexBenchSize(t *testing.T) {
 			TableID:   TokenBalaceTableID,
 			TableName: "token_balance",
 			TablePrimaryKeyFunc: func(builder KeyBuilder, t *TokenBalance) []byte {
-				return builder.AddStringField(t.AccountAddress).Bytes()
+				return builder.AddInt64Field(int64(t.ID)).Bytes()
 			},
 		})
 		//8000000
-		ingestIndex(8000000, testCase.index, tokenBalanceTable, testCase.chunker)
+		ingestIndex(1000000, testCase.index, tokenBalanceTable, testCase.chunker)
 		db.Backend().Flush()
 		size, err := DirSize(dbName)
 		require.NoError(t, err)
@@ -609,5 +611,63 @@ func RandomString(n int) string {
 	for i := range s {
 		s[i] = letters[rand.Intn(len(letters))]
 	}
-	return string(s)
+	return "0xhelloprefix" + string(s)
+}
+
+func TestChunk(t *testing.T) {
+	builder := &ChunkBuilder{
+		buf: make([]byte, 0),
+	}
+	for i := 0; i < 20; i++ {
+		data := [4]byte{}
+		binary.BigEndian.PutUint32(data[:], uint32(i))
+		builder.Add(data[:])
+	}
+	itr := NewChunkIterator(builder.buf, map[string]struct{}{})
+	i := 0
+	for itr.First(); itr.Valid(); itr.Next() {
+		data := [4]byte{}
+		binary.BigEndian.PutUint32(data[:], uint32(i))
+		require.Equal(t, data[:], itr.Value())
+		i++
+	}
+	require.Equal(t, i, 20)
+}
+
+func TestSortInsert(t *testing.T) {
+	i := 0
+	values := map[string]struct{}{}
+	chunk := []byte{}
+	for i < 20 {
+		if len(chunk) == 0 {
+			builder := &ChunkBuilder{
+				buf: make([]byte, 0),
+			}
+			value := RandomString(10)
+			_, ok := values[value]
+			require.False(t, ok)
+			values[value] = struct{}{}
+			builder.Add([]byte(value))
+			chunk = builder.buf
+			i++
+			continue
+		}
+		value := RandomString(10)
+		_, ok := values[value]
+		require.False(t, ok)
+		values[value] = struct{}{}
+		chunk = SortInsert(chunk, []byte(value))
+		i++
+	}
+	itr := NewChunkIterator(chunk, map[string]struct{}{})
+	prev := []byte{}
+	i = 0
+	for itr.First(); itr.Valid(); itr.Next() {
+		require.True(t, bytes.Compare(prev, itr.Value()) < 0)
+		_, ok := values[string(itr.Value())]
+		require.True(t, ok)
+		prev = itr.Value()
+		i++
+	}
+	require.Equal(t, i, 20)
 }

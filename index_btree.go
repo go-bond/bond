@@ -59,18 +59,21 @@ func (ie *IndexTypeBtree[T]) OnInsert(table Table[T], idx *Index[T], tr T, batch
 		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, CURRENT_CHUNK_ID, buff)
 		data, closer, err := batch.Get(indexKey)
 		if err != nil {
-			return batch.Set(indexKey, primaryKey, Sync)
+			builder := &ChunkBuilder{
+				buf: make([]byte, 0),
+			}
+			builder.Add(primaryKey)
+			return batch.Set(indexKey, builder.buf, Sync)
 		}
 		defer closer.Close()
-		// animating merge method.
-		dst := append([]byte{}, data...)
-		dst = append(dst, primaryKey...)
+		chunk := SortInsert(data, primaryKey)
+
 		count++
 		if count > 1000 {
 			count = 0
 			CURRENT_CHUNK_ID++
 		}
-		return batch.Set(indexKey, dst, Sync)
+		return batch.Set(indexKey, chunk, Sync)
 	}
 	return nil
 }
@@ -203,9 +206,9 @@ func encodeBtreeIndex[T any](table Table[T], tr T, idx *Index[T], chunkID uint32
 	indexLen := len(buff)
 
 	// placeholder for primary key len
-	primaryKey := table.PrimaryKey(NewKeyBuilder([]byte{}), tr)
-	buff = binary.AppendUvarint(buff, uint64(len(primaryKey)))
-	buff = append(buff, primaryKey...)
+	buff = table.PrimaryKey(NewKeyBuilder(buff), tr)
+	// buff = binary.AppendUvarint(buff, uint64(len(primaryKey)))
+	// buff = append(buff, primaryKey...)
 	return buff[:indexLen], buff[indexLen:]
 }
 
@@ -370,29 +373,37 @@ func (b *BtreeIter) Close() error {
 
 type ChunkIterator struct {
 	chunk     []byte
-	lens      []int
 	pos       int
 	prunedIDS map[string]struct{}
+	items     [][]byte
 }
 
 func NewChunkIterator(buf []byte, prunedIDS map[string]struct{}) *ChunkIterator {
-	lens := []int{}
 	current := 0
+	prev := []byte{}
+	items := [][]byte{}
 	for current < len(buf) {
-		size, n := binary.Uvarint(buf[current:])
-		lens = append(lens, current)
-		current = current + n + int(size)
+		prefixLen, n := binary.Uvarint(buf[current:])
+		current += n
+		dataLen, n := binary.Uvarint(buf[current:])
+		current += n
+		data := []byte{}
+		data = append(data, prev[:int(prefixLen)]...)
+		data = append(data, buf[current:current+int(dataLen)]...)
+		current += int(dataLen)
+		items = append(items, data)
+		prev = data
 	}
 	return &ChunkIterator{
 		chunk:     buf,
-		lens:      lens,
 		pos:       0,
 		prunedIDS: prunedIDS,
+		items:     items,
 	}
 }
 
 func (c *ChunkIterator) Valid() bool {
-	return c.pos < len(c.lens) && c.pos > -1
+	return c.pos < len(c.items) && c.pos > -1
 }
 
 func (c *ChunkIterator) First() bool {
@@ -422,7 +433,7 @@ func (c *ChunkIterator) isPruned() bool {
 }
 
 func (c *ChunkIterator) Last() bool {
-	c.pos = len(c.lens) - 1
+	c.pos = len(c.items) - 1
 	if c.Valid() && !c.isPruned() {
 		return true
 	}
@@ -441,15 +452,14 @@ func (c *ChunkIterator) Prev() bool {
 }
 
 func (c *ChunkIterator) Value() []byte {
-	idx := c.lens[c.pos]
-	size, n := binary.Uvarint(c.chunk[idx:])
-	return c.chunk[idx+n : idx+n+int(size)]
+	return c.items[c.pos]
 }
 
 func (c *ChunkIterator) Chunk() []byte {
-	idx := c.lens[c.pos]
-	size, n := binary.Uvarint(c.chunk[idx:])
-	return c.chunk[idx : idx+n+int(size)]
+	panic("not implenmented")
+	//idx := c.lens[c.pos]
+	// size, n := binary.Uvarint(c.chunk[idx:])
+	// return c.chunk[idx : idx+n+int(size)]
 }
 
 type BtreeIndexChunker struct {
@@ -513,4 +523,53 @@ func (c *BtreeIndexChunker) Chunk(key []byte) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+type ChunkBuilder struct {
+	buf  []byte
+	prev []byte
+}
+
+func (b *ChunkBuilder) Add(data []byte) {
+	n, trimmed := b.TrimPrefix(data)
+	b.buf = binary.AppendUvarint(b.buf, uint64(n))
+	b.buf = binary.AppendUvarint(b.buf, uint64(len(trimmed)))
+	b.buf = append(b.buf, trimmed...)
+	b.prev = data
+}
+
+func (b *ChunkBuilder) TrimPrefix(data []byte) (int, []byte) {
+	i := 0
+	for ; i < len(data); i++ {
+		if i < len(b.prev) && data[i] == b.prev[i] {
+			continue
+		}
+		break
+	}
+	return i, data[i:]
+}
+
+func SortInsert(chunk []byte, data []byte) []byte {
+	builder := &ChunkBuilder{
+		buf: make([]byte, 0),
+	}
+	itr := NewChunkIterator(chunk, make(map[string]struct{}))
+	added := false
+	for itr.First(); itr.Valid(); itr.Next() {
+		if added {
+			builder.Add(itr.Value())
+			continue
+		}
+		if bytes.Compare(builder.prev, data) < 0 && bytes.Compare(itr.Value(), data) > 0 {
+			builder.Add(data)
+			builder.Add(itr.Value())
+			added = true
+			continue
+		}
+		builder.Add(itr.Value())
+	}
+	if !added {
+		builder.Add(data)
+	}
+	return builder.buf
 }
