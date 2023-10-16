@@ -231,9 +231,9 @@ func TestFilter_Upsert(t *testing.T) {
 
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
 
-	dbTr, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(tokenBalanceAccountUpdated))
+	dbTr, err := tokenBalanceTable.GetPoint(context.Background(), tokenBalanceAccountUpdated)
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccountUpdated, dbTr[0])
+	assert.Equal(t, tokenBalanceAccountUpdated, dbTr)
 
 	mFilter.AssertExpectations(t)
 }
@@ -281,9 +281,9 @@ func TestFilter_Get(t *testing.T) {
 
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
 
-	dbTr, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(tokenBalanceAccount))
+	dbTr, err := tokenBalanceTable.GetPoint(context.Background(), tokenBalanceAccount)
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccount, dbTr[0])
+	assert.Equal(t, tokenBalanceAccount, dbTr)
 
 	mFilter.AssertExpectations(t)
 }

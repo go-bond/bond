@@ -2,7 +2,6 @@ package bloom
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math/rand"
 	"strings"
@@ -20,7 +19,7 @@ type filterStorer struct {
 func (f *filterStorer) Get(key []byte, batch ...bond.Batch) (data []byte, closer io.Closer, err error) {
 	keyData, ok := f.data[string(key)]
 	if !ok {
-		return nil, nil, fmt.Errorf("not found")
+		return nil, nil, bond.ErrNotFound
 	}
 	return keyData, io.NopCloser(nil), nil
 }

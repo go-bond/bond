@@ -202,12 +202,12 @@ func TestBondTable_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	// get token balance
-	tokenBalance, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(&TokenBalance{ID: tokenBalanceAccount1.ID}))
+	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: tokenBalanceAccount1.ID})
 	require.NoError(t, err)
-	assert.Equal(t, tokenBalanceAccount1, tokenBalance[0])
+	assert.Equal(t, tokenBalanceAccount1, tokenBalance)
 
 	// get token balance with non-existing id
-	tokenBalance, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoint(&TokenBalance{ID: 2}))
+	tokenBalance, err = tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: 2})
 	require.Error(t, err)
 	assert.Nil(t, tokenBalance)
 }
@@ -1405,13 +1405,13 @@ func TestBond_Batch(t *testing.T) {
 	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)
 
-	tokenBalance, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(&TokenBalance{ID: 1}), batch)
+	tokenBalance, err := tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: 1}, batch)
 	require.NoError(t, err)
 	require.NotNil(t, tokenBalance)
 
-	tokenBalance[0].Balance += 20
+	tokenBalance.Balance += 20
 
-	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance[0]}, batch)
+	err = tokenBalanceTable.Update(context.Background(), []*TokenBalance{tokenBalance}, batch)
 	require.NoError(t, err)
 
 	err = batch.Commit(Sync)
@@ -1429,6 +1429,6 @@ func TestBond_Batch(t *testing.T) {
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
 		require.NoError(t, err)
-		assert.Equal(t, tokenBalance[0], &tokenBalanceAccountFromDB)
+		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
 }
