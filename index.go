@@ -159,7 +159,11 @@ func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
 	}
 
 	if idx.IndexType == nil {
-		idx.IndexType = &IndexTypeBond[T]{}
+		//idx.IndexType = //&IndexTypeBond[T]{}
+		idx.IndexType = &IndexTypeBtree[T]{
+			count:          1,
+			currentChunkID: 1,
+		}
 	}
 
 	if idx.IndexOrderFunction == nil {

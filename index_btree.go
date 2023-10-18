@@ -27,7 +27,9 @@ func init() {
 }
 
 type IndexTypeBtree[T any] struct {
-	locker *KeyLocker
+	locker         *KeyLocker
+	count          int
+	currentChunkID uint32
 }
 
 // draft Idea:
@@ -56,29 +58,20 @@ func (ie *IndexTypeBtree[T]) OnInsert(table Table[T], idx *Index[T], tr T, batch
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, CURRENT_CHUNK_ID, buff)
-		data, closer, err := batch.Get(indexKey)
-		if err != nil {
-			builder := &ChunkBuilder{
-				buf: make([]byte, 0),
-			}
-			builder.Add(primaryKey)
-			return batch.Set(indexKey, builder.buf, Sync)
+		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, ie.currentChunkID, buff)
+		ie.count++
+		if ie.count > 1000 {
+			// reset the current chunk for the next iteration.
+			ie.count = 1
+			ie.currentChunkID++
 		}
-		defer closer.Close()
-		chunk := SortInsert(data, primaryKey)
-
-		count++
-		if count > 1000 {
-			count = 0
-			CURRENT_CHUNK_ID++
-		}
-		return batch.Set(indexKey, chunk, Sync)
+		return batch.Merge(indexKey, primaryKey, Sync)
 	}
 	return nil
 }
 
 func (ie *IndexTypeBtree[T]) OnUpdate(table Table[T], idx *Index[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
+	panic("update index is not implemented!!")
 	var (
 		buff  []byte
 		buff2 []byte
@@ -114,19 +107,34 @@ func (ie *IndexTypeBtree[T]) OnUpdate(table Table[T], idx *Index[T], oldTr T, tr
 }
 
 func (ie *IndexTypeBtree[T]) OnDelete(table Table[T], idx *Index[T], tr T, batch Batch, buffs ...[]byte) error {
-	var buff []byte
-	if len(buffs) > 0 {
-		buff = buffs[0]
-	}
-
-	if idx.IndexFilterFunction(tr) {
-		indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DELETE_CHUNK_ID, buff)
-		ie.locker.RLockKey(indexKey)
-		defer ie.locker.RUnlockKey(indexKey)
-		if err := batch.Merge(indexKey, primaryKey, Sync); err != nil {
-			return err
+	//panic("delete index is not implemented!!")
+	// NOTE: It'll delete all the indexes for the sake of the benchmark.
+	lowerBound := encodeBtreeKey(table, tr, idx, []byte{})
+	upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], []byte{})
+	itr := table.DB().Iter(&IterOptions{
+		IterOptions: pebble.IterOptions{
+			LowerBound: lowerBound,
+			UpperBound: upperBound,
+		},
+	})
+	for itr.First(); itr.Valid(); itr.Next() {
+		if err := table.DB().Delete(itr.Key(), Sync); err != nil {
+			panic(err)
 		}
 	}
+	// var buff []byte
+	// if len(buffs) > 0 {
+	// 	buff = buffs[0]
+	// }
+
+	// if idx.IndexFilterFunction(tr) {
+	// 	indexKey, primaryKey := encodeBtreeIndex(table, tr, idx, DELETE_CHUNK_ID, buff)
+	// 	ie.locker.RLockKey(indexKey)
+	// 	defer ie.locker.RUnlockKey(indexKey)
+	// 	if err := batch.Merge(indexKey, primaryKey, Sync); err != nil {
+	// 		return err
+	// 	}
+	// }
 	return nil
 }
 
@@ -141,7 +149,7 @@ func (ie *IndexTypeBtree[T]) Iter(table Table[T], idx *Index[T], selector Select
 	case SelectorTypePoint:
 		sel := selector.(*selectorPoint[T])
 		lowerBound := encodeBtreeKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
-		upperBound := btreeKeySuccessor(lowerBound, keyBufferPool.Get()[:0])
+		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
 		releaseBuffer := func() {
 			keyBufferPool.Put(lowerBound)
 			keyBufferPool.Put(upperBound)
@@ -200,16 +208,26 @@ func encodeBtreeIndex[T any](table Table[T], tr T, idx *Index[T], chunkID uint32
 		nil,
 		nil,
 		buff)
-	buf := [4]byte{}
-	binary.BigEndian.PutUint32(buf[:], chunkID)
-	buff = append(buff, buf[:]...)
-	indexLen := len(buff)
+	// placeholder for order len
+	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff}...)
+	lenIndex := len(buff) - 4
+	buff = idx.IndexOrderFunction(IndexOrder{keyBuilder: NewKeyBuilder(buff)}, tr).Bytes()
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
 
-	// placeholder for primary key len
+	// placeholder for chunkID.
+	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff}...)
+	lenIndex = len(buff) - 4
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(chunkID))
+	lenIndex = len(buff)
+
+	// add the primary key in the same buffer to avoid allocation
+	// placeholder for primary key len so chunk iterator can read it.
+	buff = append(buff, []byte{0xff, 0xff}...)
 	buff = table.PrimaryKey(NewKeyBuilder(buff), tr)
-	// buff = binary.AppendUvarint(buff, uint64(len(primaryKey)))
-	// buff = append(buff, primaryKey...)
-	return buff[:indexLen], buff[indexLen:]
+	len3 := uint16(len(buff) - (lenIndex + 2))
+	binary.BigEndian.PutUint16(buff[lenIndex:lenIndex+2], len3)
+	// return indexkey and primary key.
+	return buff[:lenIndex], buff[lenIndex:]
 }
 
 func encodeBtreeKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {
@@ -221,9 +239,17 @@ func encodeBtreeKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		nil,
 		nil,
 		buff)
-	buf := [4]byte{}
-	binary.BigEndian.PutUint32(buf[:], DEFAULT_CHUNK_ID)
-	buff = append(buff, buf[:]...)
+	// placeholder for order len
+	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff}...)
+	lenIndex := len(buff) - 4
+	buff = idx.IndexOrderFunction(IndexOrder{keyBuilder: NewKeyBuilder(buff)}, tr).Bytes()
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
+
+	// placeholder for chunkID.
+	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff}...)
+	lenIndex = len(buff) - 4
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(DEFAULT_CHUNK_ID))
+	lenIndex = len(buff)
 	return buff
 }
 
@@ -235,6 +261,12 @@ func btreeKeySuccessor(src []byte, dst []byte) []byte {
 	}
 	for i := len(src) - 1; i >= len(src)-4; i-- {
 		dst[i] = 0xff
+	}
+	for i := len(src) - 4; i >= 0; i-- {
+		if dst[i] != 0xff {
+			dst[i]++
+			return dst
+		}
 	}
 
 	return dst
@@ -299,7 +331,6 @@ func (b *BtreeIter) Key() []byte {
 	// construct indexKey as per index_bond.go
 	indexKey := make([]byte, 0)
 	indexKey = append(indexKey, b.source.Key()[:len(b.source.Key())-4]...)
-	indexKey = append(indexKey, []byte{0x00, 0x00, 0x00, 0x00}...)
 	indexKey = append(indexKey, b.chunkItr.Value()...)
 	return indexKey
 }
@@ -379,20 +410,14 @@ type ChunkIterator struct {
 }
 
 func NewChunkIterator(buf []byte, prunedIDS map[string]struct{}) *ChunkIterator {
-	current := 0
-	prev := []byte{}
 	items := [][]byte{}
+	current := 0
 	for current < len(buf) {
-		prefixLen, n := binary.Uvarint(buf[current:])
-		current += n
-		dataLen, n := binary.Uvarint(buf[current:])
-		current += n
-		data := []byte{}
-		data = append(data, prev[:int(prefixLen)]...)
-		data = append(data, buf[current:current+int(dataLen)]...)
-		current += int(dataLen)
-		items = append(items, data)
-		prev = data
+		// read all the primary key.
+		n := binary.BigEndian.Uint16(buf[current : current+2])
+		current += 2
+		items = append(items, buf[current:current+int(n)])
+		current += int(n)
 	}
 	return &ChunkIterator{
 		chunk:     buf,
