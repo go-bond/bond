@@ -15,7 +15,6 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
 	github.com/urfave/cli/v2 v2.25.7
-	github.com/vmihailenco/msgpack/v5 v5.4.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 )
 
@@ -47,7 +46,6 @@ require (
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	golang.org/x/net v0.17.0 // indirect

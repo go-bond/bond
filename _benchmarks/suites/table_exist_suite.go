@@ -18,16 +18,11 @@ func init() {
 }
 
 func BenchmarkTableExistSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
-	// msgpack.GetEncoder().SetCustomStructTag("json")
-	// msgpack.GetDecoder().SetCustomStructTag("json")
-
 	var serializers = []struct {
 		Name       string
 		Serializer bond.Serializer[any]
 	}{
 		//{"JSONSerializer", &serializers.JsonSerializer{}},
-		//{"MsgpackSerializer", &serializers.MsgpackSerializer{}},
-		//{"MsgpackGenSerializer", &serializers.MsgpackGenSerializer{}},
 		{"CBORSerializer", &serializers.CBORSerializer{}},
 	}
 
