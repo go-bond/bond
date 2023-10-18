@@ -29,7 +29,23 @@ type Iterator interface {
 }
 
 type _iterConstructor interface {
+	NewIter(opts *pebble.IterOptions) Iterator
+}
+
+type _pebbleIterConstructor interface {
 	NewIter(opts *pebble.IterOptions) (*pebble.Iterator, error)
+}
+
+type _bondIterConstructor struct {
+	pebbleConstructor _pebbleIterConstructor
+}
+
+func (bc *_bondIterConstructor) NewIter(opts *pebble.IterOptions) Iterator {
+	itr, err := bc.pebbleConstructor.NewIter(opts)
+	if err != nil {
+		return &errIterator{err: err}
+	}
+	return itr
 }
 
 type _iterator struct {
@@ -39,11 +55,7 @@ type _iterator struct {
 }
 
 func newIterator(itc _iterConstructor, opts *IterOptions) *_iterator {
-	iter, err := itc.NewIter(&opts.IterOptions)
-	if err != nil {
-		panic(err) // TOOD: change newInterator to return error
-	}
-	return &_iterator{Iterator: iter, opts: opts}
+	return &_iterator{Iterator: itc.NewIter(&opts.IterOptions), opts: opts}
 }
 
 func (it *_iterator) Close() error {

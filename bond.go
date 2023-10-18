@@ -209,7 +209,7 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 	if len(batch) > 0 && batch[0] != nil {
 		return batch[0].Iter(opt)
 	} else {
-		return newIterator(db.pebble, opt)
+		return newIterator(&_bondIterConstructor{pebbleConstructor: db.pebble}, opt)
 	}
 }
 
@@ -219,6 +219,17 @@ func (db *_db) Batch() Batch {
 
 func (db *_db) Apply(b Batch, opt WriteOptions) error {
 	return b.Commit(opt)
+}
+
+// Compact the entire bond database
+func (db *_db) Compact() error {
+	// It is sufficient to compact till the maxKey
+	// because most of the keys are less than TableID `0xff`.
+	maxKey := KeyEncode(Key{
+		TableID: 0xff,
+		IndexID: 0xff,
+	})
+	return db.pebble.Compact(nil, maxKey, true)
 }
 
 func (db *_db) Close() error {
