@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"reflect"
 	"sort"
@@ -144,6 +145,8 @@ type _table[T any] struct {
 
 	filter Filter
 
+	allocator *Allocator
+
 	mutex sync.RWMutex
 }
 
@@ -159,6 +162,11 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 	}
 
 	// TODO: check if id == 0, and if so, return error that its reserved for bond
+	allocator, err := NewAllocator(opt.TableID, opt.DB)
+	if err != nil {
+		panic(err)
+		// @poonai: change signature
+	}
 
 	table := &_table[T]{
 		db:             opt.DB,
@@ -179,6 +187,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		serializer:        serializer,
 		filter:            opt.Filter,
 		mutex:             sync.RWMutex{},
+		allocator:         allocator,
 	}
 
 	return table
@@ -258,6 +267,7 @@ func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 }
 
 func (t *_table[T]) reindex(idxs []*Index[T]) error {
+	panic("redix sufferd")
 	idxsMap := make(map[IndexID]*Index[T])
 	for _, idx := range idxs {
 		idxsMap[idx.IndexID] = idx
@@ -359,6 +369,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
 	defer t.db.putKeyArray(keysBuffer)
 
+	// record key buffers
+	recordKeyBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(recordKeyBuffer)
+
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
@@ -398,6 +412,11 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			if t.keyDuplicate(i, keys) || t.exist(key, batch, iter) {
 				return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 			}
+			// TODO: @poonai optimize for batched allocation.
+			recordID, _, err := t.allocator.Alloc(1)
+			if err != nil {
+				return err
+			}
 
 			// serialize
 			tr := trs[keyOrder[i]]
@@ -405,15 +424,25 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			if err != nil {
 				return err
 			}
+			recordKey := t.recordKey(recordID, recordKeyBuffer[i][:0])
 
-			err = batch.Set(key, data, Sync)
+			err = batch.Set(recordKey, data, Sync)
+			if err != nil {
+				return err
+			}
+			if len(recordKey[2:]) != 8 {
+				panic("to")
+			}
+
+			// TODO: must change
+			err = batch.Set(key, recordKey[2:], Sync)
 			if err != nil {
 				return err
 			}
 
 			// index keys
 			for _, idx := range indexes {
-				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
+				err = idx.OnInsert(t, tr, batch, recordKey[2:], indexKeyBuffer[:0])
 				if err != nil {
 					return err
 				}
@@ -439,6 +468,15 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	return nil
+}
+
+func (t *_table[T]) recordKey(recordID uint64, buff []byte) []byte {
+	buff = append(buff, byte(t.allocator.TableID))
+	buff = append(buff, byte(RecordIndexID))
+	// add 8 byte for record id.
+	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}...)
+	binary.BigEndian.PutUint64(buff[2:], recordID)
+	return buff
 }
 
 func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) error {
@@ -622,6 +660,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 }
 
 func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error {
+	panic("upsert not support")
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)

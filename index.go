@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"sort"
@@ -119,6 +120,10 @@ func IndexOrderDefault[T any](o IndexOrder, t T) IndexOrder {
 
 const PrimaryIndexID = IndexID(0)
 const PrimaryIndexName = "primary"
+
+const RecordIndexID = IndexID(100)
+
+// TODO: @poonai must be changed for sure
 
 type IndexInfo interface {
 	ID() IndexID
@@ -277,14 +282,14 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	}
 }
 
-func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, recordBuff []byte, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
 		buff = buffs[0]
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
+		return batch.Set(encodeRecordIndexKey(table, tr, idx, recordBuff, buff), _indexKeyValue, Sync)
 	}
 	return nil
 }
@@ -419,4 +424,28 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		},
 		buff,
 	)
+}
+
+func encodeRecordIndexKey[T any](table Table[T], tr T, idx *Index[T], recordBuff []byte, buff []byte) []byte {
+	buff = append(buff, byte(table.ID()))
+	buff = append(buff, byte(idx.ID()))
+
+	// placeholder for len
+	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
+	lenIndex := len(buff) - 4
+
+	// write index
+	buff = idx.IndexKeyFunction(NewKeyBuilder(buff), tr)
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
+
+	// write index order
+	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
+	lenIndex = len(buff) - 4
+
+	buff = idx.IndexOrderFunction(IndexOrder{keyBuilder: NewKeyBuilder(buff)}, tr).Bytes()
+	binary.BigEndian.PutUint32(buff[lenIndex:lenIndex+4], uint32(len(buff)-(lenIndex+4)))
+
+	// add record buff
+	buff = append(buff, recordBuff...)
+	return buff
 }

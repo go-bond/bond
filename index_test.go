@@ -959,6 +959,7 @@ func TestIndex_Callbacks(t *testing.T) {
 		index              *Index[*TokenBalance]
 		existingRow        *TokenBalance
 		newRow             *TokenBalance
+		recordKeyBuff      []byte
 		setCallExpected    bool
 		deleteCallExpected bool
 	}{
@@ -968,6 +969,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:           idx1,
 			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			setCallExpected: true,
+			recordKeyBuff:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_1_OnUpdate",
@@ -975,6 +977,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:              idx1,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 			setCallExpected:    false,
 			deleteCallExpected: false,
 		},
@@ -984,6 +987,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:              idx1,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test"},
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 			setCallExpected:    false,
 			deleteCallExpected: false,
 		},
@@ -992,6 +996,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			op:                 "delete",
 			index:              idx1,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 			deleteCallExpected: true,
 		},
 		{
@@ -999,6 +1004,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			op:              "insert",
 			index:           idx2Ordered,
 			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
+			recordKeyBuff:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 			setCallExpected: true,
 		},
 		{
@@ -1009,6 +1015,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			setCallExpected:    true,
 			deleteCallExpected: true,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_2_Ordered_OnUpdate_Same",
@@ -1018,6 +1025,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
 			setCallExpected:    false,
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_2_Ordered_OnDelete",
@@ -1025,6 +1033,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:              idx2Ordered,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			deleteCallExpected: true,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:            "Index_3_Filtered_OnInsert",
@@ -1032,6 +1041,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:           idx3Filtered,
 			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			setCallExpected: false,
+			recordKeyBuff:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_OnUpdate",
@@ -1041,6 +1051,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			setCallExpected:    false,
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_OnUpdate_Same",
@@ -1050,6 +1061,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test"},
 			setCallExpected:    false,
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_OnDelete",
@@ -1057,6 +1069,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:              idx3Filtered,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 20},
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:            "Index_3_Filtered_2_OnInsert",
@@ -1064,6 +1077,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:           idx3Filtered,
 			newRow:          &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
 			setCallExpected: true,
+			recordKeyBuff:   []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_2_OnUpdate",
@@ -1073,6 +1087,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
 			setCallExpected:    true,
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_2_OnUpdate_Same",
@@ -1082,6 +1097,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			newRow:             &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
 			setCallExpected:    false,
 			deleteCallExpected: false,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 		{
 			name:               "Index_3_Filtered_2_OnDelete",
@@ -1089,6 +1105,7 @@ func TestIndex_Callbacks(t *testing.T) {
 			index:              idx3Filtered,
 			existingRow:        &TokenBalance{ID: 1, AccountAddress: "test", Balance: 200},
 			deleteCallExpected: true,
+			recordKeyBuff:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 		},
 	}
 
@@ -1102,7 +1119,7 @@ func TestIndex_Callbacks(t *testing.T) {
 					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
-				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, &mockBatch)
+				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, &mockBatch, tc.recordKeyBuff)
 				require.NoError(t, err)
 
 				mockBatch.AssertExpectations(t)

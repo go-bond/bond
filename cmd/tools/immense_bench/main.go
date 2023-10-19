@@ -16,33 +16,55 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+func RandomString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
+
 type UniqueRand struct {
-	generated map[uint64]bool //keeps track of
-	rng       *rand.Rand      //underlying random number generator
+	generated    map[string]bool //keeps track of
+	rng          *rand.Rand      //underlying random number generator
+	generatedInt map[uint32]bool
 }
 
 // Generating unique rand
 func NewUniqueRand() *UniqueRand {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
+
 	return &UniqueRand{
-		generated: map[uint64]bool{},
-		rng:       r1,
+		generated:    map[string]bool{},
+		rng:          r1,
+		generatedInt: map[uint32]bool{},
 	}
 }
 
-func (u *UniqueRand) Int() uint64 {
+func (u *UniqueRand) String() string {
 	for {
-		i := u.rng.Uint64()
+		i := RandomString(10)
 		if !u.generated[i] {
 			u.generated[i] = true
 			return i
 		}
 	}
 }
+func (u *UniqueRand) Int() uint32 {
+	for {
+		i := u.rng.Uint32()
+		if !u.generatedInt[i] {
+			u.generatedInt[i] = true
+			return i
+		}
+	}
+}
 
 type TokenBalance struct {
-	ID              uint64 `json:"id"`
+	ID              string `json:"id"`
 	AccountID       uint32 `json:"accountId"`
 	ContractAddress string `json:"contractAddress"`
 	AccountAddress  string `json:"accountAddress"`
@@ -54,16 +76,16 @@ var insertedEntries uint64
 
 // Insert records to the bond db
 // Number of entires = batchSize * totalBatch
-func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
+func insertRecords(tableID bond.TableID, db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	idGenerator := NewUniqueRand()
-	TokenBalanceTableID := bond.TableID(idGenerator.Int())
+	TokenBalanceTableID := bond.TableID(tableID)
 
 	table := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
-		TableName: fmt.Sprintf("token_balance_%d", idGenerator.Int()),
+		TableName: fmt.Sprintf("token_balance_%d", tableID),
 		TableID:   TokenBalanceTableID,
 		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
-			return builder.AddUint64Field(tb.ID).Bytes()
+			return builder.AddStringField(tb.ID).Bytes()
 		},
 	})
 
@@ -121,13 +143,14 @@ func insertRecords(db bond.DB, batchSize, totalBatch int, wg *sync.WaitGroup) {
 	entries := make([]*TokenBalance, 0, batchSize)
 	for i := 0; i < totalBatch; i++ {
 		for j := 0; j < batchSize; j++ {
-			id := idGenerator.Int()
+			id := idGenerator.String()
+			n := idGenerator.Int()
 			entries = append(entries, &TokenBalance{
 				ID:              id,
-				AccountID:       uint32(id % 10),
-				ContractAddress: "0xtestContract" + fmt.Sprintf("%d", id),
-				AccountAddress:  "0xtestAccount" + fmt.Sprintf("%d", id%5),
-				Balance:         uint64((id % 100) * 10),
+				AccountID:       uint32(n % 10),
+				ContractAddress: "0xtestContract" + fmt.Sprintf("%d", n),
+				AccountAddress:  "0xtestAccount" + fmt.Sprintf("%d", n%5),
+				Balance:         uint64((n % 100) * 10),
 			})
 		}
 		err := table.Insert(context.TODO(), entries)
@@ -203,7 +226,10 @@ func runBondInsert(totalTable, totalBatch, batchSize int) {
 	start := time.Now()
 	for i := 0; i < totalTable; i++ {
 		wg.Add(1)
-		go insertRecords(db, batchSize, totalBatch, wg)
+		func(id bond.TableID) {
+			go insertRecords(id, db, batchSize, totalBatch, wg)
+		}(bond.TableID(i))
+
 	}
 
 	go func() {
