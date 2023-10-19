@@ -30,6 +30,7 @@ type IndexTypeBtree[T any] struct {
 	locker         *KeyLocker
 	count          int
 	currentChunkID uint32
+	bondIndex      *IndexTypeBond[T]
 }
 
 // draft Idea:
@@ -139,6 +140,9 @@ func (ie *IndexTypeBtree[T]) OnDelete(table Table[T], idx *Index[T], tr T, batch
 }
 
 func (ie *IndexTypeBtree[T]) Iter(table Table[T], idx *Index[T], selector Selector[T], optBatch ...Batch) Iterator {
+	if idx.IndexID == PrimaryIndexID {
+		return ie.bondIndex.Iter(table, idx, selector, optBatch...)
+	}
 	var iterConstructor Iterationer = table.DB()
 	if len(optBatch) > 0 {
 		iterConstructor = optBatch[0]
