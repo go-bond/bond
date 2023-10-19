@@ -60,8 +60,8 @@ func (a *Allocator) Alloc(n uint64) (uint64, uint64, error) {
 	a.Lock()
 	defer a.Unlock()
 	a.max += n
-	if err := a.db.Set(getAllocatorKey(a.TableID), EncodeUint64(a.max), Sync); err != nil {
-		return 0, 0, err
-	}
+	// if err := a.db.Set(getAllocatorKey(a.TableID), EncodeUint64(a.max), Sync); err != nil {
+	// 	return 0, 0, err
+	// }
 	return a.max - n, a.max, nil
 }

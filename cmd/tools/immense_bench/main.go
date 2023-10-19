@@ -46,7 +46,7 @@ func NewUniqueRand() *UniqueRand {
 
 func (u *UniqueRand) String() string {
 	for {
-		i := RandomString(10)
+		i := RandomString(30)
 		if !u.generated[i] {
 			u.generated[i] = true
 			return i
