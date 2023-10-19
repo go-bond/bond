@@ -289,7 +289,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, recordBuff []by
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		return batch.Set(encodeRecordIndexKey(table, tr, idx, recordBuff, buff), _indexKeyValue, Sync)
+		return batch.Set(encodeRecordIndexKey(table, tr, idx, recordBuff, buff[:0]), _indexKeyValue, Sync)
 	}
 	return nil
 }

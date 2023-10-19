@@ -430,9 +430,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			if err != nil {
 				return err
 			}
-			if len(recordKey[2:]) != 8 {
-				panic("to")
-			}
 
 			// TODO: must change
 			err = batch.Set(key, recordKey[2:], Sync)
@@ -450,7 +447,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 			// add to bloom filter
 			if t.filter != nil {
-				t.filter.Add(batchCtx, key)
+				t.filter.Add(batchCtx, recordKey)
 			}
 		}
 
@@ -473,8 +470,10 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 func (t *_table[T]) recordKey(recordID uint64, buff []byte) []byte {
 	buff = append(buff, byte(t.allocator.TableID))
 	buff = append(buff, byte(RecordIndexID))
+	// JUST ADDING 4 bytes to make the split function happy.
+	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
 	// add 8 byte for record id.
-	buff = append(buff, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}...)
+	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
 	binary.BigEndian.PutUint64(buff[2:], recordID)
 	return buff
 }
