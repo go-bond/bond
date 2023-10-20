@@ -188,13 +188,16 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			keyBuffer := q.table.db.getKeyBufferPool().Get()
 			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
 
-			rowIdxKey := key.ToKey()
-			selIdxKey := KeyBytes(encodeIndexKey[T](q.table, q.afterSelector, q.index, keyBuffer[:0])).ToKey()
-			if bytes.Compare(selIdxKey.Index, rowIdxKey.Index) == 0 &&
-				bytes.Compare(selIdxKey.IndexOrder, rowIdxKey.IndexOrder) == 0 &&
-				bytes.Compare(selIdxKey.PrimaryKey, rowIdxKey.PrimaryKey) == 0 {
+			if q.index.IndexID == PrimaryIndexID {
+				if bytes.Equal(q.table.PrimaryKey(NewKeyBuilder(keyBuffer[:0]), q.afterSelector), key) {
+					return true, nil
+				}
+			}
+
+			if bytes.Equal(encodeIndexKey[T](q.table, q.afterSelector, q.index, keyBuffer[:0]), key) {
 				return true, nil
 			}
+
 		}
 
 		// check if can apply offset in here

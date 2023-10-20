@@ -408,6 +408,17 @@ func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector
 }
 
 func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []byte {
+	if idx.IndexID == PrimaryIndexID {
+		return KeyEncodeRaw(
+			table.ID(),
+			PrimaryIndexID,
+			nil,
+			nil,
+			func(b []byte) []byte {
+				return table.PrimaryKey(NewKeyBuilder(b), tr)
+			},
+			buff[:0])
+	}
 	return KeyEncodeRaw(
 		table.ID(),
 		idx.IndexID,
@@ -420,11 +431,16 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 			).Bytes()
 		},
 		func(b []byte) []byte {
-			if idx.IndexID == PrimaryIndexID {
-				return table.PrimaryKey(NewKeyBuilder(b), tr)
-			}
 			buf := []byte{}
-			buf = table.PrimaryKey(NewKeyBuilder(buf), tr)
+			buf = KeyEncodeRaw(
+				table.ID(),
+				PrimaryIndexID,
+				nil,
+				nil,
+				func(b []byte) []byte {
+					return table.PrimaryKey(NewKeyBuilder(b), tr)
+				},
+				buf)
 			val, closer, err := table.DB().Get(buf)
 			if err != nil {
 				return b
