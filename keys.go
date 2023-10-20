@@ -298,15 +298,17 @@ func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
 	buff := bytes.NewBuffer(rawBuff)
 
 	buff.WriteByte(key[0])
-	buff.WriteByte(0)
+	buff.WriteByte(byte(RecordIndexID))
 
 	buff.Write([]byte{0, 0, 0, 0})
-	buff.Write([]byte{0, 0, 0, 0})
+	// buff.Write([]byte{0, 0, 0, 0})
 
-	indexLen := int(binary.BigEndian.Uint32(key[2:6]))
-	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexLen : 10+indexLen]))
+	// indexLen := int(binary.BigEndian.Uint32(key[2:6]))
+	// indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexLen : 10+indexLen]))
 
-	buff.Write(key[10+indexLen+indexOrderLen:])
+	// buff.Write(key[10+indexLen+indexOrderLen:])
+	// note: make this a record key.
+	buff.Write(key[len(key)-8:])
 
 	return buff.Bytes()
 }

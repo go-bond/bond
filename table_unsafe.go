@@ -40,6 +40,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		keyBuffer       = t.db.getKeyBufferPool().Get()[:0]
 		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
 		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
+		recordKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	)
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
@@ -68,7 +69,12 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 		// update key
 		key := t.key(tr, keyBuffer[:0])
-
+		recordID, closer, err := t.db.Get(key, batch)
+		if err != nil {
+			return err
+		}
+		recordKey := t.recordKey(DecodeUint64(recordID), recordKeyBuffer[:0])
+		closer.Close()
 		// serialize
 		data, err := serialize(&tr)
 		if err != nil {
@@ -76,7 +82,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// update entry
-		err = batch.Set(key, data, Sync)
+		err = batch.Set(recordKey, data, Sync)
 		if err != nil {
 			_ = batch.Close()
 			return err
@@ -84,7 +90,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 		// update indexes
 		for _, idx := range indexes {
-			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
+			err = idx.OnUpdate(t, oldTr, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 			if err != nil {
 				return err
 			}

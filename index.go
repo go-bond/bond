@@ -282,7 +282,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	}
 }
 
-func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, recordBuff []byte, buffs ...[]byte) error {
+func (idx *Index[T]) OnInsert(table Table[T], tr T, recordBuff []byte, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
 		buff = buffs[0]
@@ -294,7 +294,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, recordBuff []by
 	return nil
 }
 
-func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
+func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, recordBuff []byte, batch Batch, buffs ...[]byte) error {
 	var (
 		buff  []byte
 		buff2 []byte
@@ -309,10 +309,10 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 
 	var deleteKey, setKey []byte
 	if idx.IndexFilterFunction(oldTr) {
-		deleteKey = encodeIndexKey(table, oldTr, idx, buff)
+		deleteKey = encodeRecordIndexKey(table, oldTr, idx, recordBuff, buff)
 	}
 	if idx.IndexFilterFunction(tr) {
-		setKey = encodeIndexKey(table, tr, idx, buff2)
+		setKey = encodeRecordIndexKey(table, tr, idx, recordBuff, buff2)
 	}
 
 	if deleteKey != nil && setKey != nil {
@@ -342,14 +342,14 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 	return nil
 }
 
-func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
+func (idx *Index[T]) OnDelete(table Table[T], tr T, recordID []byte, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
 		buff = buffs[0]
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
+		err := batch.Delete(encodeRecordIndexKey(table, tr, idx, recordID, buff), Sync)
 		if err != nil {
 			return err
 		}
@@ -420,7 +420,18 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 			).Bytes()
 		},
 		func(b []byte) []byte {
-			return table.PrimaryKey(NewKeyBuilder(b), tr)
+			if idx.IndexID == PrimaryIndexID {
+				return table.PrimaryKey(NewKeyBuilder(b), tr)
+			}
+			buf := []byte{}
+			buf = table.PrimaryKey(NewKeyBuilder(buf), tr)
+			val, closer, err := table.DB().Get(buf)
+			if err != nil {
+				return b
+			}
+			b = append(b, val...)
+			closer.Close()
+			return b
 		},
 		buff,
 	)

@@ -1119,7 +1119,7 @@ func TestIndex_Callbacks(t *testing.T) {
 					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
-				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, &mockBatch, tc.recordKeyBuff)
+				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, tc.recordKeyBuff, &mockBatch)
 				require.NoError(t, err)
 
 				mockBatch.AssertExpectations(t)
@@ -1131,7 +1131,7 @@ func TestIndex_Callbacks(t *testing.T) {
 					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
-				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, &mockBatch)
+				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, tc.recordKeyBuff, &mockBatch)
 				require.NoError(t, err)
 
 				mockBatch.AssertExpectations(t)
@@ -1140,7 +1140,7 @@ func TestIndex_Callbacks(t *testing.T) {
 					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				}
 
-				err := tc.index.OnDelete(tokenBalanceTable, tc.existingRow, &mockBatch)
+				err := tc.index.OnDelete(tokenBalanceTable, tc.existingRow, tc.recordKeyBuff, &mockBatch)
 				require.NoError(t, err)
 
 				mockBatch.AssertExpectations(t)

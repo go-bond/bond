@@ -310,7 +310,7 @@ func (t *_table[T]) reindex(idxs []*Index[T]) error {
 
 		// update indexes
 		for _, idx := range idxs {
-			err = idx.OnInsert(t, tr, batch, indexKeyBuffer)
+			err = idx.OnInsert(t, tr, []byte("replace herer"), batch, indexKeyBuffer)
 			if err != nil {
 				return err
 			}
@@ -432,14 +432,14 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// TODO: must change
-			err = batch.Set(key, recordKey[2:], Sync)
+			err = batch.Set(key, recordKey[RecordPrefixSplit:], Sync)
 			if err != nil {
 				return err
 			}
 
 			// index keys
 			for _, idx := range indexes {
-				err = idx.OnInsert(t, tr, batch, recordKey[2:], indexKeyBuffer[:0])
+				err = idx.OnInsert(t, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0])
 				if err != nil {
 					return err
 				}
@@ -467,6 +467,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	return nil
 }
 
+const RecordPrefixSplit = 6
+
 func (t *_table[T]) recordKey(recordID uint64, buff []byte) []byte {
 	buff = append(buff, byte(t.allocator.TableID))
 	buff = append(buff, byte(RecordIndexID))
@@ -474,7 +476,7 @@ func (t *_table[T]) recordKey(recordID uint64, buff []byte) []byte {
 	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00}...)
 	// add 8 byte for record id.
 	buff = append(buff, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
-	binary.BigEndian.PutUint64(buff[2:], recordID)
+	binary.BigEndian.PutUint64(buff[RecordPrefixSplit:], recordID)
 	return buff
 }
 
@@ -506,6 +508,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
 	defer t.db.putKeyArray(keysBuffer)
+
+	recordKeyBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(recordKeyBuffer)
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
@@ -553,11 +558,24 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
 				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
 			}
-
-			err := t.serializer.Deserialize(iter.Value(), &oldTr)
+			recordID, closer, err := t.db.Get(key, batch)
 			if err != nil {
 				return err
 			}
+
+			recordKey := t.recordKey(DecodeUint64(recordID), recordKeyBuffer[i][:0])
+			closer.Close()
+
+			val, closer, err := t.db.Get(recordKey, batch)
+			if err != nil {
+				return err
+			}
+			err = t.serializer.Deserialize(val, &oldTr)
+			if err != nil {
+				closer.Close()
+				return err
+			}
+			closer.Close()
 
 			tr := trs[keyOrder[i]]
 
@@ -568,14 +586,14 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// update entry
-			err = batch.Set(key, data, Sync)
+			err = batch.Set(recordKey, data, Sync)
 			if err != nil {
 				return err
 			}
 
 			// update indexes
 			for _, idx := range indexes {
-				err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
+				err = idx.OnUpdate(t, oldTr, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 				if err != nil {
 					return err
 				}
@@ -617,11 +635,13 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	}
 
 	var (
-		keyBuffer      = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
+		keyBuffer       = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
+		recordKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	)
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(recordKeyBuffer[:0])
 
 	for _, tr := range trs {
 		select {
@@ -632,16 +652,27 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// data key
 		var key = t.key(tr, keyBuffer[:0])
+		recordID, closer, err := t.db.Get(key, batch)
+		if err != nil {
+			return err
+		}
+
+		recordKey := t.recordKey(DecodeUint64(recordID), recordKeyBuffer[:0])
+		closer.Close()
 
 		// delete
-		err := batch.Delete(key, Sync)
+		err = batch.Delete(recordKey, Sync)
+		if err != nil {
+			return err
+		}
+		err = batch.Delete(key, Sync)
 		if err != nil {
 			return err
 		}
 
 		// delete from index
 		for _, idx := range indexes {
-			err = idx.OnDelete(t, tr, batch, indexKeyBuffer[:0])
+			err = idx.OnDelete(t, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0])
 			if err != nil {
 				return err
 			}
@@ -659,7 +690,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 }
 
 func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error {
-	panic("upsert not support")
 	t.mutex.RLock()
 	indexes := make(map[IndexID]*Index[T])
 	maps.Copy(indexes, t.secondaryIndexes)
@@ -689,6 +719,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
 	defer t.db.putKeyArray(keysBuffer)
+
+	recordKeyBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	defer t.db.putKeyArray(recordKeyBuffer)
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
@@ -733,14 +766,23 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 			// old record
 			var (
-				isUpdate bool
-				err      error
+				isUpdate  bool
+				err       error
+				recordKey []byte
 			)
 			if t.exist(key, batch, iter) {
-				err := t.serializer.Deserialize(iter.Value(), &oldTr)
+				recordID := iter.Value()
+				recordKey = t.recordKey(DecodeUint64(recordID), recordKeyBuffer[i][:0])
+				val, closer, err := t.db.Get(recordKey, batch)
 				if err != nil {
 					return err
 				}
+				err = t.serializer.Deserialize(val, &oldTr)
+				if err != nil {
+					closer.Close()
+					return err
+				}
+				closer.Close()
 				isUpdate = true
 			}
 
@@ -763,8 +805,17 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				return err
 			}
 
+			if !isUpdate {
+				// allocate a new record id.
+				recordID, _, err := t.allocator.Alloc(1)
+				if err != nil {
+					return err
+				}
+				recordKey = t.recordKey(recordID, recordKeyBuffer[i][:0])
+			}
+
 			// update entry
-			err = batch.Set(key, data, Sync)
+			err = batch.Set(recordKey, data, Sync)
 			if err != nil {
 				return err
 			}
@@ -772,14 +823,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 			// update indexes
 			if isUpdate {
 				for _, idx := range indexes {
-					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
+					err = idx.OnUpdate(t, oldTr, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 					if err != nil {
 						return err
 					}
 				}
 			} else {
 				for _, idx := range indexes {
-					err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
+					err = idx.OnInsert(t, tr, recordKey[RecordPrefixSplit:], batch, indexKeyBuffer[:0])
 					if err != nil {
 						return err
 					}
@@ -883,14 +934,21 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		keyBuffer := t.db.getKeyBufferPool().Get()[:0]
 		defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
+		recordKeyBuffer := t.db.getKeyBufferPool().Get()[:0]
+
 		key := t.key(tr, keyBuffer[:0])
 
 		bCtx := ContextWithBatch(context.Background(), batch)
 		if t.filter != nil && !t.filter.MayContain(bCtx, key) {
 			return nil, ErrNotFound
 		}
-
-		record, closer, err := t.db.Get(key, batch)
+		recordID, closer, err := t.db.Get(key, batch)
+		if err != nil {
+			return nil, ErrNotFound
+		}
+		recordKey := t.recordKey(DecodeUint64(recordID), recordKeyBuffer[:0])
+		closer.Close()
+		record, closer, err := t.db.Get(recordKey, batch)
 		if err != nil {
 			return nil, ErrNotFound
 		}
@@ -910,6 +968,9 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		keyArray := t.db.getKeyArray(len(selPoints))
 		defer t.db.putKeyArray(keyArray)
 
+		recordKeyArray := t.db.getKeyArray(len(selPoints))
+		defer t.db.putKeyArray(recordKeyArray)
+
 		valueArray := t.db.getKeyArray(len(selPoints))
 		defer t.db.putKeyArray(valueArray)
 
@@ -925,18 +986,23 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 			}
 
 			t.reorderValues(values, order)
-			for _, value := range values {
+			for idx, value := range values {
 				if len(value) == 0 {
 					trs = append(trs, t.valueNil)
 					continue
 				}
-
-				var tr T
-				err = t.serializer.Deserialize(value, &tr)
+				recordKey := t.recordKey(DecodeUint64(value), recordKeyArray[idx][:0])
+				val, closer, err := t.db.Get(recordKey, batch)
 				if err != nil {
 					return err
 				}
-
+				var tr T
+				err = t.serializer.Deserialize(val, &tr)
+				if err != nil {
+					closer.Close()
+					return err
+				}
+				closer.Close()
 				trs = append(trs, tr)
 			}
 
@@ -974,7 +1040,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
 			LowerBound: keys[0],
-			UpperBound: t.dataKeySpaceEnd,
+			//UpperBound: t.dataKeySpaceEnd,
 		},
 	}, batch)
 	defer iter.Close()
@@ -992,7 +1058,6 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 		iterValue := iter.Value()
 		value := values[i][:0]
 		value = append(value, iterValue...)
-
 		values[i] = value
 	}
 
@@ -1059,12 +1124,22 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 		}
 	}
 
+	recordKeyBuffer := t.db.getKeyBufferPool().Get()[:0]
+	defer t.db.getKeyBufferPool().Put(recordKeyBuffer)
+
 	getValue := func() (T, error) {
 		var record T
-		err := t.serializer.Deserialize(it.Value(), &record)
+		recordKey := t.recordKey(DecodeUint64(it.Value()), recordKeyBuffer[:0])
+		val, closer, err := t.db.Get(recordKey)
 		if err != nil {
+			return t.valueNil, err
+		}
+		err = t.serializer.Deserialize(val, &record)
+		if err != nil {
+			closer.Close()
 			return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
+		closer.Close()
 
 		return record, nil
 	}
@@ -1088,7 +1163,6 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
-
 	first := func() bool {
 		if reverse {
 			return it.Last()
