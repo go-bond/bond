@@ -125,7 +125,7 @@ func (b *BlockIndexCollector) FinishTable(buf []byte) ([]byte, error) {
 }
 
 type BlockIndexFilter struct {
-	Value string
+	Value []byte
 }
 
 func (b BlockIndexFilter) Name() string {
@@ -139,7 +139,7 @@ func (b BlockIndexFilter) Intersects(prop []byte) (bool, error) {
 		return false, err
 	}
 
-	tr := bf.Test([]byte(b.Value))
+	tr := bf.Test(b.Value)
 	if tr {
 		//fmt.Println("includes")
 	} else {
@@ -169,18 +169,19 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 	fmt.Println("equal distribution:")
 	names := []string{"one", "two", "three", "four", "five", "not_exist_in_db"}
 	for i := 0; i < 1000000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[i%5])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[i%5])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
+	t1 := time.Now()
 	it, err := pdb.NewIter(&pebble.IterOptions{
 		LowerBound: []byte("R.0"),
-		UpperBound: []byte("R.1000000"),
+		UpperBound: []byte("R.9"),
 		KeyTypes:   pebble.IterKeyTypePointsAndRanges,
 	})
 	require.NoError(t, err)
 
-	t1 := time.Now()
+	count := 0
 	for it.First(); it.Valid(); it.Next() {
 		hasPoint, hasRange := it.HasPointAndRange()
 		if hasPoint {
@@ -191,22 +192,25 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 			kd := it.RangeKeys()
 			t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
 		}
+
+		count++
 	}
-	fmt.Printf("iterate no filter, took %s\n", time.Since(t1).String())
+	fmt.Printf("iterate no filter, took %s items %d\n", time.Since(t1).String(), count)
 	it.Close()
 
 	for _, name := range names {
+		t1 := time.Now()
 		it, err := pdb.NewIter(&pebble.IterOptions{
 			LowerBound: []byte("R.0"),
-			UpperBound: []byte("R.1000000"),
+			UpperBound: []byte("R.9"),
 			KeyTypes:   pebble.IterKeyTypePointsAndRanges,
 			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&BlockIndexFilter{Value: name},
+				&BlockIndexFilter{Value: []byte(name)},
 			},
 		})
 		require.NoError(t, err)
 
-		t1 := time.Now()
+		count := 0
 		for it.First(); it.Valid(); it.Next() {
 			hasPoint, hasRange := it.HasPointAndRange()
 			if hasPoint {
@@ -217,8 +221,68 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 				kd := it.RangeKeys()
 				t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
 			}
+
+			count++
 		}
-		fmt.Printf("iterate filter name: %s, took %s\n", name, time.Since(t1).String())
+		fmt.Printf("iterate filter name: %s, took %s items %d\n", name, time.Since(t1).String(), count)
+		it.Close()
+	}
+
+	fmt.Println("compact db:")
+	_ = db.Backend().Compact([]byte("R.0"), []byte("R.9"), true)
+
+	t1 = time.Now()
+	it, err = pdb.NewIter(&pebble.IterOptions{
+		LowerBound: []byte("R.0"),
+		UpperBound: []byte("R.9"),
+		KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+	})
+	require.NoError(t, err)
+
+	count = 0
+	for it.First(); it.Valid(); it.Next() {
+		hasPoint, hasRange := it.HasPointAndRange()
+		if hasPoint {
+			//t.Logf("point %s: %s", string(it.Key()), string(it.Value()))
+		}
+		if hasRange {
+			s, e := it.RangeBounds()
+			kd := it.RangeKeys()
+			t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
+		}
+
+		count++
+	}
+	fmt.Printf("iterate no filter, took %s items %d\n", time.Since(t1).String(), count)
+	it.Close()
+
+	for _, name := range names {
+		t1 := time.Now()
+		it, err := pdb.NewIter(&pebble.IterOptions{
+			LowerBound: []byte("R.0"),
+			UpperBound: []byte("R.9"),
+			KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+			PointKeyFilters: []pebble.BlockPropertyFilter{
+				&BlockIndexFilter{Value: []byte(name)},
+			},
+		})
+		require.NoError(t, err)
+
+		count := 0
+		for it.First(); it.Valid(); it.Next() {
+			hasPoint, hasRange := it.HasPointAndRange()
+			if hasPoint {
+				//t.Logf("point %s: %s", string(it.Key()), string(it.Value()))
+			}
+			if hasRange {
+				s, e := it.RangeBounds()
+				kd := it.RangeKeys()
+				t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
+			}
+
+			count++
+		}
+		fmt.Printf("iterate filter name: %s, took %s items %d\n", name, time.Since(t1).String(), count)
 		it.Close()
 	}
 
@@ -248,38 +312,39 @@ func TestBlockFilter_SequDist(t *testing.T) {
 	names := []string{"one", "two", "three", "four", "five", "not_exist_in_db"}
 
 	for i := 0; i < 200000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[0])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[0])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
 	for i := 200000; i < 400000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[1])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[1])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
 	for i := 400000; i < 600000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[2])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[2])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
 	for i := 600000; i < 800000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[3])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[3])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
 	for i := 800000; i < 1000000; i++ {
-		err = pdb.Set([]byte(fmt.Sprintf("R.%.6d.name.%s", i, names[3])), dummyData, pebble.NoSync)
+		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[4])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
 
+	t1 := time.Now()
 	it, err := pdb.NewIter(&pebble.IterOptions{
 		LowerBound: []byte("R.0"),
-		UpperBound: []byte("R.1000000"),
+		UpperBound: []byte("R.9"),
 		KeyTypes:   pebble.IterKeyTypePointsAndRanges,
 	})
 	require.NoError(t, err)
 
-	t1 := time.Now()
+	count := 0
 	for it.First(); it.Valid(); it.Next() {
 		hasPoint, hasRange := it.HasPointAndRange()
 		if hasPoint {
@@ -290,22 +355,26 @@ func TestBlockFilter_SequDist(t *testing.T) {
 			kd := it.RangeKeys()
 			t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
 		}
+
+		count++
 	}
-	fmt.Printf("iterate no filter, took %s\n", time.Since(t1).String())
+	fmt.Printf("iterate no filter, took %s items %d\n", time.Since(t1).String(), count)
 	it.Close()
 
 	for _, name := range names {
+		t1 := time.Now()
+
 		it, err := pdb.NewIter(&pebble.IterOptions{
 			LowerBound: []byte("R.0"),
-			UpperBound: []byte("R.1000000"),
+			UpperBound: []byte("R.9"),
 			KeyTypes:   pebble.IterKeyTypePointsAndRanges,
 			PointKeyFilters: []pebble.BlockPropertyFilter{
-				&BlockIndexFilter{Value: name},
+				&BlockIndexFilter{Value: []byte(name)},
 			},
 		})
 		require.NoError(t, err)
 
-		t1 := time.Now()
+		count := 0
 		for it.First(); it.Valid(); it.Next() {
 			hasPoint, hasRange := it.HasPointAndRange()
 			if hasPoint {
@@ -316,8 +385,69 @@ func TestBlockFilter_SequDist(t *testing.T) {
 				kd := it.RangeKeys()
 				t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
 			}
+
+			count++
 		}
-		fmt.Printf("iterate filter name: %s, took %s\n", name, time.Since(t1).String())
+		fmt.Printf("iterate filter name: %s, took %s items %d\n", name, time.Since(t1).String(), count)
+		it.Close()
+	}
+
+	fmt.Println("compact db:")
+	_ = db.Backend().Compact([]byte("R.0"), []byte("R.9"), true)
+
+	t1 = time.Now()
+	it, err = pdb.NewIter(&pebble.IterOptions{
+		LowerBound: []byte("R.0"),
+		UpperBound: []byte("R.9"),
+		KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+	})
+	require.NoError(t, err)
+
+	count = 0
+	for it.First(); it.Valid(); it.Next() {
+		hasPoint, hasRange := it.HasPointAndRange()
+		if hasPoint {
+			//t.Logf("point %s: %s", string(it.Key()), string(it.Value()))
+		}
+		if hasRange {
+			s, e := it.RangeBounds()
+			kd := it.RangeKeys()
+			t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
+		}
+
+		count++
+	}
+	fmt.Printf("iterate no filter, took %s items %d\n", time.Since(t1).String(), count)
+	it.Close()
+
+	for _, name := range names {
+		t1 := time.Now()
+
+		it, err := pdb.NewIter(&pebble.IterOptions{
+			LowerBound: []byte("R.0"),
+			UpperBound: []byte("R.9"),
+			KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+			PointKeyFilters: []pebble.BlockPropertyFilter{
+				&BlockIndexFilter{Value: []byte(name)},
+			},
+		})
+		require.NoError(t, err)
+
+		count := 0
+		for it.First(); it.Valid(); it.Next() {
+			hasPoint, hasRange := it.HasPointAndRange()
+			if hasPoint {
+				//t.Logf("point %s: %s", string(it.Key()), string(it.Value()))
+			}
+			if hasRange {
+				s, e := it.RangeBounds()
+				kd := it.RangeKeys()
+				t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
+			}
+
+			count++
+		}
+		fmt.Printf("iterate filter name: %s, took %s items %d\n", name, time.Since(t1).String(), count)
 		it.Close()
 	}
 
