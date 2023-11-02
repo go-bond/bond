@@ -5,6 +5,9 @@ import (
 	"io"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/objstorage/remote"
+
+	"github.com/go-bond/bond/bondremote"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/utils"
 )
@@ -123,10 +126,18 @@ func Open(dirname string, opts *Options) (DB, error) {
 	}
 
 	opts.PebbleOptions.Comparer = DefaultKeyComparer()
+	opts.PebbleOptions.Experimental.RemoteStorage = remote.MakeSimpleFactory(map[remote.Locator]remote.Storage{
+		"minio": bondremote.NewMinioRemote(),
+	})
+	opts.PebbleOptions.Experimental.CreateOnShared = remote.CreateOnSharedLower
+	opts.PebbleOptions.Experimental.CreateOnSharedLocator = "minio"
 
 	pdb, err := pebble.Open(dirname, opts.PebbleOptions)
 	if err != nil {
 		return nil, err
+	}
+	if err := pdb.SetCreatorID(1); err != nil {
+		panic(err)
 	}
 
 	var serializer Serializer[any]

@@ -142,6 +142,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		if err != nil {
 			panic(err)
 		}
+		db.Backend().Flush()
 
 		for _, v := range skipReadSizes {
 			results = append(results,
@@ -164,6 +165,7 @@ func BenchmarkTableScanSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult {
 		if err != nil {
 			panic(err)
 		}
+		db.Backend().Flush()
 
 		for _, v := range skipReadSizes {
 			results = append(results,

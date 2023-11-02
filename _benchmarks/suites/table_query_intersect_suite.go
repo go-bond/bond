@@ -150,6 +150,7 @@ func BenchmarkTableQueryIntersectSuite(bs *bench.BenchmarkSuite) []bench.Benchma
 		if err != nil {
 			panic(err)
 		}
+		db.Backend().Flush()
 
 		tokenBalances = nil
 

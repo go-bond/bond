@@ -119,6 +119,7 @@ func InsertInBatchSize(tbt bond.Table[*TokenBalance], tbs []*TokenBalance, inser
 			if err != nil {
 				panic(err)
 			}
+			tbt.DB().Backend().Flush()
 
 			b.StopTimer()
 			err = tbt.Delete(context.Background(), tbs[:insertBatchSize])

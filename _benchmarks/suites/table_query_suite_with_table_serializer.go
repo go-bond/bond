@@ -116,6 +116,7 @@ func BenchmarkTableQueryWithTableSerializerSuite(bs *bench.BenchmarkSuite) []ben
 		if err != nil {
 			panic(err)
 		}
+		db.Backend().Flush()
 
 		tokenBalances500 := bond.NewSelectorPoint(tokenBalances[500])
 		tokenBalances1000 := bond.NewSelectorPoint(tokenBalances[1000])

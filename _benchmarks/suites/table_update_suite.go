@@ -87,6 +87,7 @@ func BenchmarkTableUpdateSuite(bs *bench.BenchmarkSuite) []bench.BenchmarkResult
 		if err != nil {
 			panic(err)
 		}
+		db.Backend().Flush()
 
 		var updateBatches = []struct {
 			batchSize int
