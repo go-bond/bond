@@ -18,7 +18,7 @@ func TestRangeKey(t *testing.T) {
 	require.NoError(t, err)
 	pdb := db.Backend()
 
-	err = pdb.RangeKeySet([]byte("R.0"), []byte("R.1"), nil, []byte("index"), pebble.NoSync)
+	err = pdb.RangeKeySet([]byte("R.0"), []byte("R.2"), nil, []byte("index"), pebble.NoSync)
 	require.NoError(t, err)
 
 	err = pdb.Set([]byte("R.0.name"), []byte("one"), pebble.NoSync)
@@ -27,9 +27,14 @@ func TestRangeKey(t *testing.T) {
 	err = pdb.Set([]byte("R.0.type"), []byte("diff"), pebble.NoSync)
 	require.NoError(t, err)
 
+	err = pdb.Set([]byte("R.1.name"), []byte("one"), pebble.NoSync)
+	require.NoError(t, err)
+	err = pdb.RangeKeySet([]byte("R.0"), []byte("R.1"), nil, []byte("index1"), pebble.NoSync)
+	require.NoError(t, err)
+
 	it, err := pdb.NewIter(&pebble.IterOptions{
-		LowerBound: []byte("R.0"),
-		KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+		//LowerBound: []byte("R.0"),
+		KeyTypes: pebble.IterKeyTypePointsAndRanges,
 	})
 	require.NoError(t, err)
 
@@ -172,6 +177,7 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[i%5])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
+	pdb.Flush()
 
 	t1 := time.Now()
 	it, err := pdb.NewIter(&pebble.IterOptions{
@@ -335,6 +341,7 @@ func TestBlockFilter_SequDist(t *testing.T) {
 		err = pdb.Set([]byte(fmt.Sprintf("R.%.7d.name.%s", i, names[4])), dummyData, pebble.NoSync)
 		require.NoError(t, err)
 	}
+	pdb.Flush()
 
 	t1 := time.Now()
 	it, err := pdb.NewIter(&pebble.IterOptions{
@@ -430,6 +437,39 @@ func TestBlockFilter_SequDist(t *testing.T) {
 			PointKeyFilters: []pebble.BlockPropertyFilter{
 				&BlockIndexFilter{Value: []byte(name)},
 			},
+		})
+		require.NoError(t, err)
+
+		count := 0
+		for it.First(); it.Valid(); it.Next() {
+			hasPoint, hasRange := it.HasPointAndRange()
+			if hasPoint {
+				//t.Logf("point %s: %s", string(it.Key()), string(it.Value()))
+			}
+			if hasRange {
+				s, e := it.RangeBounds()
+				kd := it.RangeKeys()
+				t.Logf("range(%s,%s): %v", string(s), string(e), string(kd[0].Value))
+			}
+
+			count++
+		}
+		fmt.Printf("iterate filter name: %s, took %s items %d\n", name, time.Since(t1).String(), count)
+		it.Close()
+	}
+
+	fmt.Println("direct seek")
+	for idx, name := range names {
+		t1 := time.Now()
+		start := idx * 200000
+		end := start + 200000
+		it, err := pdb.NewIter(&pebble.IterOptions{
+			LowerBound: []byte(fmt.Sprintf("R.%.7d.name.%s", start, name)),
+			UpperBound: []byte(fmt.Sprintf("R.%.7d.name.%s", end, name)),
+			KeyTypes:   pebble.IterKeyTypePointsAndRanges,
+			// PointKeyFilters: []pebble.BlockPropertyFilter{
+			// 	&BlockIndexFilter{Value: []byte(name)},
+			// },
 		})
 		require.NoError(t, err)
 
