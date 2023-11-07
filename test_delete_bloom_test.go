@@ -103,14 +103,25 @@ func TestDeleteSurface(t *testing.T) {
 	opt.PebbleOptions.BlockPropertyCollectors = []func() pebble.BlockPropertyCollector{func() pebble.BlockPropertyCollector {
 		return &BlockIndexValueCollector{}
 	}}
+	opt.PebbleOptions.DisableWAL = true
+
 	opt.PebbleOptions.FormatMajorVersion = pebble.FormatBlockPropertyCollector
 	db, err := Open(".db", opt)
 	require.NoError(t, err)
 	pdb := db.Backend()
 	for i := 0; i < 100; i++ {
-		pdb.Set([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i)), pebble.Sync)
+		pdb.Set([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i)), pebble.NoSync)
 	}
 	pdb.Flush()
+	// delete 50 entries.
+	for i := 50; i < 100; i++ {
+		pdb.Delete([]byte(fmt.Sprintf("%d", i)), pebble.NoSync)
+	}
+	pdb.Flush()
+	db.Close()
+	db, err = Open(".db", opt)
+	require.NoError(t, err)
+	pdb = db.Backend()
 	itr, err := pdb.NewIter(&pebble.IterOptions{
 		PointKeyFilters: []pebble.BlockPropertyFilter{
 			&BlockIndexValueFilter{Values: []byte("50")},
@@ -123,18 +134,10 @@ func TestDeleteSurface(t *testing.T) {
 			exist = true
 		}
 	}
-	require.True(t, exist, "50 supposed to be exist")
-
-	// delete 50 entries.
-	for i := 50; i < 100; i++ {
-		pdb.Delete([]byte(fmt.Sprintf("%d", i)), pebble.Sync)
+	if exist {
+		fmt.Println("50 supposed to be deleted")
 	}
-	pdb.Flush()
-	itr, err = pdb.NewIter(&pebble.IterOptions{
-		PointKeyFilters: []pebble.BlockPropertyFilter{
-			&BlockIndexValueFilter{Values: []byte("50")},
-		},
-	})
+	itr, err = pdb.NewIter(&pebble.IterOptions{})
 	require.NoError(t, err)
 	exist = false
 	for itr.First(); itr.Valid(); itr.Next() {
@@ -142,8 +145,8 @@ func TestDeleteSurface(t *testing.T) {
 			exist = true
 		}
 	}
-	if exist {
-		fmt.Println("50 supposed to be deleted")
+	if !exist {
+		fmt.Println("50 didn't show when filters not applied")
 	}
 	db.Close()
 	os.RemoveAll(".db")

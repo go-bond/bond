@@ -28,7 +28,7 @@ func (db *_db) initVersion() error {
 		return nil
 	}
 	ver := fmt.Sprintf("%d", BOND_DB_DATA_VERSION)
-	return db.pebble.Set(bondDataVersionKey(), []byte(ver), pebble.Sync)
+	return db.pebble.Set(bondDataVersionKey(), []byte(ver), pebble.NoSync)
 }
 
 func bondDataVersionKey() []byte {
