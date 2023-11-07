@@ -495,3 +495,7 @@ func TestBlockFilter_SequDist(t *testing.T) {
 
 	os.RemoveAll(".db")
 }
+
+func TestDeleteKeySurface(t *testing.T) {
+
+}
