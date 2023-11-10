@@ -187,12 +187,12 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
 		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
-
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
 			keyBufferPool.Put(upperBound[:0])
 		}
-
+		fmt.Println("key", lowerBound)
+		fmt.Println("key", upperBound)
 		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
@@ -284,7 +284,9 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
+		key := encodeIndexKey(table, tr, idx, buff)
+		fmt.Println(key)
+		return batch.Set(key, _indexKeyValue, Sync)
 	}
 	return nil
 }

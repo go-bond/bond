@@ -1,12 +1,17 @@
 package bond
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/utils"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -58,6 +63,11 @@ type Applier interface {
 	Apply(b Batch, opt WriteOptions) error
 }
 
+type Exporter interface {
+	Export(ctx context.Context, dir string, index bool, tables ...TableExporter) error
+	Import(ctx context.Context, dir string, index bool, tables ...TableImporter) error
+}
+
 type Closer io.Closer
 
 const DefaultKeyBufferSize = 2048
@@ -96,6 +106,7 @@ type DB interface {
 	Applier
 
 	Closer
+	Exporter
 
 	OnClose(func(db DB))
 }
@@ -299,6 +310,34 @@ func (db *_db) putValueArray(arr [][]byte) {
 		db.valueBufferPool.Put(value[:0])
 	}
 	db.byteArraysPool.Put(arr[:0])
+}
+
+func (db *_db) Export(ctx context.Context, dir string, index bool, tables ...TableExporter) error {
+	err := os.Mkdir(dir, 0755)
+	if err != nil {
+		return err
+	}
+	if err := ioutil.WriteFile(filepath.Join("VERSION"), []byte(fmt.Sprintf("%d", BOND_DB_DATA_VERSION)), 0755); err != nil {
+		return err
+	}
+	grp := new(errgroup.Group)
+	for _, table := range tables {
+		grp.Go(func(exporter TableExporter) func() error {
+			return func() error {
+				return exporter.Export(ctx, dir, index)
+			}
+		}(table))
+	}
+	return grp.Wait()
+}
+
+func (db *_db) Import(ctx context.Context, dir string, index bool, tables ...TableImporter) error {
+	for _, table := range tables {
+		if err := table.Import(ctx, dir, index); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
