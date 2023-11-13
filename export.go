@@ -125,3 +125,48 @@ func (t *_table[T]) Import(ctx context.Context, path string, index bool) error {
 	}
 	return nil
 }
+
+func (t *_table[T]) insertSST(ctx context.Context, path string) error {
+	file, err := vfs.Default.Open(path)
+	if err != nil {
+		return err
+	}
+	readable, err := sstable.NewSimpleReadable(file)
+	if err != nil {
+		return err
+	}
+	reader, err := sstable.NewReader(readable, sstable.ReaderOptions{
+		Comparer: DefaultKeyComparer(),
+	})
+	if err != nil {
+		return err
+	}
+	itr, err := reader.NewIter(nil, nil)
+	if err != nil {
+		return err
+	}
+	var batch []T
+	for key, val := itr.First(); key != nil; key, val = itr.Next() {
+		var entry T
+		buf, _, err := val.Value(nil)
+		if err != nil {
+			return err
+		}
+		if err := t.serializer.Deserialize(buf, &entry); err != nil {
+			return err
+		}
+		batch = append(batch, entry)
+		if len(batch) > 200 {
+			if err := t.Insert(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if len(batch) > 0 {
+		if err := t.Insert(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
