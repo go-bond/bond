@@ -59,26 +59,23 @@ func TestExport(t *testing.T) {
 	err := db.Export(context.TODO(), "./export", true, tokenBalanceTable)
 	require.NoError(t, err)
 
-	// // create a tmp db.
-	// db2 := setupDB("tmp_db")
-	// defer tearDownDB("tmp_db", db2)
-	// table := tokenBalanceTable.(*_table[*TokenBalance])
-	// table.db = db2
-	// err = db2.Import(context.TODO(), "export", true, table)
-	// require.NoError(t, err)
+	// create a tmp db.
+	db2 := setupDB("tmp_db")
+	defer tearDownDB("tmp_db", db2)
+	table := tokenBalanceTable.(*_table[*TokenBalance])
+	table.db = db2
+	err = db2.Import(context.TODO(), "export", true, table)
+	require.NoError(t, err)
 
-	// // make sure both db has same keys and values.
-	// itr := db.Iter(&IterOptions{})
-	// itr2 := db2.Iter(&IterOptions{})
-	// itr.First()
-	// itr2.First()
-	// i := 0
-	// for ; itr.Valid(); itr.Next() {
-	// 	require.Equal(t, itr.Key(), itr2.Key())
-	// 	require.Equal(t, itr.Value(), itr2.Value())
-	// 	itr2.Next()
-	// 	fmt.Println(i)
-	// 	i++
-	// }
-	// require.False(t, itr2.Valid())
+	// make sure both db has same keys and values.
+	itr := db.Iter(&IterOptions{})
+	itr2 := db2.Iter(&IterOptions{})
+	itr.First()
+	itr2.First()
+	for ; itr.Valid(); itr.Next() {
+		require.Equal(t, itr.Key(), itr2.Key())
+		require.Equal(t, itr.Value(), itr2.Value())
+		itr2.Next()
+	}
+	require.False(t, itr2.Valid())
 }

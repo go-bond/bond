@@ -4,20 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"sync"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/objstorage/objstorageprovider"
-	"github.com/cockroachdb/pebble/sstable"
-	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
-	"golang.org/x/sync/errgroup"
 )
 
 var _indexKeyValue = []byte{}
@@ -27,6 +20,8 @@ const ReindexBatchSize = 10_000
 const DefaultScanPrefetchSize = 100
 
 const persistentBatchSize = 5000
+
+const exportFileSize = 17 << 20
 
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
@@ -1234,112 +1229,6 @@ func (t *_table[T]) keysExternal(trs []T, keys [][]byte) [][]byte {
 		retKeys[i] = key
 	}
 	return retKeys
-}
-
-func (t *_table[T]) Export(ctx context.Context, path string, exportIndex bool) error {
-	dir := filepath.Join(path, fmt.Sprintf("%s_%d", t.name, t.id))
-	if err := os.Mkdir(dir, 0755); err != nil {
-		return err
-	}
-	itr := t.db.Iter(&IterOptions{
-		IterOptions: pebble.IterOptions{
-			LowerBound: t.dataKeySpaceStart,
-			UpperBound: t.dataKeySpaceEnd,
-		},
-	})
-	flushIter := func(path string, flushVal bool, itr Iterator) error {
-		defer itr.Close()
-		currentFileID := 1
-		file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
-		if err != nil {
-			return err
-		}
-		opts := sstable.WriterOptions{
-			TableFormat: sstable.TableFormatRocksDBv2, Parallelism: true, Comparer: DefaultKeyComparer(),
-		}
-		writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
-		var key []byte
-		var val []byte
-		for itr.First(); itr.Valid(); itr.Next() {
-			fmt.Println("goting", flushVal, itr.Key())
-			key = itr.Key()
-			if flushVal {
-				val = itr.Value()
-			} else {
-				fmt.Println("wrigintg")
-			}
-			if err := writer.Set(key, val); err != nil {
-				return err
-			}
-			// switch to new file if the file size is more
-			// than 17 mb.
-			if writer.EstimatedSize() > 17<<20 {
-				if err := writer.Close(); err != nil {
-					return err
-				}
-				currentFileID++
-				file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
-				if err != nil {
-					return err
-				}
-				writer = sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
-			}
-		}
-		return writer.Close()
-	}
-	grp := new(errgroup.Group)
-	grp.Go(func() error {
-		return flushIter(dir, true, itr)
-	})
-	if exportIndex {
-		indexes := t.SecondaryIndexes()
-		for _, index := range indexes {
-			itr := index.Iter(t, NewSelectorPoint(t.valueEmpty))
-			dir := filepath.Join(path, fmt.Sprintf("%s_%d_%s_%d", t.name, t.id, index.IndexName, index.IndexID))
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return err
-			}
-			grp.Go(func(path string, itr Iterator) func() error {
-				return func() error {
-					return flushIter(path, false, itr)
-				}
-			}(dir, itr))
-		}
-	}
-	return grp.Wait()
-}
-
-func (t *_table[T]) Import(ctx context.Context, path string, index bool) error {
-
-	dir := filepath.Join(path, fmt.Sprintf("%s_%d", t.name, t.id))
-	tableSSTPaths := []string{}
-	filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
-		if filepath.Ext(path) == ".sst" {
-			tableSSTPaths = append(tableSSTPaths, path)
-		}
-		return nil
-	})
-	if err := t.db.Backend().Ingest(tableSSTPaths); err != nil {
-		return err
-	}
-	if index {
-		indexes := t.SecondaryIndexes()
-		for _, index := range indexes {
-			dir := filepath.Join(path, fmt.Sprintf("%s_%d_%s_%d", t.name, t.id, index.IndexName, index.IndexID))
-			indexSSTPaths := []string{}
-			filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
-				if filepath.Ext(path) == ".sst" {
-					indexSSTPaths = append(indexSSTPaths, path)
-				}
-				return nil
-			})
-			if err := t.db.Backend().Ingest(indexSSTPaths); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return t.reindex(t.SecondaryIndexes())
 }
 
 func (t *_table[T]) keyDuplicate(index int, keys [][]byte) bool {

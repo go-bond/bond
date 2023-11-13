@@ -191,8 +191,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 			keyBufferPool.Put(lowerBound[:0])
 			keyBufferPool.Put(upperBound[:0])
 		}
-		fmt.Println("key", lowerBound)
-		fmt.Println("key", upperBound)
 		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
@@ -285,7 +283,6 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 
 	if idx.IndexFilterFunction(tr) {
 		key := encodeIndexKey(table, tr, idx, buff)
-		fmt.Println(key)
 		return batch.Set(key, _indexKeyValue, Sync)
 	}
 	return nil

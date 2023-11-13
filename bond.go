@@ -2,9 +2,9 @@ package bond
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -317,7 +317,9 @@ func (db *_db) Export(ctx context.Context, dir string, index bool, tables ...Tab
 	if err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile(filepath.Join("VERSION"), []byte(fmt.Sprintf("%d", BOND_DB_DATA_VERSION)), 0755); err != nil {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], BOND_DB_DATA_VERSION)
+	if err := os.WriteFile(filepath.Join(dir, "VERSION"), buf[:], 0755); err != nil {
 		return err
 	}
 	grp := new(errgroup.Group)
@@ -332,12 +334,23 @@ func (db *_db) Export(ctx context.Context, dir string, index bool, tables ...Tab
 }
 
 func (db *_db) Import(ctx context.Context, dir string, index bool, tables ...TableImporter) error {
-	for _, table := range tables {
-		if err := table.Import(ctx, dir, index); err != nil {
-			return err
+	buf, err := os.ReadFile(filepath.Join(dir, "VERSION"))
+	if err != nil {
+		return err
+	}
+	if len(buf) < 4 {
+		return fmt.Errorf("invalid VERSION file")
+	}
+	version := binary.BigEndian.Uint32(buf)
+	if version == BOND_DB_DATA_VERSION {
+		for _, table := range tables {
+			if err := table.Import(ctx, dir, index); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
+	// TODO: read data files and insert directly.
+	return fmt.Errorf("unsupported import")
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
