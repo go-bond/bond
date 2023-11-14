@@ -282,8 +282,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		key := encodeIndexKey(table, tr, idx, buff)
-		return batch.Set(key, _indexKeyValue, Sync)
+		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
 	return nil
 }
