@@ -188,6 +188,23 @@ iterate filter name: five, took 50.254286ms items 200035
 iterate filter name: not_exist_in_db, took 115.537µs items 0
 ```
 
+## Value based block filters
+
+Bond DB will create additional keys while indexing the user data and occupy extra disk space. 
+
+The below data will show the size distribution of index key of the sequence's indexer database. It shows that index key occupies upto 50% of the indexer database. 
+
+```
+======> Size of Database: 5.9 GB
+size of index in db:  2.4 GB
+size of index key part in db:  542 MB
+size of primary key part in db:  1.9 GB
+```
+
+The block filter based on value will remove the extra index key and give us additional query performance. But the pebble storage surface will surface deleted key on value based block filters, which leads us to incorrect data. 
+
+
+
 ## Conclusions
 
 1. The filtering is the more beneficial the bigger database is.
