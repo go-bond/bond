@@ -60,12 +60,16 @@ type TableScanner[T any] interface {
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
 }
 
-type TableExporter interface {
-	Export(ctx context.Context, path string, exportIndex bool) error
-}
+type restoreStrategy int
 
-type TableImporter interface {
-	Import(ctx context.Context, path string, index bool) error
+const (
+	ingestSST restoreStrategy = iota
+	batchedInsert
+)
+
+type tableBackup interface {
+	backup(ctx context.Context, path string, index bool) error
+	restore(ctx context.Context, path string, index bool, strategy restoreStrategy) error
 }
 
 type TableIterationer[T any] interface {
@@ -87,7 +91,7 @@ type TableReader[T any] interface {
 
 	TableScanner[T]
 	TableIterationer[T]
-	TableExporter
+	tableBackup
 }
 
 type TableInserter[T any] interface {

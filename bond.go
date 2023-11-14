@@ -63,9 +63,9 @@ type Applier interface {
 	Apply(b Batch, opt WriteOptions) error
 }
 
-type Exporter interface {
-	Export(ctx context.Context, dir string, index bool, tables ...TableExporter) error
-	Import(ctx context.Context, dir string, index bool, tables ...TableImporter) error
+type Backup interface {
+	Backup(ctx context.Context, dir string, index bool, tables ...tableBackup) error
+	Restore(ctx context.Context, dir string, index bool, tables ...tableBackup) error
 }
 
 type Closer io.Closer
@@ -106,7 +106,7 @@ type DB interface {
 	Applier
 
 	Closer
-	Exporter
+	Backup
 
 	OnClose(func(db DB))
 }
@@ -312,7 +312,7 @@ func (db *_db) putValueArray(arr [][]byte) {
 	db.byteArraysPool.Put(arr[:0])
 }
 
-func (db *_db) Export(ctx context.Context, dir string, index bool, tables ...TableExporter) error {
+func (db *_db) Backup(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
 	err := os.Mkdir(dir, 0755)
 	if err != nil {
 		return err
@@ -324,16 +324,16 @@ func (db *_db) Export(ctx context.Context, dir string, index bool, tables ...Tab
 	}
 	grp := new(errgroup.Group)
 	for _, table := range tables {
-		grp.Go(func(exporter TableExporter) func() error {
+		grp.Go(func(backup tableBackup) func() error {
 			return func() error {
-				return exporter.Export(ctx, dir, index)
+				return backup.backup(ctx, dir, index)
 			}
 		}(table))
 	}
 	return grp.Wait()
 }
 
-func (db *_db) Import(ctx context.Context, dir string, index bool, tables ...TableImporter) error {
+func (db *_db) Restore(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
 	buf, err := os.ReadFile(filepath.Join(dir, "VERSION"))
 	if err != nil {
 		return err
@@ -342,15 +342,20 @@ func (db *_db) Import(ctx context.Context, dir string, index bool, tables ...Tab
 		return fmt.Errorf("invalid VERSION file")
 	}
 	version := binary.BigEndian.Uint32(buf)
+	strategy := batchedInsert
 	if version == BOND_DB_DATA_VERSION {
-		for _, table := range tables {
-			if err := table.Import(ctx, dir, index); err != nil {
-				return err
-			}
-		}
+		strategy = ingestSST
 	}
-	// TODO: read data files and insert directly.
-	return fmt.Errorf("unsupported import")
+
+	grp := new(errgroup.Group)
+	for _, table := range tables {
+		grp.Go(func(table tableBackup) func() error {
+			return func() error {
+				return table.restore(ctx, dir, index, strategy)
+			}
+		}(table))
+	}
+	return grp.Wait()
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {

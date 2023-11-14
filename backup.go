@@ -14,8 +14,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func ItrToFile(itr Iterator, path string) error {
+// write all the key/value of iterator to the SST file.
+func IteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
+	// sst reader
 	currentFileID := 1
 	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
 	if err != nil {
@@ -25,6 +27,7 @@ func ItrToFile(itr Iterator, path string) error {
 		TableFormat: sstable.TableFormatRocksDBv2, Parallelism: true, Comparer: DefaultKeyComparer(),
 	}
 	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
+
 	for itr.First(); itr.Valid(); itr.Next() {
 		if err := writer.Set(itr.Key(), itr.Value()); err != nil {
 			return err
@@ -65,7 +68,7 @@ func (t *_table[T]) indexExportDir(idx IndexInfo) string {
 	return fmt.Sprintf("%s_%d_%s_%d", t.Name(), t.ID(), idx.Name(), idx.ID())
 }
 
-func (t *_table[T]) Export(ctx context.Context, path string, exportIndex bool) error {
+func (t *_table[T]) backup(ctx context.Context, path string, index bool) error {
 	grp := new(errgroup.Group)
 	tableDir := filepath.Join(path, t.exportDir())
 	if err := os.Mkdir(tableDir, 0755); err != nil {
@@ -78,9 +81,9 @@ func (t *_table[T]) Export(ctx context.Context, path string, exportIndex bool) e
 		},
 	})
 	grp.Go(func() error {
-		return ItrToFile(itr, tableDir)
+		return IteratorToSST(itr, tableDir)
 	})
-	if !exportIndex {
+	if !index {
 		return grp.Wait()
 	}
 	// export all the indexes if it is explicitly requested.
@@ -99,31 +102,46 @@ func (t *_table[T]) Export(ctx context.Context, path string, exportIndex bool) e
 			return err
 		}
 		grp.Go(func() error {
-			return ItrToFile(itr, indexDir)
+			return IteratorToSST(itr, indexDir)
 		})
 	}
 	return grp.Wait()
 }
 
-func (t *_table[T]) Import(ctx context.Context, path string, index bool) error {
+func (t *_table[T]) restore(ctx context.Context, path string, index bool, strategy restoreStrategy) error {
 	tablePath := filepath.Join(path, t.exportDir())
 	tableSST := listSST(tablePath)
-	if err := t.db.Backend().Ingest(tableSST); err != nil {
-		return err
-	}
-	if !index {
-		return t.reindex(t.SecondaryIndexes())
-	}
 
-	indexes := t.Indexes()
-	for _, index := range indexes {
-		indexPath := filepath.Join(path, t.indexExportDir(index))
-		indexSST := listSST(indexPath)
-		if err := t.db.Backend().Ingest(indexSST); err != nil {
+	switch strategy {
+	case ingestSST:
+		if err := t.db.Backend().Ingest(tableSST); err != nil {
 			return err
 		}
+		if !index {
+			return t.reindex(t.SecondaryIndexes())
+		}
+
+		indexes := t.Indexes()
+		for _, index := range indexes {
+			indexPath := filepath.Join(path, t.indexExportDir(index))
+			indexSST := listSST(indexPath)
+			if err := t.db.Backend().Ingest(indexSST); err != nil {
+				return err
+			}
+		}
+		return nil
+	case batchedInsert:
+		grp := new(errgroup.Group)
+		for _, sst := range tableSST {
+			grp.Go(func(sst string) func() error {
+				return func() error {
+					return t.insertSST(ctx, sst)
+				}
+			}(sst))
+		}
+		return grp.Wait()
 	}
-	return nil
+	return fmt.Errorf("invalid restore strategy")
 }
 
 func (t *_table[T]) insertSST(ctx context.Context, path string) error {
@@ -145,26 +163,43 @@ func (t *_table[T]) insertSST(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	var batch []T
+
+	var entries []T
+	value := t.db.getValueBufferPool().Get()[:0]
+	defer t.db.getValueBufferPool().Put(value[:0])
+	batch := t.db.Batch()
+
+	flushEntries := func() error {
+		if err := t.Insert(ctx, entries, batch); err != nil {
+			return err
+		}
+		if err := batch.Commit(Sync); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	for key, val := itr.First(); key != nil; key, val = itr.Next() {
 		var entry T
-		buf, _, err := val.Value(nil)
+		buf, _, err := val.Value(value[:0])
 		if err != nil {
 			return err
 		}
 		if err := t.serializer.Deserialize(buf, &entry); err != nil {
 			return err
 		}
-		batch = append(batch, entry)
-		if len(batch) > 200 {
-			if err := t.Insert(ctx, batch); err != nil {
+		entries = append(entries, entry)
+		if len(entries) > 200 {
+			if err := flushEntries(); err != nil {
 				return err
 			}
-			batch = batch[:0]
+			batch.ResetRetained()
+			entries = entries[:0]
 		}
 	}
-	if len(batch) > 0 {
-		if err := t.Insert(ctx, batch); err != nil {
+
+	if len(entries) > 0 {
+		if err := flushEntries(); err != nil {
 			return err
 		}
 	}

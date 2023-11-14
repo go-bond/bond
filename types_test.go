@@ -10,3 +10,8 @@ type TokenBalance struct {
 	TokenID         uint32 `json:"tokenId"`
 	Balance         uint64 `json:"balance"`
 }
+
+type Token struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+}
