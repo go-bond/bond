@@ -15,7 +15,7 @@ import (
 )
 
 // write all the key/value of iterator to the SST file.
-func IteratorToSST(itr Iterator, path string) error {
+func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
 	// sst reader
 	currentFileID := 1
@@ -68,7 +68,7 @@ func (t *_table[T]) indexExportDir(idx IndexInfo) string {
 	return fmt.Sprintf("%s_%d_%s_%d", t.Name(), t.ID(), idx.Name(), idx.ID())
 }
 
-func (t *_table[T]) backup(ctx context.Context, path string, index bool) error {
+func (t *_table[T]) dump(ctx context.Context, path string, index bool) error {
 	grp := new(errgroup.Group)
 	tableDir := filepath.Join(path, t.exportDir())
 	if err := os.Mkdir(tableDir, 0755); err != nil {
@@ -81,7 +81,7 @@ func (t *_table[T]) backup(ctx context.Context, path string, index bool) error {
 		},
 	})
 	grp.Go(func() error {
-		return IteratorToSST(itr, tableDir)
+		return iteratorToSST(itr, tableDir)
 	})
 	if !index {
 		return grp.Wait()
@@ -102,7 +102,7 @@ func (t *_table[T]) backup(ctx context.Context, path string, index bool) error {
 			return err
 		}
 		grp.Go(func() error {
-			return IteratorToSST(itr, indexDir)
+			return iteratorToSST(itr, indexDir)
 		})
 	}
 	return grp.Wait()
@@ -135,7 +135,7 @@ func (t *_table[T]) restore(ctx context.Context, path string, index bool, strate
 		for _, sst := range tableSST {
 			grp.Go(func(sst string) func() error {
 				return func() error {
-					return t.insertSST(ctx, sst)
+					return t.insertFromSST(ctx, sst)
 				}
 			}(sst))
 		}
@@ -144,7 +144,7 @@ func (t *_table[T]) restore(ctx context.Context, path string, index bool, strate
 	return fmt.Errorf("invalid restore strategy")
 }
 
-func (t *_table[T]) insertSST(ctx context.Context, path string) error {
+func (t *_table[T]) insertFromSST(ctx context.Context, path string) error {
 	file, err := vfs.Default.Open(path)
 	if err != nil {
 		return err

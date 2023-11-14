@@ -64,7 +64,7 @@ type Applier interface {
 }
 
 type Backup interface {
-	Backup(ctx context.Context, dir string, index bool, tables ...tableBackup) error
+	Dump(ctx context.Context, dir string, index bool, tables ...tableBackup) error
 	Restore(ctx context.Context, dir string, index bool, tables ...tableBackup) error
 }
 
@@ -312,7 +312,7 @@ func (db *_db) putValueArray(arr [][]byte) {
 	db.byteArraysPool.Put(arr[:0])
 }
 
-func (db *_db) Backup(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
+func (db *_db) Dump(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
 	err := os.Mkdir(dir, 0755)
 	if err != nil {
 		return err
@@ -326,7 +326,7 @@ func (db *_db) Backup(ctx context.Context, dir string, index bool, tables ...tab
 	for _, table := range tables {
 		grp.Go(func(backup tableBackup) func() error {
 			return func() error {
-				return backup.backup(ctx, dir, index)
+				return backup.dump(ctx, dir, index)
 			}
 		}(table))
 	}

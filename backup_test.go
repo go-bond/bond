@@ -77,7 +77,7 @@ func TestBond_BackupRestore(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Backup(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
+	err := db.Dump(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
 	require.NoError(t, err)
 
 	// create a tmp db.
@@ -167,7 +167,7 @@ func TestBond_BatchedInsertStrategy(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Backup(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
+	err := db.Dump(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
 	require.NoError(t, err)
 
 	// rewrite the version for bond to use batchedinsert strategy.

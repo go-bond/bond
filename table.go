@@ -68,7 +68,7 @@ const (
 )
 
 type tableBackup interface {
-	backup(ctx context.Context, path string, index bool) error
+	dump(ctx context.Context, path string, index bool) error
 	restore(ctx context.Context, path string, index bool, strategy restoreStrategy) error
 }
 
