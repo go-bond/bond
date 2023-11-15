@@ -69,19 +69,19 @@ var _FlagDeadline = &cli.DurationFlag{
 	Required: false,
 }
 
-func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
+func NewInspectCLI(init func(path string) (Inspect, error)) *cli.Command {
 	var (
 		inspect Inspect
 		err     error
 	)
 
-	return &cli.App{
-		Name: "bond-cli",
-		Usage: "The cli for bond database.\n\n" +
-			"bond-cli --url .bond tables\n" +
-			"bond-cli --url http://localhost:7777/bond tables\n" +
-			"bond-cli --url http://localhost:7777/bond indexes --table token_balances\n" +
-			"bond-cli --url http://localhost:7777/bond entry-fields --table token_balances",
+	return &cli.Command{
+		Name: "inspect",
+		Usage: "inspects bond database.\n\n" +
+			"bond-cli inspect --url .bond tables\n" +
+			"bond-cli inspect --url http://localhost:7777/bond tables\n" +
+			"bond-cli inspect --url http://localhost:7777/bond indexes --table token_balances\n" +
+			"bond-cli inspect --url http://localhost:7777/bond entry-fields --table token_balances",
 		Flags: []cli.Flag{
 			_FlagBondURL,
 			_FlagHeaders,
@@ -114,7 +114,7 @@ func NewInspectCLI(init func(path string) (Inspect, error)) *cli.App {
 			}
 			return nil
 		},
-		Commands: []*cli.Command{
+		Subcommands: []*cli.Command{
 			{
 				Name:  "tables",
 				Usage: "lists table names",

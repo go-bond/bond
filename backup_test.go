@@ -77,7 +77,7 @@ func TestBond_BackupRestore(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Dump(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
+	err := db.Dump(context.TODO(), "./export", true)
 	require.NoError(t, err)
 
 	// create a tmp db.
@@ -87,7 +87,7 @@ func TestBond_BackupRestore(t *testing.T) {
 	table.db = db2
 	table2 := tokenTable.(*_table[*Token])
 	table2.db = db2
-	err = db2.Restore(context.TODO(), "export", true, table, table2)
+	err = db2.Restore(context.TODO(), "export", true)
 	require.NoError(t, err)
 
 	// make sure both db has same keys and values.
@@ -100,7 +100,7 @@ func TestBond_BackupRestore(t *testing.T) {
 	require.False(t, itr2.Valid())
 }
 
-func TestBond_BatchedInsertStrategy(t *testing.T) {
+func TestBond_RestoreDifferentVersion(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
 	defer os.RemoveAll("export")
@@ -167,7 +167,14 @@ func TestBond_BatchedInsertStrategy(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Dump(context.TODO(), "./export", true, tokenBalanceTable, tokenTable)
+	db_ := db.(*_db)
+	tableIDs := db_.getTablesIDS()
+	fmt.Println(tableIDs)
+	for _, id := range tableIDs {
+		indexIDS := db_.getIndexIDS(id)
+		fmt.Println(indexIDS)
+	}
+	err := db.Dump(context.TODO(), "./export", true)
 	require.NoError(t, err)
 
 	// rewrite the version for bond to use batchedinsert strategy.
@@ -185,15 +192,6 @@ func TestBond_BatchedInsertStrategy(t *testing.T) {
 	table.db = db2
 	table2 := tokenTable.(*_table[*Token])
 	table2.db = db2
-	err = db2.Restore(context.TODO(), "export", true, table, table2)
-	require.NoError(t, err)
-
-	// make sure both db has same keys and values.
-	itr := db.Iter(&IterOptions{})
-	itr2 := db2.Iter(&IterOptions{})
-	for _, _ = itr.First(), itr2.First(); itr.Valid(); _, _ = itr.Next(), itr2.Next() {
-		require.Equal(t, itr.Key(), itr2.Key())
-		require.Equal(t, itr.Value(), itr2.Value())
-	}
-	require.False(t, itr2.Valid())
+	err = db2.Restore(context.TODO(), "export", true)
+	require.Error(t, err)
 }

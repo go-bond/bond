@@ -5,10 +5,18 @@ import (
 	"os"
 
 	"github.com/go-bond/bond/inspect"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
-	app := inspect.NewInspectCLI(nil)
+	app := cli.App{
+		Name:  "bond-cli",
+		Usage: "tools to manage bond db",
+		Commands: []*cli.Command{
+			inspect.NewInspectCLI(nil),
+			DumpCommand,
+		},
+	}
 
 	if err := app.Run(os.Args); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "[Error] %s\n", err.Error())

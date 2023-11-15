@@ -5,10 +5,16 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/objstorage/objstorageprovider"
+	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/sync/errgroup"
@@ -64,8 +70,8 @@ type Applier interface {
 }
 
 type Backup interface {
-	Dump(ctx context.Context, dir string, index bool, tables ...tableBackup) error
-	Restore(ctx context.Context, dir string, index bool, tables ...tableBackup) error
+	Dump(ctx context.Context, dir string, index bool) error
+	Restore(ctx context.Context, dir string, index bool) error
 }
 
 type Closer io.Closer
@@ -312,29 +318,62 @@ func (db *_db) putValueArray(arr [][]byte) {
 	db.byteArraysPool.Put(arr[:0])
 }
 
-func (db *_db) Dump(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
-	err := os.Mkdir(dir, 0755)
-	if err != nil {
+func (db *_db) Dump(_ context.Context, path string, index bool) error {
+	if err := os.Mkdir(path, 0755); err != nil {
 		return err
 	}
 	var buf [4]byte
 	binary.BigEndian.PutUint32(buf[:], BOND_DB_DATA_VERSION)
-	if err := os.WriteFile(filepath.Join(dir, "VERSION"), buf[:], 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "VERSION"), buf[:], 0755); err != nil {
 		return err
 	}
+
 	grp := new(errgroup.Group)
-	for _, table := range tables {
-		grp.Go(func(backup tableBackup) func() error {
+	tableIDS := db.getTablesIDS()
+	for _, tableID := range tableIDS {
+		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
+		if err := os.Mkdir(tablePath, 0755); err != nil {
+			return err
+		}
+		itr := db.Iter(&IterOptions{
+			IterOptions: pebble.IterOptions{
+				LowerBound: []byte{byte(tableID), 0x00, 0x00, 0x00, 0x00, 0x00},
+				UpperBound: []byte{byte(tableID), 0x01, 0x00, 0x00, 0x00, 0x00},
+			},
+		})
+		grp.Go(func(itr Iterator, path string) func() error {
 			return func() error {
-				return backup.dump(ctx, dir, index)
+				return iteratorToSST(itr, path)
 			}
-		}(table))
+		}(itr, tablePath))
+		if !index {
+			continue
+		}
+
+		indexIDs := db.getIndexIDS(tableID)
+		for _, indexID := range indexIDs {
+			indexPath := filepath.Join(path, fmt.Sprintf("table_%d_index_%d", tableID, indexID))
+			if err := os.Mkdir(indexPath, 0755); err != nil {
+				return err
+			}
+			itr := db.Iter(&IterOptions{
+				IterOptions: pebble.IterOptions{
+					LowerBound: []byte{byte(tableID), byte(indexID), 0x00, 0x00, 0x00, 0x00},
+					UpperBound: []byte{byte(tableID), byte(indexID), 0xff, 0xff, 0xff, 0xff},
+				},
+			})
+			grp.Go(func(itr Iterator, path string) func() error {
+				return func() error {
+					return iteratorToSST(itr, path)
+				}
+			}(itr, indexPath))
+		}
 	}
 	return grp.Wait()
 }
 
-func (db *_db) Restore(ctx context.Context, dir string, index bool, tables ...tableBackup) error {
-	buf, err := os.ReadFile(filepath.Join(dir, "VERSION"))
+func (db *_db) Restore(_ context.Context, path string, index bool) error {
+	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
 	if err != nil {
 		return err
 	}
@@ -342,20 +381,105 @@ func (db *_db) Restore(ctx context.Context, dir string, index bool, tables ...ta
 		return fmt.Errorf("invalid VERSION file")
 	}
 	version := binary.BigEndian.Uint32(buf)
-	strategy := batchedInsert
-	if version == BOND_DB_DATA_VERSION {
-		strategy = ingestSST
+	if version != BOND_DB_DATA_VERSION {
+		return fmt.Errorf("expecting version %d to restore, but found %d", BOND_DB_DATA_VERSION, version)
 	}
+	ssts := []string{}
+	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".sst" {
+			return nil
+		}
+		if !strings.Contains(path, "index") {
+			ssts = append(ssts, path)
+			return nil
+		}
+		if index {
+			ssts = append(ssts, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return db.pebble.Ingest(ssts)
+}
 
-	grp := new(errgroup.Group)
-	for _, table := range tables {
-		grp.Go(func(table tableBackup) func() error {
-			return func() error {
-				return table.restore(ctx, dir, index, strategy)
-			}
-		}(table))
+func (db *_db) getTablesIDS() []TableID {
+	itr := db.Iter(&IterOptions{})
+	prefix := byte(1)
+	tableIDS := []TableID{}
+	for {
+		if !itr.SeekGE([]byte{prefix}) {
+			break
+		}
+		tableID := uint8(itr.Key()[0])
+		tableIDS = append(tableIDS, TableID(tableID))
+		if tableID == math.MaxUint8 {
+			break
+		}
+		prefix = tableID + 1
 	}
-	return grp.Wait()
+	return tableIDS
+}
+
+func (db *_db) getIndexIDS(tableID TableID) []IndexID {
+	itr := db.Iter(&IterOptions{})
+	prefix := []byte{byte(tableID), 1}
+	indexIDS := []IndexID{}
+	for {
+		if !itr.SeekGE(prefix) {
+			break
+		}
+		indexTableID := TableID(itr.Key()[0])
+		indexID := itr.Key()[1]
+		if indexTableID != tableID {
+			break
+		}
+		indexIDS = append(indexIDS, IndexID(indexID))
+		if indexID == math.MaxUint8 {
+			break
+		}
+		prefix[1] = indexID + 1
+	}
+	return indexIDS
+}
+
+// write all the key/value of iterator to the SST file.
+func iteratorToSST(itr Iterator, path string) error {
+	defer itr.Close()
+	// sst reader
+	currentFileID := 1
+	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+	if err != nil {
+		return err
+	}
+	opts := sstable.WriterOptions{
+		TableFormat: sstable.TableFormatRocksDBv2, Parallelism: true, Comparer: DefaultKeyComparer(),
+	}
+	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
+
+	for itr.First(); itr.Valid(); itr.Next() {
+		if err := writer.Set(itr.Key(), itr.Value()); err != nil {
+			return err
+		}
+
+		// Replace the old writer with new writer after the old writer reaches it's capacity.
+		if writer.EstimatedSize() > exportFileSize {
+			if err := writer.Close(); err != nil {
+				return err
+			}
+			currentFileID++
+			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+			if err != nil {
+				return err
+			}
+			writer = sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
+		}
+	}
+	return writer.Close()
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {

@@ -91,7 +91,6 @@ type TableReader[T any] interface {
 
 	TableScanner[T]
 	TableIterationer[T]
-	tableBackup
 }
 
 type TableInserter[T any] interface {
