@@ -12,7 +12,7 @@ var _FlagExportPath = &cli.StringFlag{
 }
 
 var _FlagExportIndex = &cli.BoolFlag{
-	Name:     "index",
+	Name:     "with-index",
 	Usage:    "exports index",
 	Required: false,
 }
@@ -20,6 +20,12 @@ var _FlagExportIndex = &cli.BoolFlag{
 var _FlagExportBondDir = &cli.StringFlag{
 	Name:     "bond-dir",
 	Usage:    "sets bond dir",
+	Required: true,
+}
+
+var _FlagExportTables = &cli.IntSliceFlag{
+	Name:     "tables",
+	Usage:    "sets table ids",
 	Required: true,
 }
 
@@ -33,13 +39,18 @@ func init() {
 			_FlagExportBondDir,
 			_FlagExportIndex,
 			_FlagExportPath,
+			_FlagExportTables,
 		},
 		Action: func(ctx *cli.Context) error {
 			db, err := bond.Open(ctx.String("bond-dir"), nil)
 			if err != nil {
 				return err
 			}
-			return db.Dump(ctx.Context, ctx.String("dir"), ctx.Bool("index"))
+			var tables []bond.TableID
+			for _, id := range ctx.IntSlice("tables") {
+				tables = append(tables, bond.TableID(id))
+			}
+			return db.Dump(ctx.Context, ctx.String("dir"), tables, ctx.Bool("with-index"))
 		},
 	}
 }

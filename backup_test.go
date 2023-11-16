@@ -78,7 +78,7 @@ func TestBond_BackupRestore(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Dump(context.TODO(), "./export", true)
+	err := db.Dump(context.TODO(), "./export", []TableID{TokenBalanceTableID, TokenTableID}, true)
 	require.NoError(t, err)
 
 	// create a tmp db.
@@ -168,7 +168,7 @@ func TestBond_RestoreDifferentVersion(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	err := db.Dump(context.TODO(), "./export", true)
+	err := db.Dump(context.TODO(), "./export", []TableID{TokenBalanceTableID, TokenTableID}, true)
 	require.NoError(t, err)
 
 	// rewrite the version for bond to use batchedinsert strategy.
@@ -254,9 +254,6 @@ func Test_BondIDRetrival(t *testing.T) {
 		require.NoError(t, err)
 	}
 	db_ := db.(*_db)
-	tableIDs := db_.getTablesIDS()
-	assert.ElementsMatch(t, tableIDs, []TableID{TokenBalanceTableID, TokenTableID})
-
 	indexIDs := db_.getIndexIDS(TokenBalanceTableID)
 	assert.ElementsMatch(t, indexIDs, []IndexID{TokenBalanceAccountAddressIndexID})
 }

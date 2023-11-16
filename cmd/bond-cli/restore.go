@@ -21,7 +21,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			return db.Restore(ctx.Context, ctx.String("dir"), ctx.Bool("index"))
+			return db.Restore(ctx.Context, ctx.String("dir"), ctx.Bool("with-index"))
 		},
 	}
 }

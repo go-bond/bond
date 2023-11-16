@@ -187,10 +187,12 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
 		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
 			keyBufferPool.Put(upperBound[:0])
 		}
+
 		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,

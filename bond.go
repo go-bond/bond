@@ -72,8 +72,8 @@ type Applier interface {
 }
 
 type Backup interface {
-	Dump(ctx context.Context, dir string, index bool) error
-	Restore(ctx context.Context, dir string, index bool) error
+	Dump(ctx context.Context, dir string, tables []TableID, withIndex bool) error
+	Restore(ctx context.Context, dir string, withIndex bool) error
 }
 
 type Closer io.Closer
@@ -320,7 +320,7 @@ func (db *_db) putValueArray(arr [][]byte) {
 	db.byteArraysPool.Put(arr[:0])
 }
 
-func (db *_db) Dump(_ context.Context, path string, index bool) error {
+func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex bool) error {
 	if err := os.Mkdir(path, 0755); err != nil {
 		return err
 	}
@@ -330,42 +330,49 @@ func (db *_db) Dump(_ context.Context, path string, index bool) error {
 		return err
 	}
 
+	snapshot := db.pebble.NewSnapshot()
+	defer snapshot.Close()
+
 	grp := new(errgroup.Group)
-	tableIDS := db.getTablesIDS()
 	// write all the table data to the sst file.
-	for _, tableID := range tableIDS {
+	for _, tableID := range tables {
 		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
 		if err := os.Mkdir(tablePath, 0755); err != nil {
 			return err
 		}
-		itr := db.Iter(&IterOptions{
-			IterOptions: pebble.IterOptions{
+		itr, err := snapshot.NewIter(
+			&pebble.IterOptions{
 				LowerBound: []byte{byte(tableID), 0x00, 0x00, 0x00, 0x00, 0x00},
 				UpperBound: []byte{byte(tableID), 0x01, 0x00, 0x00, 0x00, 0x00},
 			},
-		})
+		)
+		if err != nil {
+			return err
+		}
 		grp.Go(func(itr Iterator, path string) func() error {
 			return func() error {
 				return iteratorToSST(itr, path)
 			}
 		}(itr, tablePath))
 
-		if !index {
+		if !withIndex {
 			continue
 		}
 		// write all the index data to sst file.
-		indexIDs := db.getIndexIDS(tableID)
-		for _, indexID := range indexIDs {
-			indexPath := filepath.Join(path, fmt.Sprintf("table_%d_index_%d", tableID, indexID))
+		indexes := db.getIndexIDS(tableID)
+		for _, index := range indexes {
+			indexPath := filepath.Join(path, fmt.Sprintf("table_%d_index_%d", tableID, index))
 			if err := os.Mkdir(indexPath, 0755); err != nil {
 				return err
 			}
-			itr := db.Iter(&IterOptions{
-				IterOptions: pebble.IterOptions{
-					LowerBound: []byte{byte(tableID), byte(indexID), 0x00, 0x00, 0x00, 0x00},
-					UpperBound: []byte{byte(tableID), byte(indexID), 0xff, 0xff, 0xff, 0xff},
-				},
-			})
+			itr, err := snapshot.NewIter(&pebble.IterOptions{
+				LowerBound: []byte{byte(tableID), byte(index), 0x00, 0x00, 0x00, 0x00},
+				UpperBound: []byte{byte(tableID), byte(index), 0xff, 0xff, 0xff, 0xff},
+			},
+			)
+			if err != nil {
+				return err
+			}
 			grp.Go(func(itr Iterator, path string) func() error {
 				return func() error {
 					return iteratorToSST(itr, path)
@@ -376,7 +383,7 @@ func (db *_db) Dump(_ context.Context, path string, index bool) error {
 	return grp.Wait()
 }
 
-func (db *_db) Restore(_ context.Context, path string, index bool) error {
+func (db *_db) Restore(_ context.Context, path string, withIndex bool) error {
 	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
 	if err != nil {
 		return err
@@ -402,7 +409,7 @@ func (db *_db) Restore(_ context.Context, path string, index bool) error {
 			ssts = append(ssts, path)
 			return nil
 		}
-		if index {
+		if withIndex {
 			ssts = append(ssts, path)
 		}
 		return nil
@@ -411,25 +418,6 @@ func (db *_db) Restore(_ context.Context, path string, index bool) error {
 		return err
 	}
 	return db.pebble.Ingest(ssts)
-}
-
-func (db *_db) getTablesIDS() []TableID {
-	prefix := byte(1)
-	tableIDS := []TableID{}
-
-	itr := db.Iter(&IterOptions{})
-	for {
-		if !itr.SeekGE([]byte{prefix}) {
-			break
-		}
-		tableID := uint8(itr.Key()[0])
-		tableIDS = append(tableIDS, TableID(tableID))
-		if tableID == math.MaxUint8 {
-			break
-		}
-		prefix = tableID + 1
-	}
-	return tableIDS
 }
 
 func (db *_db) getIndexIDS(tableID TableID) []IndexID {
