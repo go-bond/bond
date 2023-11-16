@@ -21,8 +21,6 @@ const DefaultScanPrefetchSize = 100
 
 const persistentBatchSize = 5000
 
-const exportFileSize = 17 << 20
-
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
 
@@ -58,18 +56,6 @@ type TableScanner[T any] interface {
 	ScanIndex(ctx context.Context, i *Index[T], s Selector[T], tr *[]T, reverse bool, optBatch ...Batch) error
 	ScanForEach(ctx context.Context, f func(keyBytes KeyBytes, l Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
-}
-
-type restoreStrategy int
-
-const (
-	ingestSST restoreStrategy = iota
-	batchedInsert
-)
-
-type tableBackup interface {
-	dump(ctx context.Context, path string, index bool) error
-	restore(ctx context.Context, path string, index bool, strategy restoreStrategy) error
 }
 
 type TableIterationer[T any] interface {

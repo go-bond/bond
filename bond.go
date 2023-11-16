@@ -28,6 +28,8 @@ const (
 	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
 )
 
+const exportFileSize = 17 << 20
+
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
 )
