@@ -330,6 +330,7 @@ func (db *_db) Dump(_ context.Context, path string, index bool) error {
 
 	grp := new(errgroup.Group)
 	tableIDS := db.getTablesIDS()
+	// write all the table data to the sst file.
 	for _, tableID := range tableIDS {
 		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
 		if err := os.Mkdir(tablePath, 0755); err != nil {
@@ -346,10 +347,11 @@ func (db *_db) Dump(_ context.Context, path string, index bool) error {
 				return iteratorToSST(itr, path)
 			}
 		}(itr, tablePath))
+
 		if !index {
 			continue
 		}
-
+		// write all the index data to sst file.
 		indexIDs := db.getIndexIDS(tableID)
 		for _, indexID := range indexIDs {
 			indexPath := filepath.Join(path, fmt.Sprintf("table_%d_index_%d", tableID, indexID))
@@ -384,6 +386,8 @@ func (db *_db) Restore(_ context.Context, path string, index bool) error {
 	if version != BOND_DB_DATA_VERSION {
 		return fmt.Errorf("expecting version %d to restore, but found %d", BOND_DB_DATA_VERSION, version)
 	}
+
+	// ingest the required sst file.
 	ssts := []string{}
 	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
 		if info.IsDir() {
@@ -408,9 +412,10 @@ func (db *_db) Restore(_ context.Context, path string, index bool) error {
 }
 
 func (db *_db) getTablesIDS() []TableID {
-	itr := db.Iter(&IterOptions{})
 	prefix := byte(1)
 	tableIDS := []TableID{}
+
+	itr := db.Iter(&IterOptions{})
 	for {
 		if !itr.SeekGE([]byte{prefix}) {
 			break
@@ -426,9 +431,10 @@ func (db *_db) getTablesIDS() []TableID {
 }
 
 func (db *_db) getIndexIDS(tableID TableID) []IndexID {
-	itr := db.Iter(&IterOptions{})
 	prefix := []byte{byte(tableID), 1}
 	indexIDS := []IndexID{}
+
+	itr := db.Iter(&IterOptions{})
 	for {
 		if !itr.SeekGE(prefix) {
 			break
