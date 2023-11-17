@@ -73,7 +73,7 @@ type Applier interface {
 
 type Backup interface {
 	Dump(ctx context.Context, dir string, tables []TableID, withIndex bool) error
-	Restore(ctx context.Context, dir string, withIndex bool) error
+	Restore(ctx context.Context, dir string, tables []TableID, withIndex bool) error
 }
 
 type Closer io.Closer
@@ -383,7 +383,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 	return grp.Wait()
 }
 
-func (db *_db) Restore(_ context.Context, path string, withIndex bool) error {
+func (db *_db) Restore(_ context.Context, path string, tables []TableID, withIndex bool) error {
 	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
 	if err != nil {
 		return err
@@ -396,6 +396,16 @@ func (db *_db) Restore(_ context.Context, path string, withIndex bool) error {
 		return fmt.Errorf("expecting version %d to restore, but found %d", BOND_DB_DATA_VERSION, version)
 	}
 
+	// The table directory, must be present for the bond to restore. return an error if it
+	// doesn't exist
+	for _, table := range tables {
+		tableDir := filepath.Join(path, fmt.Sprintf("table_%d", table))
+		_, err := os.Stat(tableDir)
+		if err != nil {
+			return err
+		}
+	}
+
 	// ingest the required sst file.
 	ssts := []string{}
 	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
@@ -405,6 +415,19 @@ func (db *_db) Restore(_ context.Context, path string, withIndex bool) error {
 		if filepath.Ext(path) != ".sst" {
 			return nil
 		}
+		// filter only relevant tables.
+		filter := true
+		for _, table := range tables {
+			if strings.Contains(path, fmt.Sprintf("table_%d", table)) {
+				filter = false
+				break
+			}
+		}
+
+		if filter {
+			return nil
+		}
+
 		if !strings.Contains(path, "index") {
 			ssts = append(ssts, path)
 			return nil

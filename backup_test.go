@@ -88,8 +88,11 @@ func TestBond_BackupRestore(t *testing.T) {
 	table.db = db2
 	table2 := tokenTable.(*_table[*Token])
 	table2.db = db2
-	err = db2.Restore(context.TODO(), "export", true)
+	err = db2.Restore(context.TODO(), "export", []TableID{TokenBalanceTableID, TokenTableID}, true)
 	require.NoError(t, err)
+
+	err = db2.Restore(context.TODO(), "export", []TableID{TokenTableID + 1}, true)
+	require.Error(t, err)
 
 	// make sure both db has same keys and values.
 	itr := db.Iter(&IterOptions{})
@@ -182,7 +185,7 @@ func TestBond_RestoreDifferentVersion(t *testing.T) {
 	// create a tmp db.
 	db2 := setupDB("tmp_db")
 	defer tearDownDB("tmp_db", db2)
-	err = db2.Restore(context.TODO(), "export", true)
+	err = db2.Restore(context.TODO(), "export", []TableID{}, true)
 	require.Error(t, err)
 }
 
