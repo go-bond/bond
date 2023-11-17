@@ -1,12 +1,23 @@
 package bond
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"io/fs"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/objstorage/objstorageprovider"
+	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/utils"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -16,6 +27,8 @@ const (
 	// BOND_DB_DATA_USER_SPACE_INDEX_ID
 	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
 )
+
+const exportFileSize = 17 << 20
 
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
@@ -58,6 +71,11 @@ type Applier interface {
 	Apply(b Batch, opt WriteOptions) error
 }
 
+type Backup interface {
+	Dump(ctx context.Context, dir string, tables []TableID, withIndex bool) error
+	Restore(ctx context.Context, dir string, tables []TableID, withIndex bool) error
+}
+
 type Closer io.Closer
 
 const DefaultKeyBufferSize = 2048
@@ -96,6 +114,7 @@ type DB interface {
 	Applier
 
 	Closer
+	Backup
 
 	OnClose(func(db DB))
 }
@@ -299,6 +318,187 @@ func (db *_db) putValueArray(arr [][]byte) {
 		db.valueBufferPool.Put(value[:0])
 	}
 	db.byteArraysPool.Put(arr[:0])
+}
+
+func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex bool) error {
+	if err := os.Mkdir(path, 0755); err != nil {
+		return err
+	}
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], BOND_DB_DATA_VERSION)
+	if err := os.WriteFile(filepath.Join(path, "VERSION"), buf[:], 0755); err != nil {
+		return err
+	}
+
+	snapshot := db.pebble.NewSnapshot()
+	defer snapshot.Close()
+
+	grp := new(errgroup.Group)
+	// write all the table data to the sst file.
+	for _, tableID := range tables {
+		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
+		if err := os.Mkdir(tablePath, 0755); err != nil {
+			return err
+		}
+		itr, err := snapshot.NewIter(
+			&pebble.IterOptions{
+				LowerBound: []byte{byte(tableID), 0x00, 0x00, 0x00, 0x00, 0x00},
+				UpperBound: []byte{byte(tableID), 0x01, 0x00, 0x00, 0x00, 0x00},
+			},
+		)
+		if err != nil {
+			return err
+		}
+		grp.Go(func(itr Iterator, path string) func() error {
+			return func() error {
+				return iteratorToSST(itr, path)
+			}
+		}(itr, tablePath))
+
+		if !withIndex {
+			continue
+		}
+		// write all the index data to sst file.
+		indexes := db.getIndexIDS(tableID)
+		for _, index := range indexes {
+			indexPath := filepath.Join(path, fmt.Sprintf("table_%d_index_%d", tableID, index))
+			if err := os.Mkdir(indexPath, 0755); err != nil {
+				return err
+			}
+			itr, err := snapshot.NewIter(&pebble.IterOptions{
+				LowerBound: []byte{byte(tableID), byte(index), 0x00, 0x00, 0x00, 0x00},
+				UpperBound: []byte{byte(tableID), byte(index), 0xff, 0xff, 0xff, 0xff},
+			},
+			)
+			if err != nil {
+				return err
+			}
+			grp.Go(func(itr Iterator, path string) func() error {
+				return func() error {
+					return iteratorToSST(itr, path)
+				}
+			}(itr, indexPath))
+		}
+	}
+	return grp.Wait()
+}
+
+func (db *_db) Restore(_ context.Context, path string, tables []TableID, withIndex bool) error {
+	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
+	if err != nil {
+		return err
+	}
+	if len(buf) < 4 {
+		return fmt.Errorf("invalid VERSION file")
+	}
+	version := binary.BigEndian.Uint32(buf)
+	if version != BOND_DB_DATA_VERSION {
+		return fmt.Errorf("expecting version %d to restore, but found %d", BOND_DB_DATA_VERSION, version)
+	}
+
+	// The table directory, must be present for the bond to restore. return an error if it
+	// doesn't exist
+	for _, table := range tables {
+		tableDir := filepath.Join(path, fmt.Sprintf("table_%d", table))
+		_, err := os.Stat(tableDir)
+		if err != nil {
+			return err
+		}
+	}
+
+	// ingest the required sst file.
+	ssts := []string{}
+	err = filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".sst" {
+			return nil
+		}
+		// filter only relevant tables.
+		filter := true
+		for _, table := range tables {
+			if strings.Contains(path, fmt.Sprintf("table_%d", table)) {
+				filter = false
+				break
+			}
+		}
+
+		if filter {
+			return nil
+		}
+
+		if !strings.Contains(path, "index") {
+			ssts = append(ssts, path)
+			return nil
+		}
+		if withIndex {
+			ssts = append(ssts, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return db.pebble.Ingest(ssts)
+}
+
+func (db *_db) getIndexIDS(tableID TableID) []IndexID {
+	prefix := []byte{byte(tableID), 1}
+	indexIDS := []IndexID{}
+
+	itr := db.Iter(&IterOptions{})
+	for {
+		if !itr.SeekGE(prefix) {
+			break
+		}
+		indexTableID := TableID(itr.Key()[0])
+		indexID := itr.Key()[1]
+		if indexTableID != tableID {
+			break
+		}
+		indexIDS = append(indexIDS, IndexID(indexID))
+		if indexID == math.MaxUint8 {
+			break
+		}
+		prefix[1] = indexID + 1
+	}
+	return indexIDS
+}
+
+// write all the key/value of iterator to the SST file.
+func iteratorToSST(itr Iterator, path string) error {
+	defer itr.Close()
+	// sst reader
+	currentFileID := 1
+	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+	if err != nil {
+		return err
+	}
+	opts := sstable.WriterOptions{
+		TableFormat: sstable.TableFormatRocksDBv2, Parallelism: true, Comparer: DefaultKeyComparer(),
+	}
+	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
+
+	for itr.First(); itr.Valid(); itr.Next() {
+		if err := writer.Set(itr.Key(), itr.Value()); err != nil {
+			return err
+		}
+
+		// Replace the old writer with new writer after the old writer reaches it's capacity.
+		if writer.EstimatedSize() > exportFileSize {
+			if err := writer.Close(); err != nil {
+				return err
+			}
+			currentFileID++
+			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+			if err != nil {
+				return err
+			}
+			writer = sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
+		}
+	}
+	return writer.Close()
 }
 
 func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
