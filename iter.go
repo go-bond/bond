@@ -113,7 +113,7 @@ func (it *_iteratorMulti) Last() bool {
 }
 
 func (it *_iteratorMulti) Prev() bool {
-	if !it.iterator.Prev() {
+	for !it.iterator.Prev() {
 		if it.iteratorOptionsIndex == 0 {
 			return false
 		}
@@ -122,13 +122,15 @@ func (it *_iteratorMulti) Prev() bool {
 
 		it.iteratorOptionsIndex--
 		it.iterator = it.iteratorConstuctor.Iter(childIteratorOptions(it.iteratorOptions[it.iteratorOptionsIndex]))
-		return it.iterator.Last()
+		if it.iterator.Last() {
+			break
+		}
 	}
 	return true
 }
 
 func (it *_iteratorMulti) Next() bool {
-	if !it.iterator.Next() {
+	for !it.iterator.Next() {
 		if it.iteratorOptionsIndex == len(it.iteratorOptions)-1 {
 			return false
 		}
@@ -137,7 +139,9 @@ func (it *_iteratorMulti) Next() bool {
 
 		it.iteratorOptionsIndex++
 		it.iterator = it.iteratorConstuctor.Iter(childIteratorOptions(it.iteratorOptions[it.iteratorOptionsIndex]))
-		return it.iterator.First()
+		if it.iterator.First() {
+			break
+		}
 	}
 	return true
 }
