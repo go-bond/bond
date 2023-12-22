@@ -87,23 +87,29 @@ func newIteratorMulti(itc Iterationer, opts []*IterOptions) *_iteratorMulti {
 }
 
 func (it *_iteratorMulti) First() bool {
-	if it.iteratorOptionsIndex != 0 {
+	// find the valid iterator from the start of the list.
+	for i := 0; i < len(it.iteratorOptions); i++ {
 		_ = it.iterator.Close()
-
-		it.iteratorOptionsIndex = 0
+		it.iteratorOptionsIndex = i
 		it.iterator = it.iteratorConstuctor.Iter(childIteratorOptions(it.iteratorOptions[it.iteratorOptionsIndex]))
+		if it.iterator.First() {
+			return true
+		}
 	}
-	return it.iterator.First()
+	return false
 }
 
 func (it *_iteratorMulti) Last() bool {
-	if it.iteratorOptionsIndex != len(it.iteratorOptions)-1 {
+	// find the valid iterator from the end of the list.
+	for i := len(it.iteratorOptions) - 1; i >= 0; i-- {
 		_ = it.iterator.Close()
-
-		it.iteratorOptionsIndex = len(it.iteratorOptions) - 1
+		it.iteratorOptionsIndex = i
 		it.iterator = it.iteratorConstuctor.Iter(childIteratorOptions(it.iteratorOptions[it.iteratorOptionsIndex]))
+		if it.iterator.Last() {
+			return true
+		}
 	}
-	return it.iterator.Last()
+	return false
 }
 
 func (it *_iteratorMulti) Prev() bool {
