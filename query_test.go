@@ -1834,6 +1834,66 @@ func TestQuery_Selectors(t *testing.T) {
 			},
 		},
 		{
+			name: "SelectorPoints_AccountAddressIndex_With_Null_Point",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccoun"},
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_With_Null_Point_In_Between",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccoun"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)),
+			want: []*TokenBalance{
+				tokenBalanceAccount1,
+				tokenBalance2Account1,
+				tokenBalance3Account1,
+				tokenBalance1Account2,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_Reverse",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+					&TokenBalance{AccountAddress: "0xtestAccount3"},
+				)).Reverse(),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+				tokenBalance3Account1,
+				tokenBalance2Account1,
+				tokenBalanceAccount1,
+			},
+		},
+		{
+			name: "SelectorPoints_AccountAddressIndex_Reverse_Null_In_Between",
+			query: TokenBalanceTable.Query().
+				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
+					&TokenBalance{AccountAddress: "0xtestAccount"},
+					&TokenBalance{AccountAddress: "0xtestAccount3"},
+					&TokenBalance{AccountAddress: "0xtestAccount2"},
+				)).Reverse(),
+			want: []*TokenBalance{
+				tokenBalance1Account2,
+				tokenBalance3Account1,
+				tokenBalance2Account1,
+				tokenBalanceAccount1,
+			},
+		},
+		{
 			name: "SelectorPoints_AccountAddressIndex_After_tokenBalance2",
 			query: TokenBalanceTable.Query().
 				With(TokenBalanceAccountAddressIndex, NewSelectorPoints(
