@@ -247,6 +247,10 @@ func (t *_table[T]) Serializer() Serializer[*T] {
 func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	t.mutex.Lock()
 	for _, idx := range idxs {
+		_, ok := t.secondaryIndexes[idx.IndexID]
+		if ok {
+			return fmt.Errorf("found duplicate IndexID %d", idx.IndexID)
+		}
 		t.secondaryIndexes[idx.IndexID] = idx
 	}
 	t.mutex.Unlock()
