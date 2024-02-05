@@ -129,6 +129,50 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 	assert.Equal(t, "account_address_idx", secondaryIndexes[0].IndexName)
 }
 
+func TestDuplicateIndexID(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+	require.NotNil(t, tokenBalanceTable)
+
+	var (
+		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   PrimaryIndexID + 1,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+		TokenBalanceAccountAddressIndex2 = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+			IndexID:   PrimaryIndexID + 1,
+			IndexName: "account_address_idx",
+			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+				return builder.AddStringField(tb.AccountAddress).Bytes()
+			},
+			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
+		})
+	)
+
+	err := tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{
+		TokenBalanceAccountAddressIndex,
+		TokenBalanceAccountAddressIndex2,
+	})
+	require.Error(t, err)
+}
+
 func TestBondTable_Serializer(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
