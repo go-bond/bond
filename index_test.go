@@ -1926,7 +1926,16 @@ func TestBond_Table_Reindex(t *testing.T) {
 
 	TokenBalanceAccountAndContractAddressIndex.IndexFilterFunction = func(tr *TokenBalance) bool { return tr.ContractAddress == "0xtestContract2" }
 
-	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	tokenBalanceTable = NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex, TokenBalanceAccountAddressIndex}, true)
 	require.NoError(t, err)
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
