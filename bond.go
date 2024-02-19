@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/cockroachdb/pebble"
@@ -139,6 +140,43 @@ func Open(dirname string, opts *Options) (DB, error) {
 
 	if opts.PebbleOptions == nil {
 		opts.PebbleOptions = DefaultPebbleOptions()
+	}
+
+	_, err := os.Stat(dirname)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err != nil && os.IsNotExist(err) {
+		// create dir if db dir didn't exit.
+		if err := os.MkdirAll(dirname, os.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
+	// retive the pebble version.
+	version, err := os.ReadFile(filepath.Join(dirname, "VERSION"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	if err != nil && os.IsNotExist(err) {
+		// create version for to check invariant in the
+		// next open.
+		if err := os.WriteFile(filepath.Join(dirname, "VERSION"),
+			[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion)),
+			os.ModePerm); err != nil {
+			return nil, err
+		}
+	} else {
+		existingVersion, err := strconv.ParseUint(string(version), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if existingVersion != uint64(opts.PebbleOptions.FormatMajorVersion) {
+			return nil, fmt.Errorf("the user trying to open pebble version in %d. but db is in %d",
+				opts.PebbleOptions.FormatMajorVersion,
+				existingVersion)
+		}
 	}
 
 	opts.PebbleOptions.Comparer = DefaultKeyComparer()

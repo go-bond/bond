@@ -1,9 +1,12 @@
 package bond
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,4 +44,45 @@ func TestBond_Open(t *testing.T) {
 
 	err = db.Close()
 	require.NoError(t, err)
+}
+
+func TestBond_VersionCheck(t *testing.T) {
+	defer func() { _ = os.RemoveAll(dbName) }()
+
+	pebbleOpts := DefaultPebbleOptions()
+	pebbleOpts.FormatMajorVersion = pebble.FormatPrePebblev1MarkedCompacted
+	opts := DefaultOptions()
+	opts.PebbleOptions = pebbleOpts
+
+	db, err := Open(dbName, opts)
+	require.NoError(t, err)
+	err = db.Close()
+	require.NoError(t, err)
+
+	// simluate the db where VERSION file don't exist.
+	err = os.Remove(filepath.Join(dbName, "VERSION"))
+	require.NoError(t, err)
+
+	// opening db should create a version file
+	db, err = Open(dbName, opts)
+	require.NoError(t, err)
+	err = db.Close()
+	require.NoError(t, err)
+
+	_, err = os.Stat(filepath.Join(dbName, "VERSION"))
+	require.NoError(t, err)
+	buf, err := os.ReadFile(filepath.Join(dbName, "VERSION"))
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion), string(buf))
+
+	// rewrite the version with some other version.
+	err = os.Remove(filepath.Join(dbName, "VERSION"))
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(dbName, "VERSION"),
+		[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion-1)), os.ModePerm)
+	require.NoError(t, err)
+
+	// throw an error since db is written in different version.
+	_, err = Open(dbName, opts)
+	require.Error(t, err)
 }
