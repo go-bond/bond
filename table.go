@@ -10,6 +10,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
+	"github.com/invopop/jsonschema"
 	"golang.org/x/exp/maps"
 )
 
@@ -20,6 +21,8 @@ const ReindexBatchSize = 10_000
 const DefaultScanPrefetchSize = 100
 
 const persistentBatchSize = 5000
+
+const rowSchema = "!bond_row_schema"
 
 type TableID uint8
 type TablePrimaryKeyFunc[T any] func(builder KeyBuilder, t T) []byte
@@ -179,6 +182,24 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		serializer:        serializer,
 		filter:            opt.Filter,
 		mutex:             sync.RWMutex{},
+	}
+
+	prevSchema, closer, err := opt.DB.Get(bondTableKey(opt.TableID, rowSchema))
+	if err != nil && err != pebble.ErrNotFound {
+		panic(err)
+	}
+	if err != nil && err == pebble.ErrNotFound {
+		// store the row schema if not present already.
+		schema := jsonschema.Reflect(&table.valueEmpty)
+		buf, _ := schema.MarshalJSON()
+		if err := opt.DB.Set(bondTableKey(opt.TableID, rowSchema), buf, Sync); err != nil {
+			panic(err)
+		}
+	}
+	defer closer.Close()
+	currentSchema, _ := jsonschema.Reflect(&table.valueEmpty).MarshalJSON()
+	if !bytes.Equal(prevSchema, currentSchema) {
+		panic("row schema is not same as previous row schema")
 	}
 
 	return table
