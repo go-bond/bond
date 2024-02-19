@@ -142,19 +142,19 @@ func Open(dirname string, opts *Options) (DB, error) {
 		opts.PebbleOptions = DefaultPebbleOptions()
 	}
 
-	_, err := os.Stat(dirname)
+	_, err := os.Stat(filepath.Join(dirname, "bond"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	if err != nil && os.IsNotExist(err) {
 		// create dir if db dir didn't exit.
-		if err := os.MkdirAll(dirname, os.ModePerm); err != nil {
+		if err := os.MkdirAll(filepath.Join(dirname, "bond"), os.ModePerm); err != nil {
 			return nil, err
 		}
 	}
 
 	// retive the pebble version.
-	version, err := os.ReadFile(filepath.Join(dirname, "VERSION"))
+	version, err := os.ReadFile(filepath.Join(dirname, "bond", "PEBBLE_FORMAT_VERSION"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func Open(dirname string, opts *Options) (DB, error) {
 	if err != nil && os.IsNotExist(err) {
 		// create version for to check invariant in the
 		// next open.
-		if err := os.WriteFile(filepath.Join(dirname, "VERSION"),
+		if err := os.WriteFile(filepath.Join(dirname, "bond", "PEBBLE_FORMAT_VERSION"),
 			[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion)),
 			os.ModePerm); err != nil {
 			return nil, err

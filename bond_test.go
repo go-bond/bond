@@ -60,7 +60,7 @@ func TestBond_VersionCheck(t *testing.T) {
 	require.NoError(t, err)
 
 	// simluate the db where VERSION file don't exist.
-	err = os.Remove(filepath.Join(dbName, "VERSION"))
+	err = os.Remove(filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION"))
 	require.NoError(t, err)
 
 	// opening db should create a version file
@@ -69,16 +69,16 @@ func TestBond_VersionCheck(t *testing.T) {
 	err = db.Close()
 	require.NoError(t, err)
 
-	_, err = os.Stat(filepath.Join(dbName, "VERSION"))
+	_, err = os.Stat(filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION"))
 	require.NoError(t, err)
-	buf, err := os.ReadFile(filepath.Join(dbName, "VERSION"))
+	buf, err := os.ReadFile(filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION"))
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion), string(buf))
 
 	// rewrite the version with some other version.
-	err = os.Remove(filepath.Join(dbName, "VERSION"))
+	err = os.Remove(filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION"))
 	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(dbName, "VERSION"),
+	err = os.WriteFile(filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION"),
 		[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion-1)), os.ModePerm)
 	require.NoError(t, err)
 
