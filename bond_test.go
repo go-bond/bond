@@ -87,3 +87,26 @@ func TestBond_VersionCheck(t *testing.T) {
 	_, err = Open(dbName, opts)
 	require.Error(t, err)
 }
+
+func Test_BondVersionMigrate(t *testing.T) {
+	defer func() { _ = os.RemoveAll(dbName) }()
+
+	pebbleOpts := DefaultPebbleOptions()
+	pebbleOpts.FormatMajorVersion = pebble.FormatPrePebblev1MarkedCompacted
+	opts := DefaultOptions()
+	opts.PebbleOptions = pebbleOpts
+
+	db, err := Open(dbName, opts)
+	require.NoError(t, err)
+	err = db.Close()
+	require.NoError(t, err)
+	version, err := PebbleFormatVersion(dbName)
+	require.NoError(t, err)
+	require.Equal(t, uint64(pebble.FormatPrePebblev1MarkedCompacted), uint64(version))
+
+	err = MigratePebbleFormatVersion(dbName, uint64(pebble.FormatVirtualSSTables))
+	require.NoError(t, err)
+	version, err = PebbleFormatVersion(dbName)
+	require.NoError(t, err)
+	require.Equal(t, uint64(pebble.FormatVirtualSSTables), uint64(version))
+}

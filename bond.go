@@ -547,3 +547,39 @@ func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
 	}
 	return pebble.Sync
 }
+
+func PebbleFormatVersion(dir string) (uint64, error) {
+	pebbelVersionPath := filepath.Join(dir, "bond", "PEBBLE_FORMAT_VERSION")
+	buf, err := os.ReadFile(pebbelVersionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, err
+	}
+	// version file is not initialized yet.
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	version, err := strconv.ParseUint(string(buf), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
+	opt := DefaultPebbleOptions()
+	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
+	db, err := pebble.Open(dir, opt)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	versionFile, err := os.OpenFile(filepath.Join(dir, "bond", "PEBBLE_FORMAT_VERSION"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	defer versionFile.Close()
+	_, err = versionFile.Write([]byte(fmt.Sprintf("%d", upgradeVersion)))
+	return err
+}
