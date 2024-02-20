@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/cockroachdb/pebble"
@@ -29,6 +30,8 @@ const (
 )
 
 const exportFileSize = 17 << 20
+
+const PebbleFormatFile = "PEBBLE_FORMAT_VERSION"
 
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
@@ -139,6 +142,45 @@ func Open(dirname string, opts *Options) (DB, error) {
 
 	if opts.PebbleOptions == nil {
 		opts.PebbleOptions = DefaultPebbleOptions()
+	}
+
+	bondPath := filepath.Join(dirname, "bond")
+	_, err := os.Stat(bondPath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err != nil && os.IsNotExist(err) {
+		// create dir if db dir didn't exit.
+		if err := os.MkdirAll(bondPath, os.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
+	pebbelVersionPath := filepath.Join(bondPath, PebbleFormatFile)
+	// retive the pebble version.
+	version, err := os.ReadFile(pebbelVersionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	if err != nil && os.IsNotExist(err) {
+		// create version for to check invariant in the
+		// next open.
+		if err := os.WriteFile(pebbelVersionPath,
+			[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion)),
+			os.ModePerm); err != nil {
+			return nil, err
+		}
+	} else {
+		existingVersion, err := strconv.ParseUint(string(version), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if existingVersion != uint64(opts.PebbleOptions.FormatMajorVersion) {
+			return nil, fmt.Errorf("the user trying to open pebble version in %d. but db is in %d",
+				opts.PebbleOptions.FormatMajorVersion,
+				existingVersion)
+		}
 	}
 
 	opts.PebbleOptions.Comparer = DefaultKeyComparer()
@@ -506,4 +548,40 @@ func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
 		return pebble.NoSync
 	}
 	return pebble.Sync
+}
+
+func PebbleFormatVersion(dir string) (uint64, error) {
+	pebbelVersionPath := filepath.Join(dir, "bond", PebbleFormatFile)
+	buf, err := os.ReadFile(pebbelVersionPath)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, err
+	}
+	// version file is not initialized yet.
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	version, err := strconv.ParseUint(string(buf), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
+	opt := DefaultPebbleOptions()
+	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
+	db, err := pebble.Open(dir, opt)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	versionFile, err := os.OpenFile(filepath.Join(dir, "bond", PebbleFormatFile), os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	defer versionFile.Close()
+	_, err = versionFile.Write([]byte(fmt.Sprintf("%d", upgradeVersion)))
+	return err
 }
