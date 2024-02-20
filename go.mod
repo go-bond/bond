@@ -7,7 +7,7 @@ require (
 	github.com/cockroachdb/pebble v0.0.0-20231214172447-ab4952c5f87b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0
-	github.com/fxamacker/cbor/v2 v2.5.0
+	github.com/fxamacker/cbor/v2 v2.6.0
 	github.com/go-resty/resty/v2 v2.10.0
 	github.com/google/uuid v1.5.0
 	github.com/klauspost/compress v1.17.4
