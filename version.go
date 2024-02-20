@@ -40,3 +40,13 @@ func bondDataVersionKey() []byte {
 		[]byte("__bond_db_data_version__"),
 	})
 }
+
+func bondTableKey(tableID TableID, key string) []byte {
+	return KeyEncode(Key{
+		BOND_DB_DATA_TABLE_ID,
+		IndexID(tableID),
+		[]byte{},
+		[]byte{},
+		[]byte(key),
+	})
+}
