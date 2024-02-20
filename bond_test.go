@@ -60,7 +60,7 @@ func TestBond_VersionCheck(t *testing.T) {
 	require.NoError(t, err)
 
 	// simluate the db where VERSION file don't exist.
-	pebbelVersionPath := filepath.Join(dbName, "bond", "PEBBLE_FORMAT_VERSION")
+	pebbelVersionPath := filepath.Join(dbName, "bond", PebbleFormatFile)
 	err = os.Remove(pebbelVersionPath)
 	require.NoError(t, err)
 

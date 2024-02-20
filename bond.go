@@ -31,6 +31,8 @@ const (
 
 const exportFileSize = 17 << 20
 
+const PebbleFormatFile = "PEBBLE_FORMAT_VERSION"
+
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
 )
@@ -154,7 +156,7 @@ func Open(dirname string, opts *Options) (DB, error) {
 		}
 	}
 
-	pebbelVersionPath := filepath.Join(bondPath, "PEBBLE_FORMAT_VERSION")
+	pebbelVersionPath := filepath.Join(bondPath, PebbleFormatFile)
 	// retive the pebble version.
 	version, err := os.ReadFile(pebbelVersionPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -549,7 +551,7 @@ func pebbleWriteOptions(opt WriteOptions) *pebble.WriteOptions {
 }
 
 func PebbleFormatVersion(dir string) (uint64, error) {
-	pebbelVersionPath := filepath.Join(dir, "bond", "PEBBLE_FORMAT_VERSION")
+	pebbelVersionPath := filepath.Join(dir, "bond", PebbleFormatFile)
 	buf, err := os.ReadFile(pebbelVersionPath)
 	if err != nil && !os.IsNotExist(err) {
 		return 0, err
@@ -574,7 +576,7 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	}
 	defer db.Close()
 
-	versionFile, err := os.OpenFile(filepath.Join(dir, "bond", "PEBBLE_FORMAT_VERSION"), os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+	versionFile, err := os.OpenFile(filepath.Join(dir, "bond", PebbleFormatFile), os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return err
 	}
