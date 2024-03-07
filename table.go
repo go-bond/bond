@@ -97,6 +97,7 @@ type TableDeleter[T any] interface {
 
 type TableWriter[T any] interface {
 	AddIndex(idxs []*Index[T], reIndex ...bool) error
+	ReIndex(idxs []*Index[T]) error
 
 	TableInserter[T]
 	TableUpdater[T]
@@ -256,12 +257,12 @@ func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 	t.mutex.Unlock()
 
 	if len(reIndex) > 0 && reIndex[0] {
-		return t.reindex(idxs)
+		return t.ReIndex(idxs)
 	}
 	return nil
 }
 
-func (t *_table[T]) reindex(idxs []*Index[T]) error {
+func (t *_table[T]) ReIndex(idxs []*Index[T]) error {
 	idxsMap := make(map[IndexID]*Index[T])
 	for _, idx := range idxs {
 		idxsMap[idx.IndexID] = idx
