@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -142,6 +143,15 @@ func Open(dirname string, opts *Options) (DB, error) {
 
 	if opts.PebbleOptions == nil {
 		opts.PebbleOptions = DefaultPebbleOptions()
+	}
+
+	if !strings.HasPrefix(dirname, "/") {
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+
+		dirname = path.Clean(path.Join(wd, dirname))
 	}
 
 	bondPath := filepath.Join(dirname, "bond")
