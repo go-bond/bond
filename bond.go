@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"math"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -145,17 +144,14 @@ func Open(dirname string, opts *Options) (DB, error) {
 		opts.PebbleOptions = DefaultPebbleOptions()
 	}
 
-	if !strings.HasPrefix(dirname, "/") {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-
-		dirname = path.Clean(path.Join(wd, dirname))
+	// expand the path if it is not absolute
+	dirname, err := utils.PathExpand(dirname)
+	if err != nil {
+		return nil, err
 	}
 
 	bondPath := filepath.Join(dirname, "bond")
-	_, err := os.Stat(bondPath)
+	_, err = os.Stat(bondPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -528,7 +524,7 @@ func iteratorToSST(itr Iterator, path string) error {
 		return err
 	}
 	opts := sstable.WriterOptions{
-		TableFormat: sstable.TableFormatRocksDBv2, Parallelism: true, Comparer: DefaultKeyComparer(),
+		TableFormat: sstable.TableFormatPebblev3, Parallelism: true, Comparer: DefaultKeyComparer(),
 	}
 	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
 
@@ -580,6 +576,13 @@ func PebbleFormatVersion(dir string) (uint64, error) {
 func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	opt := DefaultPebbleOptions()
 	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
+
+	// expand the path if it is not absolute
+	dir, err := utils.PathExpand(dir)
+	if err != nil {
+		return err
+	}
+
 	db, err := pebble.Open(dir, opt)
 	if err != nil {
 		return err

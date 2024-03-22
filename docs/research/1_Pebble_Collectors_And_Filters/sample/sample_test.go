@@ -11,6 +11,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,6 +113,11 @@ func (b BlockIndexFilter) Intersects(prop []byte) (bool, error) {
 	return tr, nil
 }
 
+func (b *BlockIndexFilter) SyntheticSuffixIntersects(prop []byte, suffix []byte) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func TestBlockFilter_EqualDist(t *testing.T) {
 	opt := bond.DefaultPebbleOptions()
 
@@ -124,7 +130,10 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 		},
 	}
 
-	db, err := pebble.Open(".db", opt)
+	dir := ".db"
+	dir, _ = utils.PathExpand(dir)
+
+	db, err := pebble.Open(dir, opt)
 	require.NoError(t, err)
 
 	dummyData := []byte("dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, ")
@@ -266,7 +275,10 @@ func TestBlockFilter_SequDist(t *testing.T) {
 		},
 	}
 
-	db, err := pebble.Open(".db", opt)
+	dir := ".db"
+	dir, _ = utils.PathExpand(dir)
+
+	db, err := pebble.Open(dir, opt)
 	require.NoError(t, err)
 
 	dummyData := []byte("dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, dummy data, ")
@@ -503,6 +515,11 @@ func (b BlockIndexValueFilter) Intersects(props []byte) (bool, error) {
 	return exist, nil
 }
 
+func (b BlockIndexValueFilter) SyntheticSuffixIntersects(prop []byte, suffix []byte) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func TestDeleteSurface(t *testing.T) {
 	opt := bond.DefaultPebbleOptions()
 	opt.Comparer = pebble.DefaultComparer
@@ -511,9 +528,12 @@ func TestDeleteSurface(t *testing.T) {
 		return &BlockIndexValueCollector{}
 	}}
 	opt.DisableWAL = true
+	opt.FormatMajorVersion = 13 // pebble.FormatBlockPropertyCollector
 
-	opt.FormatMajorVersion = pebble.FormatBlockPropertyCollector
-	pdb, err := pebble.Open(".db", opt)
+	dir := ".db"
+	dir, _ = utils.PathExpand(dir)
+
+	pdb, err := pebble.Open(dir, opt)
 	require.NoError(t, err)
 	for i := 0; i < 100; i++ {
 		pdb.Set([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i)), pebble.NoSync)
@@ -525,7 +545,7 @@ func TestDeleteSurface(t *testing.T) {
 	}
 	pdb.Flush()
 	pdb.Close()
-	pdb, err = pebble.Open(".db", opt)
+	pdb, err = pebble.Open(dir, opt)
 	require.NoError(t, err)
 	itr, err := pdb.NewIter(&pebble.IterOptions{
 		PointKeyFilters: []pebble.BlockPropertyFilter{
