@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
 	"github.com/go-bond/bond"
-	"github.com/go-bond/bond/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -131,7 +131,7 @@ func TestBlockFilter_EqualDist(t *testing.T) {
 	}
 
 	dir := ".db"
-	dir, _ = utils.PathExpand(dir)
+	dir, _ = filepath.Abs(dir)
 
 	db, err := pebble.Open(dir, opt)
 	require.NoError(t, err)
@@ -276,7 +276,7 @@ func TestBlockFilter_SequDist(t *testing.T) {
 	}
 
 	dir := ".db"
-	dir, _ = utils.PathExpand(dir)
+	dir, _ = filepath.Abs(dir)
 
 	db, err := pebble.Open(dir, opt)
 	require.NoError(t, err)
@@ -531,7 +531,7 @@ func TestDeleteSurface(t *testing.T) {
 	opt.FormatMajorVersion = 13 // pebble.FormatBlockPropertyCollector
 
 	dir := ".db"
-	dir, _ = utils.PathExpand(dir)
+	dir, _ = filepath.Abs(dir)
 
 	pdb, err := pebble.Open(dir, opt)
 	require.NoError(t, err)

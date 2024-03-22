@@ -145,7 +145,7 @@ func Open(dirname string, opts *Options) (DB, error) {
 	}
 
 	// expand the path if it is not absolute
-	dirname, err := utils.PathExpand(dirname)
+	dirname, err := filepath.Abs(dirname)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +523,7 @@ func iteratorToSST(itr Iterator, path string) error {
 	if err != nil {
 		return err
 	}
+
 	opts := sstable.WriterOptions{
 		TableFormat: sstable.TableFormatPebblev2, Parallelism: true, Comparer: DefaultKeyComparer(),
 	}
@@ -578,7 +579,7 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
 
 	// expand the path if it is not absolute
-	dir, err := utils.PathExpand(dir)
+	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}
