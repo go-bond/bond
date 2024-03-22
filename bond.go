@@ -524,7 +524,7 @@ func iteratorToSST(itr Iterator, path string) error {
 		return err
 	}
 	opts := sstable.WriterOptions{
-		TableFormat: sstable.TableFormatPebblev3, Parallelism: true, Comparer: DefaultKeyComparer(),
+		TableFormat: sstable.TableFormatPebblev2, Parallelism: true, Comparer: DefaultKeyComparer(),
 	}
 	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
 
