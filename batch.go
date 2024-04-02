@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -24,7 +23,6 @@ type Batch interface {
 	Len() int
 	Empty() bool
 	Reset()
-	ResetRetained()
 
 	Getter
 	Setter
@@ -62,25 +60,6 @@ func (b *_batch) ID() uint64 {
 
 func (b *_batch) Reset() {
 	b.Batch.Reset()
-
-	b.id, _ = sequenceId.Next()
-
-	b.onCommitCallbacks = nil
-	b.onCommittedCallbacks = nil
-	b.onErrorCallbacks = nil
-	b.onClose = nil
-}
-
-func (b *_batch) ResetRetained() {
-	data := b.Batch.Repr()
-	b.Batch.Reset()
-	if data != nil {
-		data = data[:12]                             // reset to header only
-		binary.LittleEndian.PutUint64(data[:8], 0)   // put starting sequ num
-		binary.LittleEndian.PutUint32(data[8:12], 0) // put count data
-
-		_ = b.Batch.SetRepr(data) // set data buffer
-	}
 
 	b.id, _ = sequenceId.Next()
 
