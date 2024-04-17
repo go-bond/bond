@@ -18,11 +18,20 @@ type Committer interface {
 	OnClose(func(b Batch))
 }
 
+type BatchType int
+
+const (
+	BatchTypeWriteOnly BatchType = iota
+	BatchTypeReadWrite
+)
+
 type Batch interface {
 	ID() uint64
 	Len() int
 	Empty() bool
 	Reset()
+
+	Type() BatchType
 
 	Getter
 	Setter
@@ -46,16 +55,29 @@ type _batch struct {
 	onClose              []func(b Batch)
 }
 
-func newBatch(db *_db) Batch {
+func newBatch(db *_db, indexed bool) Batch {
 	id, _ := sequenceId.Next()
+	if indexed {
+		return &_batch{
+			Batch: db.pebble.NewIndexedBatch(),
+			id:    id,
+		}
+	}
 	return &_batch{
-		Batch: db.pebble.NewIndexedBatch(),
+		Batch: db.pebble.NewBatch(),
 		id:    id,
 	}
 }
 
 func (b *_batch) ID() uint64 {
 	return b.id
+}
+
+func (b *_batch) Type() BatchType {
+	if b.Batch.Indexed() {
+		return BatchTypeReadWrite
+	}
+	return BatchTypeWriteOnly
 }
 
 func (b *_batch) Reset() {

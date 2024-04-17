@@ -32,7 +32,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		batch = t.db.Batch(BatchTypeWriteOnly)
 	}
 
 	// key

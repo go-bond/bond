@@ -137,7 +137,7 @@ func UpsertInBatchSizeWithBatch(db bond.DB, tbt bond.Table[*TokenBalance], tbs [
 	return func(b *testing.B) {
 		b.ReportAllocs()
 
-		batch := db.Batch()
+		batch := db.Batch(bond.BatchTypeWriteOnly)
 		for i := 0; i < b.N; i++ {
 			err := tbt.Upsert(context.Background(), tbs[:insertBatchSize], bond.TableUpsertOnConflictReplace[*TokenBalance], batch)
 			if err != nil {
