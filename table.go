@@ -342,9 +342,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	t.mutex.RUnlock()
 
 	var (
-		batch         Batch
-		batchIndexed  Batch
-		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		batch          Batch
+		batchReadWrite Batch
+		externalBatch  = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
@@ -354,8 +354,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer batch.Close()
 	}
 
-	if batch.Indexed() {
-		batchIndexed = batch
+	if batch.Type() == BatchTypeReadWrite {
+		batchReadWrite = batch
 	}
 
 	var (
@@ -391,7 +391,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batchIndexed)
+		}, batchReadWrite)
 		defer iter.Close()
 
 		// process rows
@@ -456,9 +456,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	t.mutex.RUnlock()
 
 	var (
-		batch         Batch
-		batchIndexed  Batch
-		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		batch          Batch
+		batchReadWrite Batch
+		externalBatch  = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
@@ -468,8 +468,8 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer batch.Close()
 	}
 
-	if batch.Indexed() {
-		batchIndexed = batch
+	if batch.Type() == BatchTypeReadWrite {
+		batchReadWrite = batch
 	}
 
 	var (
@@ -510,7 +510,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batchIndexed)
+		}, batchReadWrite)
 		defer iter.Close()
 
 		for i, key := range keys {
@@ -641,9 +641,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	t.mutex.RUnlock()
 
 	var (
-		batch         Batch
-		batchIndexed  Batch
-		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
+		batch          Batch
+		batchReadWrite Batch
+		externalBatch  = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
@@ -653,8 +653,8 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		defer batch.Close()
 	}
 
-	if batch.Indexed() {
-		batchIndexed = batch
+	if batch.Type() == BatchTypeReadWrite {
+		batchReadWrite = batch
 	}
 
 	var (
@@ -695,7 +695,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batchIndexed)
+		}, batchReadWrite)
 		defer iter.Close()
 
 		for i := 0; i < len(keys); {

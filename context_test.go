@@ -18,6 +18,11 @@ func (m *MockBatch) ID() uint64 {
 	panic("implement me")
 }
 
+func (m *MockBatch) Type() BatchType {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockBatch) Len() int {
 	//TODO implement me
 	panic("implement me")
@@ -34,11 +39,6 @@ func (m *MockBatch) Reset() {
 }
 
 func (m *MockBatch) ResetRetained() {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockBatch) Indexed() bool {
 	//TODO implement me
 	panic("implement me")
 }

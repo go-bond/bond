@@ -62,13 +62,6 @@ type DeleterWithRange interface {
 	DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error
 }
 
-type BatchType int
-
-const (
-	BatchTypeWriteOnly BatchType = iota
-	BatchTypeReadWrite
-)
-
 type Batcher interface {
 	Batch(bType BatchType) Batch
 }

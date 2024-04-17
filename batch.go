@@ -18,13 +18,20 @@ type Committer interface {
 	OnClose(func(b Batch))
 }
 
+type BatchType int
+
+const (
+	BatchTypeWriteOnly BatchType = iota
+	BatchTypeReadWrite
+)
+
 type Batch interface {
 	ID() uint64
 	Len() int
 	Empty() bool
 	Reset()
 
-	Indexed() bool
+	Type() BatchType
 
 	Getter
 	Setter
@@ -64,6 +71,13 @@ func newBatch(db *_db, indexed bool) Batch {
 
 func (b *_batch) ID() uint64 {
 	return b.id
+}
+
+func (b *_batch) Type() BatchType {
+	if b.Batch.Indexed() {
+		return BatchTypeReadWrite
+	}
+	return BatchTypeWriteOnly
 }
 
 func (b *_batch) Reset() {
