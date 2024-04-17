@@ -38,6 +38,11 @@ func (m *MockBatch) ResetRetained() {
 	panic("implement me")
 }
 
+func (m *MockBatch) Indexed() bool {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockBatch) Get(key []byte, batch ...Batch) (data []byte, closer io.Closer, err error) {
 	//TODO implement me
 	panic("implement me")

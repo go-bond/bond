@@ -62,8 +62,15 @@ type DeleterWithRange interface {
 	DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error
 }
 
+type BatchType int
+
+const (
+	BatchTypeWriteOnly BatchType = iota
+	BatchTypeReadWrite
+)
+
 type Batcher interface {
-	Batch() Batch
+	Batch(bType BatchType) Batch
 }
 
 type Iterationer interface { // TODO: weird name
@@ -280,8 +287,15 @@ func (db *_db) Iter(opt *IterOptions, batch ...Batch) Iterator {
 	}
 }
 
-func (db *_db) Batch() Batch {
-	return newBatch(db)
+func (db *_db) Batch(bType BatchType) Batch {
+	if bType == BatchTypeWriteOnly {
+		return newBatch(db, false)
+	}
+	return newBatch(db, true)
+}
+
+func (db *_db) BatchReadWrite() Batch {
+	return newBatch(db, true)
 }
 
 func (db *_db) Apply(b Batch, opt WriteOptions) error {

@@ -1444,7 +1444,7 @@ func TestBond_Batch(t *testing.T) {
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount1})
 	require.NoError(t, err)
 
-	batch := db.Batch()
+	batch := db.Batch(BatchTypeReadWrite)
 
 	exist := tokenBalanceTable.Exist(&TokenBalance{ID: 1}, batch)
 	require.True(t, exist)

@@ -24,6 +24,8 @@ type Batch interface {
 	Empty() bool
 	Reset()
 
+	Indexed() bool
+
 	Getter
 	Setter
 	Deleter
@@ -46,10 +48,16 @@ type _batch struct {
 	onClose              []func(b Batch)
 }
 
-func newBatch(db *_db) Batch {
+func newBatch(db *_db, indexed bool) Batch {
 	id, _ := sequenceId.Next()
+	if indexed {
+		return &_batch{
+			Batch: db.pebble.NewIndexedBatch(),
+			id:    id,
+		}
+	}
 	return &_batch{
-		Batch: db.pebble.NewIndexedBatch(),
+		Batch: db.pebble.NewBatch(),
 		id:    id,
 	}
 }

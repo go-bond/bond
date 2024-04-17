@@ -114,7 +114,7 @@ func TestFilter_Insert_Batch(t *testing.T) {
 		Balance:         5,
 	}
 
-	batch := db.Batch()
+	batch := db.Batch(BatchTypeReadWrite)
 
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
 	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()

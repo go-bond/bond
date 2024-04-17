@@ -14,7 +14,7 @@ func Test_Batch_Callbacks(t *testing.T) {
 
 	counter := 0
 
-	batch := db.Batch()
+	batch := db.Batch(BatchTypeWriteOnly)
 	batch.OnCommit(func(b Batch) error {
 		counter++
 		return nil

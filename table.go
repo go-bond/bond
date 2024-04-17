@@ -286,7 +286,7 @@ func (t *_table[T]) ReIndex(idxs []*Index[T]) error {
 		},
 	})
 
-	batch := t.db.Batch()
+	batch := t.db.Batch(BatchTypeWriteOnly)
 	defer func() {
 		_ = batch.Close()
 	}()
@@ -321,7 +321,7 @@ func (t *_table[T]) ReIndex(idxs []*Index[T]) error {
 				return fmt.Errorf("failed to commit reindex batch: %w", err)
 			}
 
-			batch = t.db.Batch()
+			batch = t.db.Batch(BatchTypeWriteOnly)
 		}
 	}
 
@@ -343,17 +343,20 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	var (
 		batch         Batch
-		batchCtx      context.Context
+		batchIndexed  Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		batch = t.db.Batch(BatchTypeWriteOnly)
 		defer batch.Close()
 	}
-	batchCtx = ContextWithBatch(ctx, batch)
+
+	if batch.Indexed() {
+		batchIndexed = batch
+	}
 
 	var (
 		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
@@ -388,7 +391,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batch)
+		}, batchIndexed)
 		defer iter.Close()
 
 		// process rows
@@ -426,7 +429,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 			// add to bloom filter
 			if t.filter != nil {
-				t.filter.Add(batchCtx, key)
+				t.filter.Add(ctx, key)
 			}
 		}
 
@@ -454,14 +457,19 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 	var (
 		batch         Batch
+		batchIndexed  Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		batch = t.db.Batch(BatchTypeWriteOnly)
 		defer batch.Close()
+	}
+
+	if batch.Indexed() {
+		batchIndexed = batch
 	}
 
 	var (
@@ -502,7 +510,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batch)
+		}, batchIndexed)
 		defer iter.Close()
 
 		for i, key := range keys {
@@ -580,7 +588,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		batch = t.db.Batch(BatchTypeWriteOnly)
 		defer batch.Close()
 	}
 
@@ -634,17 +642,20 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 	var (
 		batch         Batch
-		batchCtx      context.Context
+		batchIndexed  Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	)
 
 	if externalBatch {
 		batch = optBatch[0]
 	} else {
-		batch = t.db.Batch()
+		batch = t.db.Batch(BatchTypeWriteOnly)
 		defer batch.Close()
 	}
-	batchCtx = ContextWithBatch(ctx, batch)
+
+	if batch.Indexed() {
+		batchIndexed = batch
+	}
 
 	var (
 		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
@@ -684,7 +695,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				LowerBound: keys[0],
 				UpperBound: t.dataKeySpaceEnd,
 			},
-		}, batch)
+		}, batchIndexed)
 		defer iter.Close()
 
 		for i := 0; i < len(keys); {
@@ -755,7 +766,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 			// add to bloom filter
 			if t.filter != nil && !isUpdate {
-				t.filter.Add(batchCtx, key)
+				t.filter.Add(ctx, key)
 			}
 
 			i++
@@ -805,7 +816,7 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
-	if t.filter != nil && !t.filter.MayContain(context.TODO(), key) {
+	if t.filter != nil && !t.filter.MayContain(context.Background(), key) {
 		return false
 	}
 
