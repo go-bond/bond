@@ -892,7 +892,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		defer t.db.putKeyArray(valueArray)
 
 		var trs []T
-		err := batched[T](selPoints, t.scanPrefetchSize, func(selPoints []T) error {
+		err := batched[T](selPoints, len(selPoints), func(selPoints []T) error {
 			keys := t.keysExternal(selPoints, keyArray)
 
 			values, err := t.get(keys, batch, valueArray, false)
