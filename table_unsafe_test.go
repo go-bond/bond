@@ -90,7 +90,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 	_ = it.Close()
 }
 
-func TestUnsafeInsert(t *testing.T) {
+func TestBondTable_UnsafeInsert(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(db)
 
