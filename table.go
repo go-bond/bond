@@ -895,14 +895,11 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		err := batched[T](selPoints, t.scanPrefetchSize, func(selPoints []T) error {
 			keys := t.keysExternal(selPoints, keyArray)
 
-			order := t.sortKeys(keys)
-
 			values, err := t.get(keys, batch, valueArray, false)
 			if err != nil {
 				return err
 			}
 
-			t.reorderValues(values, order)
 			for _, value := range values {
 				if len(value) == 0 {
 					trs = append(trs, t.valueNil)
@@ -958,6 +955,15 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 	defer iter.Close()
 
 	for i := 0; i < len(keys); i++ {
+		if t.filter != nil && !t.filter.MayContain(context.Background(), keys[i]) {
+			if errorOnNotExist {
+				return nil, ErrNotFound
+			} else {
+				values[i] = values[i][:0]
+				continue
+			}
+		}
+
 		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			if errorOnNotExist {
 				return nil, ErrNotFound
