@@ -89,3 +89,51 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 
 	_ = it.Close()
 }
+
+func TestUnsafeInsert(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	tableUnsafeInserter := tokenBalanceTable.(TableUnsafeInserter[*TokenBalance])
+	err := tableUnsafeInserter.UnsafeInsert(context.Background(), []*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	it, err := db.Backend().NewIter(&pebble.IterOptions{
+		LowerBound: []byte{byte(TokenBalanceTableID)},
+		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
+	})
+	require.NoError(t, err)
+
+	for it.First(); it.Valid(); it.Next() {
+		rawData := it.Value()
+
+		var tokenBalanceAccount1FromDB TokenBalance
+		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccount1FromDB)
+		require.NoError(t, err)
+		assert.Equal(t, tokenBalanceAccount, &tokenBalanceAccount1FromDB)
+	}
+
+	_ = it.Close()
+
+}
