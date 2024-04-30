@@ -343,5 +343,8 @@ func DefaultKeyComparer() *pebble.Comparer {
 }
 
 func _KeyPrefixSplitIndex(rawKey []byte) int {
+	if len(rawKey) < 6 {
+		return len(rawKey)
+	}
 	return 6 + int(binary.BigEndian.Uint32(rawKey[2:6]))
 }
