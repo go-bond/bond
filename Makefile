@@ -42,7 +42,7 @@ test-clean:
 	GOGC=off go clean -testcache
 
 bench:
-	@cd _benchmarks && go test -bench=.
+	@cd _benchmarks && go test -timeout=25m -bench=.
 
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
