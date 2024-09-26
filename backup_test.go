@@ -97,6 +97,9 @@ func TestBond_BackupRestore(t *testing.T) {
 	// make sure both db has same keys and values.
 	itr := db.Iter(&IterOptions{})
 	itr2 := db2.Iter(&IterOptions{})
+	defer itr.Close()
+	defer itr2.Close()
+
 	for _, _ = itr.First(), itr2.First(); itr.Valid(); _, _ = itr.Next(), itr2.Next() {
 		require.Equal(t, itr.Key(), itr2.Key())
 		require.Equal(t, itr.Value(), itr2.Value())

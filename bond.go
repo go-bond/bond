@@ -389,6 +389,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 	defer snapshot.Close()
 
 	grp := new(errgroup.Group)
+
 	// write all the table data to the sst file.
 	for _, tableID := range tables {
 		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
@@ -413,6 +414,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 		if !withIndex {
 			continue
 		}
+
 		// write all the index data to sst file.
 		indexes := db.getIndexIDS(tableID)
 		for _, index := range indexes {
@@ -518,12 +520,14 @@ func (db *_db) getIndexIDS(tableID TableID) []IndexID {
 		}
 		prefix[1] = indexID + 1
 	}
+	itr.Close()
 	return indexIDS
 }
 
 // write all the key/value of iterator to the SST file.
 func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
+
 	// sst reader
 	currentFileID := 1
 	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)), vfs.WriteCategoryUnspecified)
@@ -538,6 +542,7 @@ func iteratorToSST(itr Iterator, path string) error {
 
 	for itr.First(); itr.Valid(); itr.Next() {
 		if err := writer.Set(itr.Key(), itr.Value()); err != nil {
+			writer.Close()
 			return err
 		}
 
