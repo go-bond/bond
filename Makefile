@@ -41,6 +41,9 @@ test-with-reset: db-reset test-all
 test-clean:
 	GOGC=off go clean -testcache
 
+bench:
+	@cd _benchmarks && go test -bench=.
+
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
 

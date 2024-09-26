@@ -438,7 +438,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 	return grp.Wait()
 }
 
-func (db *_db) Restore(_ context.Context, path string, tables []TableID, withIndex bool) error {
+func (db *_db) Restore(ctx context.Context, path string, tables []TableID, withIndex bool) error {
 	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
 	if err != nil {
 		return err
@@ -495,7 +495,7 @@ func (db *_db) Restore(_ context.Context, path string, tables []TableID, withInd
 	if err != nil {
 		return err
 	}
-	return db.pebble.Ingest(ssts)
+	return db.pebble.Ingest(ctx, ssts)
 }
 
 func (db *_db) getIndexIDS(tableID TableID) []IndexID {
@@ -526,7 +526,7 @@ func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
 	// sst reader
 	currentFileID := 1
-	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)), vfs.WriteCategoryUnspecified)
 	if err != nil {
 		return err
 	}
@@ -542,12 +542,12 @@ func iteratorToSST(itr Iterator, path string) error {
 		}
 
 		// Replace the old writer with new writer after the old writer reaches it's capacity.
-		if writer.EstimatedSize() > exportFileSize {
+		if writer.Raw().EstimatedSize() > exportFileSize {
 			if err := writer.Close(); err != nil {
 				return err
 			}
 			currentFileID++
-			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)), vfs.WriteCategoryUnspecified)
 			if err != nil {
 				return err
 			}
