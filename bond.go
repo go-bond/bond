@@ -389,6 +389,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 	defer snapshot.Close()
 
 	grp := new(errgroup.Group)
+
 	// write all the table data to the sst file.
 	for _, tableID := range tables {
 		tablePath := filepath.Join(path, fmt.Sprintf("table_%d", tableID))
@@ -413,6 +414,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 		if !withIndex {
 			continue
 		}
+
 		// write all the index data to sst file.
 		indexes := db.getIndexIDS(tableID)
 		for _, index := range indexes {
@@ -438,7 +440,7 @@ func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex 
 	return grp.Wait()
 }
 
-func (db *_db) Restore(_ context.Context, path string, tables []TableID, withIndex bool) error {
+func (db *_db) Restore(ctx context.Context, path string, tables []TableID, withIndex bool) error {
 	buf, err := os.ReadFile(filepath.Join(path, "VERSION"))
 	if err != nil {
 		return err
@@ -495,7 +497,7 @@ func (db *_db) Restore(_ context.Context, path string, tables []TableID, withInd
 	if err != nil {
 		return err
 	}
-	return db.pebble.Ingest(ssts)
+	return db.pebble.Ingest(ctx, ssts)
 }
 
 func (db *_db) getIndexIDS(tableID TableID) []IndexID {
@@ -518,15 +520,17 @@ func (db *_db) getIndexIDS(tableID TableID) []IndexID {
 		}
 		prefix[1] = indexID + 1
 	}
+	itr.Close()
 	return indexIDS
 }
 
 // write all the key/value of iterator to the SST file.
 func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
+
 	// sst reader
 	currentFileID := 1
-	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+	file, err := vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)), vfs.WriteCategoryUnspecified)
 	if err != nil {
 		return err
 	}
@@ -538,16 +542,17 @@ func iteratorToSST(itr Iterator, path string) error {
 
 	for itr.First(); itr.Valid(); itr.Next() {
 		if err := writer.Set(itr.Key(), itr.Value()); err != nil {
+			writer.Close()
 			return err
 		}
 
 		// Replace the old writer with new writer after the old writer reaches it's capacity.
-		if writer.EstimatedSize() > exportFileSize {
+		if writer.Raw().EstimatedSize() > exportFileSize {
 			if err := writer.Close(); err != nil {
 				return err
 			}
 			currentFileID++
-			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)))
+			file, err = vfs.Default.Create(filepath.Join(path, fmt.Sprintf("%d.sst", currentFileID)), vfs.WriteCategoryUnspecified)
 			if err != nil {
 				return err
 			}

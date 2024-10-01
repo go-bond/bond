@@ -22,7 +22,10 @@ func setupDB(name string, serializer ...Serializer[any]) DB {
 		options.Serializer = serializer[0]
 	}
 
-	db, _ := Open(name, options)
+	db, err := Open(name, options)
+	if err != nil {
+		panic(err)
+	}
 	return db
 }
 
@@ -31,8 +34,17 @@ func tearDownDatabase(db DB) {
 }
 
 func tearDownDB(name string, db DB) {
-	_ = db.Close()
-	_ = os.RemoveAll(name)
+	// NOTE: we intentionally panic on Close here, as it will catch any
+	// leaking iterators which would otherwise be difficult to debug,
+	// and are relevant to ensure we close.
+	err := db.Close()
+	if err != nil {
+		panic(err)
+	}
+	err = os.RemoveAll(name)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestBond_Open(t *testing.T) {

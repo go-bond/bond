@@ -1268,6 +1268,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 		copy(buff, it.Key())
 		keys = append(keys, buff)
 	}
+	it.Close()
 
 	require.Equal(t, 8, len(keys))
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1"))
@@ -1287,6 +1288,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+	it.Close()
 }
 
 func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
@@ -1395,6 +1397,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 		copy(buff, it.Key())
 		keys = append(keys, buff)
 	}
+	it.Close()
 
 	require.Equal(t, 8, len(keys))
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount1") && bytes.Contains(keys[3], []byte{0xF0}))
@@ -1414,6 +1417,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+	it.Close()
 }
 
 func TestBond_Table_Index_Update(t *testing.T) {
@@ -1532,6 +1536,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 		copy(buff, it.Key())
 		keys = append(keys, buff)
 	}
+	it.Close()
 
 	require.Equal(t, 8, len(keys))
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount3"))
@@ -1551,6 +1556,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+	it.Close()
 }
 
 func TestBond_Table_Index_Update_Ordered(t *testing.T) {
@@ -1673,6 +1679,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 		copy(buff, it.Key())
 		keys = append(keys, buff)
 	}
+	it.Close()
 
 	require.Equal(t, 8, len(keys))
 	assert.True(t, strings.Contains(string(keys[3]), "0xtestAccount3") && bytes.Contains(keys[3], []byte{0xF0}))
@@ -1692,6 +1699,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+	it.Close()
 }
 
 func TestBond_Table_Index_Delete(t *testing.T) {
@@ -1800,6 +1808,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, it.First())
+	it.Close()
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
@@ -1812,6 +1821,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 	for it.First(); it.Valid(); it.Next() {
 		fmt.Printf("0x%x(%s): %s\n", it.Key(), it.Key(), it.Value())
 	}
+	it.Close()
 }
 
 func TestBond_Table_Reindex(t *testing.T) {

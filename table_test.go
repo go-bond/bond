@@ -460,6 +460,7 @@ func TestBondTable_Insert(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
+	defer it.Close()
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -539,6 +540,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
+	defer it.Close()
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
@@ -780,8 +782,13 @@ func TestBondTable_Upsert(t *testing.T) {
 
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		if err != nil {
+			// panic(err)
+			break
+		}
 		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
 	}
+	require.NoError(t, err)
 
 	_ = it.Close()
 
@@ -872,8 +879,12 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		if err != nil {
+			break
+		}
 		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
 	}
+	require.NoError(t, err)
 
 	_ = it.Close()
 
@@ -978,8 +989,12 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		if err != nil {
+			break
+		}
 		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
 	}
+	require.NoError(t, err)
 
 	_ = it.Close()
 
@@ -1128,7 +1143,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
-
+	defer it.Close()
 	assert.False(t, it.First())
 }
 
@@ -1168,6 +1183,7 @@ func TestBondTable_Delete(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
+	defer it.Close()
 	assert.False(t, it.First())
 }
 
@@ -1475,4 +1491,5 @@ func TestBond_Batch(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
+	it.Close()
 }

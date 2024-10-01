@@ -39,7 +39,10 @@ test-all: test-clean
 test-with-reset: db-reset test-all
 
 test-clean:
-	GOGC=off go clean -testcache
+	GOGC=off go clean -testcache && rm -rf test_db tmp_db
+
+bench:
+	@cd _benchmarks && go test -timeout=25m -bench=.
 
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
