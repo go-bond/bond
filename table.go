@@ -294,7 +294,7 @@ func (t *_table[T]) ReIndex(idxs []*Index[T]) error {
 	counter := 0
 	indexKeyBuffer := make([]byte, 0, (DefaultKeyBufferSize)*len(idxs))
 
-	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
+	for iter.SeekPrefixGE(prefix); iter.Valid(); iter.Next() {
 		var tr T
 
 		// deserialize row
@@ -388,8 +388,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -507,8 +508,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -526,7 +528,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 				continue
 			}
 
-			if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
+			if !iter.SeekPrefixGE(key) || !bytes.Equal(iter.Key(), key) {
 				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
 			}
 
@@ -692,8 +694,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -823,14 +826,15 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 	if iter == nil {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: key,
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   key,
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batch)
 		defer iter.Close()
 	}
 
-	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
+	return iter.SeekPrefixGE(key) && bytes.Equal(iter.Key(), key)
 }
 
 func (t *_table[T]) GetPoint(ctx context.Context, in T, optBatch ...Batch) (T, error) {
@@ -948,8 +952,9 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 
 	iter := t.db.Iter(&IterOptions{
 		IterOptions: pebble.IterOptions{
-			LowerBound: keys[0],
-			UpperBound: t.dataKeySpaceEnd,
+			LowerBound:   keys[0],
+			UpperBound:   t.dataKeySpaceEnd,
+			UseL6Filters: true,
 		},
 	}, batch)
 	defer iter.Close()
@@ -964,7 +969,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			}
 		}
 
-		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+		if !iter.SeekPrefixGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			if errorOnNotExist {
 				return nil, ErrNotFound
 			} else {
