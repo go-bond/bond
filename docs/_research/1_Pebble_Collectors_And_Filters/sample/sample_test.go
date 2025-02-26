@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/sstable"
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/require"
 )

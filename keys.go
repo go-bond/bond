@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"math/big"
 
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 )
 
 type KeyBuilder struct {
