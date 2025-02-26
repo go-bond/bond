@@ -44,6 +44,9 @@ test-clean:
 bench:
 	@cd _benchmarks && go test -timeout=25m -bench=.
 
+bench-csv:
+	go run ./_benchmarks/benchmark.go --report=csv
+
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
 
