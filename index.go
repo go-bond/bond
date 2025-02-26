@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"sort"
 
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 	"github.com/go-bond/bond/utils"
 )
 

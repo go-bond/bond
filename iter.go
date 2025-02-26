@@ -1,7 +1,7 @@
 package bond
 
 import (
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 )
 
 type IterOptions struct {
