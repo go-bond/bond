@@ -2,8 +2,6 @@ module github.com/go-bond/bond
 
 go 1.24
 
-replace github.com/cockroachdb/swiss v0.0.0-20240612210725-f4de07ae6964 => github.com/danielgatis/swiss v0.0.0-20250225115850-6c2ffb786726
-
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/cockroachdb/pebble/v2 v2.0.2
@@ -32,7 +30,7 @@ require (
 	github.com/cockroachdb/fifo v0.0.0-20240816210425-c5d0cb0b6fc0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20241215232642-bb51bb14a506 // indirect
 	github.com/cockroachdb/redact v1.1.6 // indirect
-	github.com/cockroachdb/swiss v0.0.0-20240612210725-f4de07ae6964 // indirect
+	github.com/cockroachdb/swiss v0.0.0-20250228210649-a321086955f2 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
