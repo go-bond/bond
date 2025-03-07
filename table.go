@@ -8,7 +8,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/exp/maps"
 )

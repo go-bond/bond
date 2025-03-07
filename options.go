@@ -4,9 +4,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/cockroachdb/pebble/v2"
-	"github.com/cockroachdb/pebble/v2/bloom"
-	"github.com/cockroachdb/pebble/v2/vfs"
+	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/bloom"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 )
 
@@ -36,23 +36,17 @@ func DefaultPebbleOptions() *pebble.Options {
 	// and set the value to 80%. We should also record this value on /status
 	var maxOpenFileLimit = 5_000
 
-	pCache := pebble.NewCache(256 << 20) // 256 MB
-	defer pCache.Unref()
-
-	pTableCache := pebble.NewTableCache(pCache, runtime.GOMAXPROCS(0), maxOpenFileLimit)
-
 	opts := &pebble.Options{
-		Cache:                       pCache,
-		TableCache:                  pTableCache,
+		CacheSize:                   256 << 20, // 256 MB, default is 8MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       2,
-		L0StopWritesThreshold:       1000,
-		LBaseMaxBytes:               64 << 20, // 64 MB
+		L0CompactionThreshold:       8,
+		L0StopWritesThreshold:       24,
+		LBaseMaxBytes:               128 << 20, // 128 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
 		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
-		MemTableSize:                128 << 20, // 128 MB
+		MemTableSize:                64 << 20, // 64 MB
 		MemTableStopWritesThreshold: 4,
 	}
 	opts.EnsureDefaults()
@@ -63,6 +57,14 @@ func DefaultPebbleOptions() *pebble.Options {
 
 	opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
 	opts.Experimental.ReadSamplingMultiplier = -1
+
+	opts.Experimental.EnableColumnarBlocks = func() bool {
+		return true
+	}
+
+	// opts.DisableWAL = true
+
+	opts.FormatMajorVersion = pebble.FormatColumnarBlocks
 
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
@@ -76,8 +78,8 @@ func DefaultPebbleOptions() *pebble.Options {
 		l := &opts.Levels[i]
 		l.EnsureDefaults()
 
-		l.BlockSize = 32 << 10       // 32 KB
-		l.IndexBlockSize = 256 << 10 // 256 KB
+		l.BlockSize = 64 << 10       // 64 KB
+		l.IndexBlockSize = 512 << 10 // 512 KB
 
 		// enable zstd
 		l.Compression = func() pebble.Compression {
