@@ -361,7 +361,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	var (
 		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	)
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0]) // TODO: defer .. hmm.. not idea.
 
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))

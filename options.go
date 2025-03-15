@@ -40,13 +40,13 @@ func DefaultPebbleOptions() *pebble.Options {
 		CacheSize:                   256 << 20, // 256 MB, default is 8MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       8,
-		L0StopWritesThreshold:       24,
-		LBaseMaxBytes:               128 << 20, // 128 MB
+		L0CompactionThreshold:       2,
+		L0StopWritesThreshold:       1000,
+		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
 		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
-		MemTableSize:                64 << 20, // 64 MB
+		MemTableSize:                64 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
 	}
 	opts.EnsureDefaults()
@@ -55,8 +55,18 @@ func DefaultPebbleOptions() *pebble.Options {
 	opts.FlushDelayRangeKey = 10 * time.Second
 	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
 
+	// opts.MaxConcurrentCompactions = func() int { return 8 }
+	opts.MaxConcurrentCompactions = func() int { return 6 }
+
+	opts.Experimental.L0CompactionConcurrency = 2
+	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
+
+	// max writer is used for compression concurrency
 	opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
 	opts.Experimental.ReadSamplingMultiplier = -1
+
+	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
+	opts.Experimental.MultiLevelCompactionHeuristic = pebble.NoMultiLevel{}
 
 	opts.Experimental.EnableColumnarBlocks = func() bool {
 		return true
@@ -78,13 +88,23 @@ func DefaultPebbleOptions() *pebble.Options {
 		l := &opts.Levels[i]
 		l.EnsureDefaults()
 
-		l.BlockSize = 64 << 10       // 64 KB
-		l.IndexBlockSize = 512 << 10 // 512 KB
+		l.BlockSize = 32 << 10       // 32 KB
+		l.IndexBlockSize = 256 << 10 // 256 KB
 
-		// enable zstd
-		l.Compression = func() pebble.Compression {
-			return pebble.ZstdCompression
+		// compression
+		if i <= 1 {
+			l.Compression = func() pebble.Compression {
+				return pebble.NoCompression
+			}
+		} else {
+			l.Compression = func() pebble.Compression {
+				return pebble.ZstdCompression
+			}
 		}
+
+		// l.Compression = func() pebble.Compression {
+		// 	return pebble.ZstdCompression
+		// }
 
 		l.FilterPolicy = bloom.FilterPolicy(10)
 		l.FilterType = pebble.TableFilter

@@ -27,7 +27,8 @@ const (
 
 type Batch interface {
 	ID() uint64
-	Len() int
+	Len() int      // len is the length in bytes
+	Count() uint32 // count is the number of keys in the batch
 	Empty() bool
 	Reset()
 
@@ -80,6 +81,10 @@ func (b *_batch) Type() BatchType {
 	return BatchTypeWriteOnly
 }
 
+func (b *_batch) Count() uint32 {
+	return b.Batch.Count()
+}
+
 func (b *_batch) Reset() {
 	b.Batch.Reset()
 
@@ -121,7 +126,7 @@ func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
 	if err != nil {
 		return err
 	}
-	defer innerBatch.notifyOnCommitted()
+	defer innerBatch.notifyOnCommitted() // TODO: rather not use a defer if we dont have to..
 
 	err = b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
 	if err != nil {

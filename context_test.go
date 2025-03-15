@@ -28,6 +28,11 @@ func (m *MockBatch) Len() int {
 	panic("implement me")
 }
 
+func (m *MockBatch) Count() uint32 {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockBatch) Empty() bool {
 	//TODO implement me
 	panic("implement me")
