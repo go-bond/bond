@@ -16,6 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
+	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tinylib/msgp v1.2.5
 	github.com/urfave/cli/v2 v2.27.5
