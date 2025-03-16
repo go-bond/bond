@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package protobuf;
+
+//option go_package = "github.com/yourusername/yourproject/serializers/protobuf";
+option go_package = "./pb";
+
+import "google/protobuf/timestamp.proto";
+
+message BigInt {
+  bytes value = 1;
+}
+
+// TokenHistory represents blockchain token transaction history
+message TokenHistory {
+  uint64 block_number = 1;
+  bytes block_hash = 2;
+  bytes account_address = 3;
+  bytes contract_address = 4;
+  uint32 contract_type = 5;
+  bytes from_address = 6;
+  bytes to_address = 7;
+  bytes txn_hash = 8;
+  uint32 txn_index = 9;
+  uint32 txn_log_index = 10;
+  
+  // deprecated in favour of token_ids and amounts
+  string log_data = 11;
+  
+  // Timestamp when the event occurred
+  google.protobuf.Timestamp ts = 12;
+  
+  // Lists for token IDs and amounts
+  repeated BigInt token_ids = 13;
+  repeated BigInt amounts = 14;
+}
