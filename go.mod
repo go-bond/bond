@@ -18,7 +18,6 @@ require (
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/stretchr/testify v1.10.0
-	github.com/tinylib/msgp v1.2.5
 	github.com/urfave/cli/v2 v2.27.5
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/sync v0.12.0
@@ -45,7 +44,6 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/philhofer/fwd v1.1.3-0.20240916144458-20a13a1f6b7c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.21.1 // indirect

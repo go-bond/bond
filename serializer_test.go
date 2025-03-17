@@ -10,19 +10,6 @@ import (
 func TestCBORSerializer(t *testing.T) {
 	s := serializers.CBORSerializer{
 		// TODOXXX
-		// Encoder: &utils.SyncPoolWrapper[*msgpack.Encoder]{
-		// 	Pool: sync.Pool{New: func() interface{} {
-		// 		return msgpack.NewEncoder(nil)
-		// 	}},
-		// },
-		// Decoder: &utils.SyncPoolWrapper[*msgpack.Decoder]{
-		// 	Pool: sync.Pool{New: func() interface{} {
-		// 		return msgpack.NewDecoder(nil)
-		// 	}},
-		// },
-		// Buffer: &utils.SyncPoolWrapper[bytes.Buffer]{
-		// 	Pool: sync.Pool{New: func() interface{} { return bytes.Buffer{} }},
-		// },
 	}
 
 	tb := &TokenBalance{
