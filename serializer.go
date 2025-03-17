@@ -9,10 +9,6 @@ type Serializer[T any] interface {
 	Deserialize(b []byte, t T) error
 }
 
-type SerializerWithClosable[T any] interface {
-	SerializerWithCloseable(t T) ([]byte, func(), error)
-}
-
 type SerializerWithBuffer[T any] interface {
 	SerializeFuncWithBuffer(buff *bytes.Buffer) func(T any) ([]byte, error)
 }
