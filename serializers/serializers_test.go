@@ -21,21 +21,20 @@ import (
 // .. then lets review prototyp.BigInt
 
 type TokenHistory struct {
-	BlockNumber     uint64        `json:"blockNumber" cbor:"1"`
-	BlockHash       prototyp.Hash `json:"blockHash" cbor:"2"`
-	AccountAddress  prototyp.Hash `json:"accountAddress" cbor:"3"`
-	ContractAddress prototyp.Hash `json:"contractAddress" cbor:"4"`
-	ContractType    uint32        `json:"contractType" cbor:"5"`
-	FromAddress     prototyp.Hash `json:"fromAddress" cbor:"6"`
-	ToAddress       prototyp.Hash `json:"toAddress" cbor:"7"`
-	TxnHash         prototyp.Hash `json:"txnHash" cbor:"8"`
-	TxnIndex        uint          `json:"txnIndex" cbor:"9"`
-	TxnLogIndex     uint          `json:"txnLogIndex" cbor:"a"`
-	// deprecated in favour of TokenIDs and Amounts
-	LogData  string            `json:"logData" cbor:"b"`
-	TokenIDs []prototyp.BigInt `json:"tokenIDs" cbor:"d"`
-	Amounts  []prototyp.BigInt `json:"Amounts" cbor:"e"`
-	TS       time.Time         `json:"ts" cbor:"c"`
+	BlockNumber     uint64            `json:"blockNumber" cbor:"1"`
+	BlockHash       prototyp.Hash     `json:"blockHash" cbor:"2"`
+	AccountAddress  prototyp.Hash     `json:"accountAddress" cbor:"3"`
+	ContractAddress prototyp.Hash     `json:"contractAddress" cbor:"4"`
+	ContractType    uint32            `json:"contractType" cbor:"5"`
+	FromAddress     prototyp.Hash     `json:"fromAddress" cbor:"6"`
+	ToAddress       prototyp.Hash     `json:"toAddress" cbor:"7"`
+	TxnHash         prototyp.Hash     `json:"txnHash" cbor:"8"`
+	TxnIndex        uint              `json:"txnIndex" cbor:"9"`
+	TxnLogIndex     uint              `json:"txnLogIndex" cbor:"a"`
+	LogData         string            `json:"logData" cbor:"b"`
+	TokenIDs        []prototyp.BigInt `json:"tokenIDs" cbor:"c"`
+	Amounts         []prototyp.BigInt `json:"Amounts" cbor:"d"`
+	TS              time.Time         `json:"ts" cbor:"e"`
 }
 
 // TODO: we need to add the Hash and BigInt types here ..
