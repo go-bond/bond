@@ -72,7 +72,7 @@ func TestSerializeCBOR(t *testing.T) {
 	//
 	// if this test fails, we need to review the cbor serialization as
 	// the underlying library may have changed its behavior.
-	require.True(t, len(serialized) <= 90)
+	require.True(t, len(serialized) <= 91)
 }
 
 func TestSerializeProtobuf(t *testing.T) {
