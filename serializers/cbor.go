@@ -12,6 +12,7 @@ type CBORSerializer struct {
 	DecMode cbor.DecMode
 
 	// -- or ..
+	// TODOXXX .. clean up..
 
 	// NOTE: performance here is pretty much the same..
 	UserEncMode cbor.UserBufferEncMode
