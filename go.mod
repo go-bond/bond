@@ -7,7 +7,7 @@ replace github.com/0xsequence/go-sequence => /Users/peter/Dev/0xsequence/go-sequ
 require (
 	github.com/0xsequence/go-sequence v0.50.3
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
-	github.com/cockroachdb/pebble v0.0.0-20250315124616-793f8132e4f7
+	github.com/cockroachdb/pebble v0.0.0-20250320203539-9aedeff126ce
 	github.com/davecgh/go-spew v1.1.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0
@@ -55,8 +55,8 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
