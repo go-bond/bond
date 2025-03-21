@@ -73,11 +73,11 @@ type _iteratorMulti struct {
 	iteratorOptions      []*IterOptions
 	iteratorOptionsIndex int
 
-	iteratorConstuctor Iterationer
+	iteratorConstuctor Iterable
 	iterator           Iterator
 }
 
-func newIteratorMulti(itc Iterationer, opts []*IterOptions) *_iteratorMulti {
+func newIteratorMulti(itc Iterable, opts []*IterOptions) *_iteratorMulti {
 	return &_iteratorMulti{
 		iteratorOptions:      opts,
 		iteratorOptionsIndex: 0,

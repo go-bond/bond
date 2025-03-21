@@ -38,7 +38,7 @@ type Batch interface {
 	Setter
 	Deleter
 	DeleterWithRange
-	Iterationer
+	Iterable
 
 	Applier
 	Committer

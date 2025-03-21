@@ -174,7 +174,7 @@ func (idx *Index[T]) Name() string {
 
 // Iter returns an iterator for the index.
 func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
-	var iterConstructor Iterationer = table.DB()
+	var iterConstructor Iterable = table.DB()
 	if len(optBatch) > 0 {
 		iterConstructor = optBatch[0]
 	}

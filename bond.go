@@ -29,13 +29,43 @@ const (
 	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
 )
 
-const exportFileSize = 17 << 20
+const exportFileSize = 17 << 20 // 17 MB
 
 const PebbleFormatFile = "PEBBLE_FORMAT_VERSION"
 
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
 )
+
+const DefaultKeyBufferSize = 2048
+const DefaultValueBufferSize = 2048
+const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
+
+const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
+const DefaultNumberOfPreAllocMultiKeyBuffers = 10
+const DefaultNumberOfPreAllocValueBuffers = 10 * DefaultScanPrefetchSize
+const DefaultNumberOfPreAllocBytesArrays = 50
+
+type DB interface {
+	internalPools
+
+	Backend() *pebble.DB
+	Serializer() Serializer[any]
+
+	Getter
+	Setter
+	Deleter
+	DeleterWithRange
+	Iterable
+
+	Batcher
+	Applier
+
+	Closer
+	Backup
+
+	OnClose(func(db DB))
+}
 
 type WriteOptions struct {
 	Sync bool
@@ -66,7 +96,7 @@ type Batcher interface {
 	Batch(bType BatchType) Batch
 }
 
-type Iterationer interface { // TODO: weird name
+type Iterable interface {
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
 
@@ -81,15 +111,6 @@ type Backup interface {
 
 type Closer io.Closer
 
-const DefaultKeyBufferSize = 2048
-const DefaultValueBufferSize = 2048
-const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
-
-const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
-const DefaultNumberOfPreAllocMultiKeyBuffers = 10
-const DefaultNumberOfPreAllocValueBuffers = 10 * DefaultScanPrefetchSize
-const DefaultNumberOfPreAllocBytesArrays = 50
-
 type internalPools interface {
 	getKeyBufferPool() *utils.PreAllocatedPool[[]byte]
 	getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte]
@@ -99,27 +120,6 @@ type internalPools interface {
 	putKeyArray(arr [][]byte)
 	getValueArray(numOfValues int) [][]byte
 	putValueArray(arr [][]byte)
-}
-
-type DB interface {
-	internalPools
-
-	Backend() *pebble.DB
-	Serializer() Serializer[any]
-
-	Getter
-	Setter
-	Deleter
-	DeleterWithRange
-	Iterationer
-
-	Batcher
-	Applier
-
-	Closer
-	Backup
-
-	OnClose(func(db DB))
 }
 
 type _db struct {

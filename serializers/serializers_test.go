@@ -1,5 +1,7 @@
 package serializers_test
 
+// TODOXXX: delete..
+
 // TODO: lets inspect how cbor is marshalling this.. maybe we can make it
 // more efficient out of the gate..? by having it implement the encoding.BinaryMarshaler
 // interface. ....??..

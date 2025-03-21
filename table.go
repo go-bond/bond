@@ -58,7 +58,7 @@ type TableScanner[T any] interface {
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
 }
 
-type TableIterationer[T any] interface {
+type TableIterable[T any] interface {
 	Iter(sel Selector[T], optBatch ...Batch) Iterator
 }
 
@@ -76,7 +76,7 @@ type TableReader[T any] interface {
 	TableQuerier[T]
 
 	TableScanner[T]
-	TableIterationer[T]
+	TableIterable[T]
 }
 
 type TableInserter[T any] interface {
