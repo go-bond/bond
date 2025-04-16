@@ -120,6 +120,8 @@ type TableOptions[T any] struct {
 
 	ScanPrefetchSize int
 
+	// TODOXXX: should we always require a bloom filter for every table..?
+	// currently we use this on Insert .. maybe, maybe not..
 	Filter Filter
 }
 
@@ -149,6 +151,7 @@ type _table[T any] struct {
 }
 
 func NewTable[T any](opt TableOptions[T]) Table[T] {
+	// TODOXXX: what do we need this "AnyWrapper" for ..?
 	var serializer = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer}
@@ -159,7 +162,10 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		scanPrefetchSize = opt.ScanPrefetchSize
 	}
 
-	// TODO: check if id == 0, and if so, return error that its reserved for bond
+	// TODO: perhaps switch to error instead of a panic.
+	if opt.TableID == 0 {
+		panic(fmt.Errorf("bond: table id 0 is reserved for bond"))
+	}
 
 	table := &_table[T]{
 		db:             opt.DB,
@@ -361,7 +367,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 	var (
 		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	)
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0]) // TODO: defer .. hmm.. not idea.
+	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0]) // TODOXXX: defer .. hmm.. not great, too many defers
 
 	// key buffers
 	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
@@ -378,7 +384,8 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	// TODOXXX: review "persistentBatchSize" value
+	err := batched(trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -396,30 +403,36 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// process rows
 		for i, key := range keys {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
-			// check if exist
+			// check if exist efficiently (via bloom filter)
 			if t.keyDuplicate(i, keys) || t.exist(key, batch, iter) {
 				return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 			}
 
-			// serialize
+			// serialize the row
 			tr := trs[keyOrder[i]]
 			data, err := serialize(&tr)
 			if err != nil {
 				return err
 			}
 
+			// write the row to the batch for key
 			err = batch.Set(key, data, Sync)
 			if err != nil {
 				return err
 			}
 
-			// index keys
+			// index keys by writing index entries for this row, in this model
+			// we add index entries at the same time we write the row to the batch.
 			for _, idx := range indexes {
 				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 				if err != nil {
@@ -427,7 +440,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 				}
 			}
 
-			// add to bloom filter
+			// add object to the bloom filter
 			if t.filter != nil {
 				t.filter.Add(ctx, key)
 			}
@@ -497,7 +510,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// reusable object
 	var oldTr T
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -514,10 +527,13 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer iter.Close()
 
 		for i, key := range keys {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
 			// skip this records since the next record updating the
@@ -599,11 +615,14 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
-	for _, tr := range trs {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
-		default:
+	for i, tr := range trs {
+		// Check every 100 iterations if context is done, with micro-optimization.
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context done: %w", ctx.Err())
+			default:
+			}
 		}
 
 		// data key
@@ -682,7 +701,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	// reusable object
 	var oldTr T
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -700,10 +719,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		for i := 0; i < len(keys); {
 			tr := trs[keyOrder[i]]
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
 			// update key
@@ -816,10 +839,13 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
+	// search the bloom filter first
 	if t.filter != nil && !t.filter.MayContain(context.Background(), key) {
 		return false
 	}
 
+	// create an iterator if not provided, which is a slow operation,
+	// we want to avoid this.
 	if iter == nil {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
@@ -892,7 +918,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		defer t.db.putKeyArray(valueArray)
 
 		var trs []T
-		err := batched[T](selPoints, len(selPoints), func(selPoints []T) error {
+		err := batched(selPoints, len(selPoints), func(selPoints []T) error {
 			keys := t.keysExternal(selPoints, keyArray)
 
 			values, err := t.get(keys, batch, valueArray, false)
@@ -1024,6 +1050,7 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s Selec
 	}
 }
 
+// TODOXXX: performance review..?
 func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 
@@ -1070,6 +1097,7 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	return it.Close()
 }
 
+// TODOXXX: performance review..?
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 
@@ -1292,7 +1320,6 @@ func batched[T any](items []T, batchSize int, f func(batch []T) error) error {
 
 		batchNum++
 	}
-
 	return nil
 }
 

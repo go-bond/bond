@@ -60,10 +60,12 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		tr := trs[i]
 		oldTr := oldTrs[i]
 
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
-		default:
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context done: %w", ctx.Err())
+			default:
+			}
 		}
 
 		// update key
@@ -83,6 +85,9 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		}
 
 		// update indexes
+		// TODOXXX: perhaps we can skip having to update the index since we know it wont change..
+		// if we are updating the object, and if caller knows for sure it wont change, etc.
+		// .. is is an .OnUpdat() .. so lets check how those work..
 		for _, idx := range indexes {
 			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 			if err != nil {
@@ -104,7 +109,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 // TableUnsafeInserter provides access to UnsafeInsert method that allows to insert
 // records wihout checking if they already exist in the database.
-
+//
 // Warning: The indices of the records won't be updated properly if the records already exist.
 type TableUnsafeInserter[T any] interface {
 	UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch) error
@@ -148,16 +153,18 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
 		// process rows
 		for i, key := range keys {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
 			tr := trs[i]

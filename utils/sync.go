@@ -49,24 +49,24 @@ func NewPreAllocatedPool[T any](newFunc func() any, size int) *PreAllocatedPool[
 
 func (s *PreAllocatedPool[T]) Get() T {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if itemsLen := len(s.preAllocItems); itemsLen > 0 {
 		item := s.preAllocItems[itemsLen-1]
 		s.preAllocItems = s.preAllocItems[:itemsLen-1]
+		s.mu.Unlock()
 		return item
 	} else {
+		s.mu.Unlock()
 		return s.Pool.Get().(T)
 	}
 }
 
 func (s *PreAllocatedPool[T]) Put(t T) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if len(s.preAllocItems) < s.preAllocItemsSize {
 		s.preAllocItems = append(s.preAllocItems, t)
+		s.mu.Unlock()
 	} else {
+		s.mu.Unlock()
 		s.Pool.Put(t)
 	}
 }

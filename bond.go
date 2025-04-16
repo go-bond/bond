@@ -524,7 +524,8 @@ func (db *_db) getIndexIDS(tableID TableID) []IndexID {
 	return indexIDS
 }
 
-// write all the key/value of iterator to the SST file.
+// iteratorToSST is used by Dump method to write all the key/value of
+// iterator to the SST file.
 func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
 
@@ -536,7 +537,7 @@ func iteratorToSST(itr Iterator, path string) error {
 	}
 
 	opts := sstable.WriterOptions{
-		TableFormat: sstable.TableFormatPebblev2, Parallelism: true, Comparer: DefaultKeyComparer(),
+		TableFormat: sstable.TableFormatPebblev2, Comparer: DefaultKeyComparer(),
 	}
 	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
 

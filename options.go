@@ -62,7 +62,7 @@ func DefaultPebbleOptions() *pebble.Options {
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
 	// max writer is used for compression concurrency
-	opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
+	// opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
@@ -74,7 +74,7 @@ func DefaultPebbleOptions() *pebble.Options {
 
 	// opts.DisableWAL = true
 
-	opts.FormatMajorVersion = pebble.FormatColumnarBlocks
+	opts.FormatMajorVersion = pebble.FormatTableFormatV6
 
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
