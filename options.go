@@ -36,19 +36,54 @@ func DefaultPebbleOptions() *pebble.Options {
 	// and set the value to 80%. We should also record this value on /status
 	var maxOpenFileLimit = 5_000
 
+	// opts := &pebble.Options{
+	// 	CacheSize:                   512 << 20, // 256 MB, default is 8MB
+	// 	FS:                          vfs.Default,
+	// 	Comparer:                    DefaultKeyComparer(),
+	// 	L0CompactionThreshold:       2,
+	// 	L0StopWritesThreshold:       1000,
+	// 	LBaseMaxBytes:               256 << 20, // 64 MB
+	// 	MaxOpenFiles:                maxOpenFileLimit,
+	// 	Levels:                      make([]pebble.LevelOptions, 7),
+	// 	MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
+	// 	MemTableSize:                256 << 20, // 128 MB
+	// 	MemTableStopWritesThreshold: 4,
+	// }
+
+	// THESE WORK PRETTY WELL:
 	opts := &pebble.Options{
-		CacheSize:                   256 << 20, // 256 MB, default is 8MB
+		CacheSize:                   512 << 20, // 256 MB, default is 8MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
 		L0CompactionThreshold:       2,
 		L0StopWritesThreshold:       1000,
-		LBaseMaxBytes:               64 << 20, // 64 MB
+		LBaseMaxBytes:               128 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
 		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
-		MemTableSize:                64 << 20, // 128 MB
+		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
+		BytesPerSync:                4024 << 10, // 1024 KB
+		// WALBytesPerSync:             4024 << 10, // 1024 KB
+		// DisableWAL: true,
 	}
+
+	// THESE WORK PRETTY WELL:
+	// opts := &pebble.Options{
+	// 	CacheSize:                   512 << 20, // 256 MB, default is 8MB
+	// 	FS:                          vfs.Default,
+	// 	Comparer:                    DefaultKeyComparer(),
+	// 	L0CompactionThreshold:       2,
+	// 	L0StopWritesThreshold:       1000,
+	// 	LBaseMaxBytes:               128 << 20, // 64 MB
+	// 	MaxOpenFiles:                maxOpenFileLimit,
+	// 	Levels:                      make([]pebble.LevelOptions, 7),
+	// 	MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
+	// 	MemTableSize:                128 << 20, // 128 MB
+	// 	MemTableStopWritesThreshold: 4,
+	//  BytesPerSync:                1024 << 10, // 1024 KB
+	// }
+
 	opts.EnsureDefaults()
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
