@@ -37,8 +37,8 @@ test-all: test-clean
 
 test-with-reset: db-reset test-all
 
-test-clean:
-	GOGC=off go clean -testcache && rm -rf test_db tmp_db _benchmarks/bench_db
+test-clean: db-reset
+	GOGC=off go clean -testcache
 
 bench:
 	@cd _benchmarks && go test -timeout=25m -bench=.
@@ -48,3 +48,6 @@ bench-csv:
 
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
+
+db-reset:
+	rm -rf test_db tmp_db _benchmarks/bench_db

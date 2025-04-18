@@ -1,16 +1,13 @@
 package serializers_test
 
 import (
-	"bytes"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-bond/bond/serializers"
-	"github.com/go-bond/bond/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,21 +29,14 @@ type TokenTransfer struct {
 }
 
 func TestCBOR(t *testing.T) {
-	// encMode, err := cbor.EncOptions{}.EncMode()
-	// require.NoError(t, err)
-	// decMode, err := cbor.DecOptions{}.DecMode()
-	// require.NoError(t, err)
-
-	userEncMode, err := cbor.EncOptions{}.UserBufferEncMode()
+	encMode, err := cbor.EncOptions{}.EncMode()
+	require.NoError(t, err)
+	decMode, err := cbor.DecOptions{}.DecMode()
 	require.NoError(t, err)
 
 	serializer := &serializers.CBORSerializer{
-		// EncMode: encMode,
-		// DecMode: decMode,
-		UserEncMode: userEncMode,
-		Buffer: &utils.SyncPoolWrapper[*bytes.Buffer]{
-			Pool: sync.Pool{New: func() interface{} { return &bytes.Buffer{} }},
-		},
+		EncMode: encMode,
+		DecMode: decMode,
 	}
 	tokenHistory := &TokenTransfer{
 		BlockNumber:     1,
@@ -82,20 +72,9 @@ func TestCBOR(t *testing.T) {
 	require.True(t, len(serialized) <= 91)
 }
 
+// Run via: go clean -testcache && go test -bench=. -v -race -benchmem
 func BenchmarkCBOR(b *testing.B) {
-	// serializer := &serializers.CBORSerializer{}
-
-	userEncMode, err := cbor.EncOptions{
-		FieldName: cbor.FieldNameToByteString,
-	}.UserBufferEncMode()
-	_ = err
-
-	serializer := &serializers.CBORSerializer{
-		UserEncMode: userEncMode,
-		Buffer: &utils.SyncPoolWrapper[*bytes.Buffer]{
-			Pool: sync.Pool{New: func() interface{} { return &bytes.Buffer{} }},
-		},
-	}
+	serializer := &serializers.CBORSerializer{}
 
 	tokenHistory := &TokenTransfer{
 		BlockNumber:     1,
