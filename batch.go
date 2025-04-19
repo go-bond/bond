@@ -207,7 +207,7 @@ func (b *_batch) notifyOnError(err error) {
 }
 
 func (b *_batch) notifyOnClose() {
-	for _, f := range b.onCommittedCallbacks {
+	for _, f := range b.onClose {
 		f(b)
 	}
 }

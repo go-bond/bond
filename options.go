@@ -63,9 +63,7 @@ func DefaultPebbleOptions() *pebble.Options {
 		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
-		BytesPerSync:                4024 << 10, // 1024 KB
-		// WALBytesPerSync:             4024 << 10, // 1024 KB
-		// DisableWAL: true,
+		BytesPerSync:                4024 << 10, // 4024 KB
 	}
 
 	// THESE WORK PRETTY WELL:
@@ -85,6 +83,11 @@ func DefaultPebbleOptions() *pebble.Options {
 	// }
 
 	opts.EnsureDefaults()
+
+	// keep this..?
+	opts.WALMinSyncInterval = func() time.Duration {
+		return 250 * time.Millisecond
+	}
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second

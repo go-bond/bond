@@ -3,6 +3,7 @@ package bond
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 
 	"github.com/cockroachdb/pebble"
@@ -254,7 +255,49 @@ func KeyEncodeRaw(tableID TableID, indexID IndexID, indexFunc, indexOrderFunc, p
 	return buff
 }
 
-func KeyDecode(keyBytes []byte) Key {
+func KeyDecode(keyBytes []byte) (Key, error) {
+	if len(keyBytes) < 10 { // Minimum length: TableID(1) + IndexID(1) + IndexLen(4) + IndexOrderLen(4)
+		return Key{}, fmt.Errorf("key too short: %d bytes", len(keyBytes))
+	}
+
+	tableID := TableID(keyBytes[0])
+	indexID := IndexID(keyBytes[1])
+
+	indexLen := binary.BigEndian.Uint32(keyBytes[2:6])
+	idxStart := 6
+	idxEnd := idxStart + int(indexLen)
+	if idxEnd > len(keyBytes) {
+		return Key{}, fmt.Errorf("invalid index length: %d exceeds key bounds %d", indexLen, len(keyBytes)-idxStart)
+	}
+	index := keyBytes[idxStart:idxEnd]
+
+	indexOrderLenStart := idxEnd
+	indexOrderLenEnd := indexOrderLenStart + 4
+	if indexOrderLenEnd > len(keyBytes) {
+		return Key{}, fmt.Errorf("key too short to read index order length at offset %d", indexOrderLenStart)
+	}
+	indexOrderLen := binary.BigEndian.Uint32(keyBytes[indexOrderLenStart:indexOrderLenEnd])
+
+	indexOrderStart := indexOrderLenEnd
+	indexOrderEnd := indexOrderStart + int(indexOrderLen)
+	if indexOrderEnd > len(keyBytes) {
+		return Key{}, fmt.Errorf("invalid index order length: %d exceeds key bounds %d", indexOrderLen, len(keyBytes)-indexOrderStart)
+	}
+	indexOrder := keyBytes[indexOrderStart:indexOrderEnd]
+
+	primaryKeyStart := indexOrderEnd
+	primaryKey := keyBytes[primaryKeyStart:] // The rest is the primary key
+
+	return Key{
+		TableID:    tableID,
+		IndexID:    indexID,
+		Index:      index,
+		IndexOrder: indexOrder,
+		PrimaryKey: primaryKey,
+	}, nil
+}
+
+/*func KeyDecode(keyBytes []byte) Key {
 	buff := bytes.NewBuffer(keyBytes)
 
 	tableID, _ := buff.ReadByte()
@@ -285,7 +328,7 @@ func KeyDecode(keyBytes []byte) Key {
 		IndexOrder: indexOrder,
 		PrimaryKey: primaryKey,
 	}
-}
+}*/
 
 type KeyBytes []byte
 
@@ -333,7 +376,11 @@ func (key KeyBytes) IsIndexKey() bool {
 }
 
 func (key KeyBytes) ToKey() Key {
-	return KeyDecode(key)
+	k, err := KeyDecode(key)
+	if err != nil {
+		panic(err) // unexpected
+	}
+	return k
 }
 
 func DefaultKeyComparer() *pebble.Comparer {

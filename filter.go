@@ -23,7 +23,6 @@ type Filter interface {
 
 type FilterInitializable struct {
 	Filter
-
 	isInitialized uint64
 }
 

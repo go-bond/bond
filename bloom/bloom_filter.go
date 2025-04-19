@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -78,16 +79,31 @@ func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte)
 
 func (b *BloomFilter) Add(_ context.Context, key []byte) {
 	b.mutex.RLock()
-	defer b.mutex.RUnlock()
+	bucketIndex := b.hash(key)
+	b.mutex.RUnlock() // Unlock earlier as we don't need the main lock anymore
 
-	bucket := b.buckets[b.hash(key)]
-	bucket.hasChanges = !bucket.filter.TestOrAdd(key) || bucket.hasChanges
+	bucket := b.buckets[bucketIndex]
+
+	bucket.mutex.Lock()
+	// TestOrAdd is thread-safe, but we lock to protect hasChanges update
+	added := bucket.filter.TestOrAdd(key)
+	if added {
+		bucket.hasChanges = true
+	}
+	bucket.mutex.Unlock()
 }
 
 func (b *BloomFilter) MayContain(_ context.Context, key []byte) bool {
 	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-	return b.buckets[b.hash(key)].filter.Test(key)
+	bucketIndex := b.hash(key)
+	b.mutex.RUnlock() // Unlock earlier
+
+	bucket := b.buckets[bucketIndex]
+
+	bucket.mutex.RLock()
+	contains := bucket.filter.Test(key)
+	bucket.mutex.RUnlock()
+	return contains
 }
 
 func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
@@ -124,12 +140,15 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 		zr.Close()
 		_ = closer.Close()
 
+		// Lock the specific bucket before modifying it
+		bucket.mutex.Lock()
 		err = bucket.filter.Merge(filter)
 		if err != nil {
-			return fmt.Errorf("configuration changed: %w", err)
+			bucket.mutex.Unlock() // Ensure unlock on error
+			return fmt.Errorf("configuration changed (incompatible filter parameters): %w", err)
 		}
-
 		bucket.hasBeenWritten = true
+		bucket.mutex.Unlock()
 	}
 
 	return nil
@@ -150,11 +169,17 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 	}
 
 	for _, bucket := range b.buckets {
+		// Lock the bucket early to check flags and potentially write
+		bucket.mutex.Lock()
 		if !bucket.hasChanges && bucket.hasBeenWritten {
+			bucket.mutex.Unlock() // Unlock if we skip
 			continue
 		}
 
-		buff := bytes.NewBuffer(dataBuff[:0])
+		// Use a temporary buffer from the pool for writing
+		writeBuff := _buffPool.Get().([]byte)
+		buff := bytes.NewBuffer(writeBuff[:0]) // Use the pooled buffer
+
 		zw, err := zstd.NewWriter(buff)
 		if err != nil {
 			return err
@@ -170,17 +195,22 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 			return err
 		}
 
+		// Put the buffer back BEFORE potential error return from store.Set
+		_buffPool.Put(writeBuff)
+
 		err = store.Set(
 			buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
-			buff.Bytes(),
+			buff.Bytes(), // Use the compressed data from the buffer
 			bond.Sync,
 		)
 		if err != nil {
+			bucket.mutex.Unlock() // Ensure unlock on error
 			return err
 		}
 
 		bucket.hasChanges = false
 		bucket.hasBeenWritten = true
+		bucket.mutex.Unlock() // Unlock after successful write and flag update
 	}
 
 	return nil
@@ -200,15 +230,15 @@ func (b *BloomFilter) hash(key []byte) int {
 }
 
 func buildKey(buff []byte, keyPrefix []byte, bucketNo int) []byte {
-	buffer := bytes.NewBuffer(buff)
-	_, _ = buffer.Write(append(keyPrefix, []byte(fmt.Sprintf("%d", bucketNo))...))
-	return buffer.Bytes()
+	buff = append(buff, keyPrefix...)
+	buff = strconv.AppendInt(buff, int64(bucketNo), 10)
+	return buff
 }
 
 func buildBucketNumKey(buff []byte, keyPrefix []byte) []byte {
-	buffer := bytes.NewBuffer(buff)
-	_, _ = buffer.Write(append(keyPrefix, []byte("bn")...))
-	return buffer.Bytes()
+	buff = append(buff, keyPrefix...)
+	buff = append(buff, "bn"...)
+	return buff
 }
 
 func HashBytes(key []byte, buckets int32, h jump.KeyHasher) int32 {
