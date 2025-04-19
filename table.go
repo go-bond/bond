@@ -1126,10 +1126,12 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 	indexKeys := t.db.getBytesArrayPool().Get()[:0]
 	multiKeyBuffer := t.db.getMultiKeyBufferPool().Get()[:0]
 	valuesBuffer := t.db.getValueArray(t.scanPrefetchSize)
-	defer t.db.getBytesArrayPool().Put(keys[:0])
-	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
-	defer t.db.getMultiKeyBufferPool().Put(multiKeyBuffer[:0])
-	defer t.db.putValueArray(valuesBuffer)
+	defer func() {
+		t.db.getBytesArrayPool().Put(keys[:0])
+		t.db.getBytesArrayPool().Put(indexKeys[:0])
+		t.db.getMultiKeyBufferPool().Put(multiKeyBuffer[:0])
+		t.db.putValueArray(valuesBuffer)
+	}()
 
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int

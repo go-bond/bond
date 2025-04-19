@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/objstorage/objstorageprovider"
@@ -37,8 +38,8 @@ var (
 	ErrNotFound = fmt.Errorf("bond: not found")
 )
 
-const DefaultKeyBufferSize = 2048
-const DefaultValueBufferSize = 2048
+const DefaultKeyBufferSize = 512
+const DefaultValueBufferSize = 1024
 const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
 
 const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
@@ -611,4 +612,16 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	defer versionFile.Close()
 	_, err = versionFile.Write([]byte(fmt.Sprintf("%d", upgradeVersion)))
 	return err
+}
+
+// UnsafeByteString is a helper function to convert a byte slice to a string without
+// allocating a new string. This is unsafe because it assumes the byte slice will not
+// be modified or garbage collected before the string is used.
+func UnsafeByteString(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	// NOTE: This is still unsafe if the underlying bytes are modified
+	// or if the byte slice is garbage collected before the string.
+	return unsafe.String(&b[0], len(b))
 }

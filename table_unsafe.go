@@ -41,9 +41,11 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
 		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
 	)
-	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
+	defer func() {
+		t.db.getKeyBufferPool().Put(keyBuffer[:0])
+		t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+		t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
+	}()
 
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
