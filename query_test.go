@@ -79,7 +79,7 @@ func setupDatabaseForQuery() (DB, Table[*TokenBalance], *Index[*TokenBalance], *
 
 func TestBond_Query_OnOrderedIndex(t *testing.T) {
 	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 		IndexID:   lastIndex.IndexID + 1,
@@ -181,7 +181,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 
 func TestBond_Query_OnFilterIndex(t *testing.T) {
 	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceFilterIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 		IndexID:   lastIndex.IndexID + 1,
@@ -250,7 +250,7 @@ func TestBond_Query_OnFilterIndex(t *testing.T) {
 
 func TestBond_Query_Context_Canceled(t *testing.T) {
 	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 		IndexID:   lastIndex.IndexID + 1,
@@ -321,7 +321,7 @@ func TestBond_Query_Context_Canceled(t *testing.T) {
 
 func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 		IndexID:   lastIndex.IndexID + 1,
@@ -412,7 +412,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 
 func TestBond_Query_After(t *testing.T) {
 	db, TokenBalanceTable, _, _, lastIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceOrderedIndex := NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 		IndexID:   lastIndex.IndexID + 1,
@@ -546,7 +546,7 @@ func TestBond_Query_After(t *testing.T) {
 
 func TestBond_Query_Where(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -622,7 +622,7 @@ func TestBond_Query_Where(t *testing.T) {
 
 func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -711,7 +711,7 @@ func TestBond_Query_Where_Offset_Limit(t *testing.T) {
 
 func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -799,7 +799,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter(t *testing.T) {
 
 func TestBond_Query_Where_Offset_Limit_With_Filter_With_Cond(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -887,7 +887,7 @@ func TestBond_Query_Where_Offset_Limit_With_Filter_With_Cond(t *testing.T) {
 
 func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -988,7 +988,7 @@ func TestBond_Query_Where_Offset_Limit_With_Order(t *testing.T) {
 
 func TestBond_Query_Order(t *testing.T) {
 	db, TokenBalanceTable, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1086,7 +1086,7 @@ func TestBond_Query_Order(t *testing.T) {
 
 func TestBond_Query_Indexes_Mix(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, _, TokenBalanceAccountAndContractAddressIndex := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1196,7 +1196,7 @@ func TestBond_Query_Indexes_Mix(t *testing.T) {
 
 func TestBond_Query_Indexes_Intersect(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1264,7 +1264,7 @@ func TestBond_Query_Indexes_Intersect(t *testing.T) {
 
 func TestBond_Query_Indexes_Intersect_Offset_Limit(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1356,7 +1356,7 @@ func TestBond_Query_Indexes_Intersect_Offset_Limit(t *testing.T) {
 
 func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1463,7 +1463,7 @@ func TestBond_Query_Indexes_Intersect_Filter_Offset_Limit(t *testing.T) {
 
 func TestBond_Query_Indexes_Intersect_Sort(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1560,7 +1560,7 @@ func TestBond_Query_Indexes_Intersect_Sort(t *testing.T) {
 
 func TestBond_Query_Indexes_Intersect_After(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1646,7 +1646,7 @@ func TestBond_Query_Indexes_Intersect_After(t *testing.T) {
 
 func BenchmarkQuery_Intersects(b *testing.B) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, TokenBalanceContractAddressIndex, TokenBalanceAccountAndContractAddress := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(nil, db)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -1728,7 +1728,7 @@ func BenchmarkQuery_Intersects(b *testing.B) {
 
 func TestQuery_Selectors(t *testing.T) {
 	db, TokenBalanceTable, TokenBalanceAccountAddressIndex, _ /*TokenBalanceContractAddressIndex*/, _ /*TokenBalanceAccountAndContractAddress*/ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	TokenBalanceTablePrimaryIndex := TokenBalanceTable.PrimaryIndex()
 

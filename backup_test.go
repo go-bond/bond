@@ -13,7 +13,7 @@ import (
 
 func TestBond_BackupRestore(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 	defer os.RemoveAll("export")
 
 	const (
@@ -83,7 +83,7 @@ func TestBond_BackupRestore(t *testing.T) {
 
 	// create a tmp db.
 	db2 := setupDB("tmp_db")
-	defer tearDownDB("tmp_db", db2)
+	defer tearDownDB(t, "tmp_db", db2)
 	table := tokenBalanceTable.(*_table[*TokenBalance])
 	table.db = db2
 	table2 := tokenTable.(*_table[*Token])
@@ -109,7 +109,7 @@ func TestBond_BackupRestore(t *testing.T) {
 
 func TestBond_RestoreDifferentVersion(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 	defer os.RemoveAll("export")
 
 	const (
@@ -187,14 +187,14 @@ func TestBond_RestoreDifferentVersion(t *testing.T) {
 
 	// create a tmp db.
 	db2 := setupDB("tmp_db")
-	defer tearDownDB("tmp_db", db2)
+	defer tearDownDB(t, "tmp_db", db2)
 	err = db2.Restore(context.TODO(), "export", []TableID{}, true)
 	require.Error(t, err)
 }
 
 func Test_BondIDRetrival(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 	defer os.RemoveAll("export")
 
 	const (

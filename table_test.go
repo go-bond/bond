@@ -13,7 +13,7 @@ import (
 
 func TestBond_NewTable(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -33,7 +33,7 @@ func TestBond_NewTable(t *testing.T) {
 
 func TestBondTable_Interfaces(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -61,7 +61,7 @@ func TestBondTable_Interfaces(t *testing.T) {
 
 func TestBondTable_PrimaryIndex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -85,7 +85,7 @@ func TestBondTable_PrimaryIndex(t *testing.T) {
 
 func TestBondTable_SecondaryIndexes(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -131,7 +131,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 
 func TestDuplicateIndexID(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -175,7 +175,7 @@ func TestDuplicateIndexID(t *testing.T) {
 
 func TestBondTable_Serializer(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -195,7 +195,7 @@ func TestBondTable_Serializer(t *testing.T) {
 
 func TestBondTable_SerializerOption(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -216,7 +216,7 @@ func TestBondTable_SerializerOption(t *testing.T) {
 
 func TestBondTable_Get(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -258,7 +258,7 @@ func TestBondTable_Get(t *testing.T) {
 
 func TestBondTable_Get_Range(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -310,7 +310,7 @@ func TestBondTable_Get_Range(t *testing.T) {
 
 func TestBondTable_Get_Points(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -365,7 +365,7 @@ func TestBondTable_Get_Points(t *testing.T) {
 
 func TestBondTable_Get_Ranges(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
@@ -429,7 +429,7 @@ func TestBondTable_Get_Ranges(t *testing.T) {
 
 func TestBondTable_Insert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -474,7 +474,7 @@ func TestBondTable_Insert(t *testing.T) {
 
 func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -506,7 +506,7 @@ func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Insert_When_Exist(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -554,7 +554,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 
 func TestBondTable_Update(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -628,7 +628,7 @@ func TestBondTable_Update(t *testing.T) {
 
 func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -705,7 +705,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Upsert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -799,7 +799,7 @@ func TestBondTable_Upsert(t *testing.T) {
 
 func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -894,7 +894,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1005,7 +1005,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 
 func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1112,7 +1112,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 
 func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1149,7 +1149,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 
 func TestBondTable_Delete(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1189,7 +1189,7 @@ func TestBondTable_Delete(t *testing.T) {
 
 func TestBondTable_Exist(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1224,7 +1224,7 @@ func TestBondTable_Exist(t *testing.T) {
 
 func TestBondTable_Scan(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1294,7 +1294,7 @@ func TestBondTable_Scan(t *testing.T) {
 
 func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1353,7 +1353,7 @@ func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 
 func TestBondTable_ScanIndex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1434,7 +1434,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 
 func TestBond_Batch(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)

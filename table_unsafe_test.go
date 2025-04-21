@@ -11,7 +11,7 @@ import (
 
 func TestBondTable_UnsafeUpdate(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -92,7 +92,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 
 func TestBondTable_UnsafeInsert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)

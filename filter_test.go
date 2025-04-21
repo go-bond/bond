@@ -43,7 +43,7 @@ func (m *MockFilter) Clear(ctx context.Context, store FilterStorer) error {
 func TestFilter_Insert(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
-		tearDownDatabase(db)
+		tearDownDatabase(t, db)
 	}()
 
 	mFilter := &MockFilter{}
@@ -87,7 +87,7 @@ func TestFilter_Insert(t *testing.T) {
 func TestFilter_Insert_Batch(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
-		tearDownDatabase(db)
+		tearDownDatabase(t, db)
 	}()
 
 	mFilter := &MockFilter{}
@@ -138,7 +138,7 @@ func TestFilter_Insert_Batch(t *testing.T) {
 func TestFilter_Exist(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
-		tearDownDatabase(db)
+		tearDownDatabase(t, db)
 	}()
 
 	mFilter := &MockFilter{}
@@ -183,7 +183,7 @@ func TestFilter_Exist(t *testing.T) {
 func TestFilter_Upsert(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
-		tearDownDatabase(db)
+		tearDownDatabase(t, db)
 	}()
 
 	mFilter := &MockFilter{}
@@ -241,7 +241,7 @@ func TestFilter_Upsert(t *testing.T) {
 func TestFilter_Get(t *testing.T) {
 	db := setupDatabase()
 	defer func() {
-		tearDownDatabase(db)
+		tearDownDatabase(t, db)
 	}()
 
 	mFilter := &MockFilter{}

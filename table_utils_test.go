@@ -10,7 +10,7 @@ import (
 
 func TestTableAnyScanner(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0

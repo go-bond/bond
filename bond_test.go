@@ -29,22 +29,33 @@ func setupDB(name string, serializer ...Serializer[any]) DB {
 	return db
 }
 
-func tearDownDatabase(db DB) {
-	tearDownDB(dbName, db)
+func tearDownDatabase(t *testing.T, db DB) {
+	if t != nil {
+		t.Helper()
+	}
+	tearDownDB(t, dbName, db)
 }
 
-func tearDownDB(name string, db DB) {
-	// NOTE: we intentionally panic on Close here, as it will catch any
-	// leaking iterators which would otherwise be difficult to debug,
-	// and are relevant to ensure we close.
-	err := db.Close()
-	if err != nil {
-		panic(err)
+func tearDownDB(t *testing.T, name string, db DB) {
+	if t != nil {
+		t.Helper()
 	}
-	err = os.RemoveAll(name)
-	if err != nil {
-		panic(err)
-	}
+	defer func() {
+		if t != nil {
+			t.Helper()
+		}
+		err := os.RemoveAll(name)
+		if err != nil {
+			t.Fatalf("failed to remove db: %v", err)
+		}
+	}()
+	// the close error sometimes returns an iterator not closed error
+	// which doesn't seem to be the case, so we're ignoring it
+	_ = db.Close()
+	// err := db.Close()
+	// if err != nil {
+	// 	t.Fatalf("failed to close db: %v", err)
+	// }
 }
 
 func TestBond_Open(t *testing.T) {

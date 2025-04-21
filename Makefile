@@ -26,7 +26,7 @@ all:
 build:
 	go build ./...
 
-clean:
+clean: test-clean
 	go clean -cache -testcache
 
 test: test-clean

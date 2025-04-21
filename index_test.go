@@ -537,7 +537,7 @@ func TestIndex_IndexKeyFunction(t *testing.T) {
 
 func TestIndex_Iter(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -906,7 +906,7 @@ func TestIndex_Iter(t *testing.T) {
 
 func TestIndex_Callbacks(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1167,7 +1167,7 @@ func TestBond_NewIndex_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Insert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1293,7 +1293,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 
 func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1422,7 +1422,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Update(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1561,7 +1561,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 
 func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1704,7 +1704,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Delete(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1826,7 +1826,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 
 func TestBond_Table_Reindex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)

@@ -15,7 +15,7 @@ import (
 
 func TestNewInspectHandler(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
