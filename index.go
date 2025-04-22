@@ -13,6 +13,7 @@ import (
 
 type IndexID uint8
 type IndexKeyFunction[T any] func(builder KeyBuilder, t T) []byte
+type IndexMultiKeyFunction[T any] func(builder KeyBuilder, t T) [][]byte
 type IndexFilterFunction[T any] func(t T) bool
 type IndexOrderFunction[T any] func(o IndexOrder, t T) IndexOrder
 type IndexOrderType bool
@@ -126,20 +127,22 @@ type IndexInfo interface {
 }
 
 type IndexOptions[T any] struct {
-	IndexID         IndexID
-	IndexName       string
-	IndexKeyFunc    IndexKeyFunction[T]
-	IndexOrderFunc  IndexOrderFunction[T]
-	IndexFilterFunc IndexFilterFunction[T]
+	IndexID           IndexID
+	IndexName         string
+	IndexKeyFunc      IndexKeyFunction[T]
+	IndexMultiKeyFunc IndexMultiKeyFunction[T]
+	IndexOrderFunc    IndexOrderFunction[T]
+	IndexFilterFunc   IndexFilterFunction[T]
 }
 
 type Index[T any] struct {
 	IndexID   IndexID
 	IndexName string
 
-	IndexKeyFunction    IndexKeyFunction[T]
-	IndexFilterFunction IndexFilterFunction[T]
-	IndexOrderFunction  IndexOrderFunction[T]
+	IndexKeyFunction      IndexKeyFunction[T]
+	IndexMultiKeyFunction IndexMultiKeyFunction[T]
+	IndexFilterFunction   IndexFilterFunction[T]
+	IndexOrderFunction    IndexOrderFunction[T]
 }
 
 func NewIndex[T any](opt IndexOptions[T]) *Index[T] {

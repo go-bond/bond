@@ -364,9 +364,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		batchReadWrite = batch
 	}
 
-	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
-	)
+	var indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0]) // TODOXXX: defer .. hmm.. not great, too many defers
 
 	// key buffers
@@ -384,7 +382,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	// TODOXXX: review "persistentBatchSize" value
 	err := batched(trs, persistentBatchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)

@@ -2,10 +2,13 @@ package bond
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/pebble"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -352,15 +355,13 @@ func TestBondTable_Get_Points(t *testing.T) {
 	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 3}))
 	require.NoError(t, err)
 	require.Equal(t, len(insertTokenBalances), len(tokenBalances))
-
-	assert.Equal(t, insertTokenBalances, tokenBalances)
+	require.Equal(t, insertTokenBalances, tokenBalances)
 
 	// get token balance with non-existing points
 	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 2}))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(tokenBalances))
-
-	assert.Nil(t, tokenBalances[0])
+	require.Nil(t, tokenBalances[0])
 }
 
 func TestBondTable_Get_Ranges(t *testing.T) {
@@ -1492,4 +1493,320 @@ func TestBond_Batch(t *testing.T) {
 		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
 	it.Close()
+}
+
+func TestBondTable_Weird(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenHistoryTableID TableID = 0xD0
+	)
+
+	tokenHistoryTable := NewTable(TableOptions[*TokenHistory]{
+		DB:        db,
+		TableID:   TokenHistoryTableID,
+		TableName: "token_history",
+		TablePrimaryKeyFunc: func(keyBuilder KeyBuilder, th *TokenHistory) []byte {
+			return keyBuilder.
+				AddUint64Field(th.BlockNumber).
+				AddUint64Field(uint64(th.TxnIndex)).
+				AddUint64Field(uint64(th.TxnLogIndex)).
+				Bytes()
+		},
+	})
+
+	require.NotNil(t, tokenHistoryTable)
+	require.Equal(t, TokenHistoryTableID, tokenHistoryTable.ID())
+
+	// add indexes
+	TokenHistoryByAccountIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_history_by_account_idx",
+		IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+			// return builder.AddStringField(tb.AccountAddress).Bytes()
+			return builder.AddStringField(th.FromAddress).Bytes()
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+		// IndexOrderFunc: IndexOrderDefault[*TokenHistory],
+	})
+
+	// add indexes
+
+	TokenHistoryByAccountToIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 2,
+		IndexName: "token_history_by_account_to_idx",
+		IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+			// return builder.AddStringField(tb.AccountAddress).Bytes()
+			return builder.AddStringField(th.ToAddress).Bytes()
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+	})
+	// _ = TokenHistoryByAccountToIndex
+
+	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
+		TokenHistoryByAccountIndex, // from ..
+		TokenHistoryByAccountToIndex,
+	})
+
+	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
+	require.NotNil(t, secondaryIndexes)
+	// require.Equal(t, 2, len(secondaryIndexes))
+
+	// add some records
+
+	tokenHistory1 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        1,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc1",
+		ToAddress:       "0xdef1",
+		ContractAddress: "0x1231",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{100},
+		TS:              time.Now(),
+	}
+
+	tokenHistory2 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        2,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc2",
+		ToAddress:       "0xdef2",
+		ContractAddress: "0x1232",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{200},
+		TS:              time.Now(),
+	}
+
+	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2})
+	require.NoError(t, err)
+
+	// test scan index
+
+	{
+		var tokenHistories []*TokenHistory
+		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
+
+	fmt.Println("....---.... ScanIndex")
+
+	{
+		var tokenHistories []*TokenHistory
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
+
+	fmt.Println("....---.... GetPoint")
+
+	{
+		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
+		require.NoError(t, err)
+		spew.Dump(tokenHistory)
+	}
+
+	fmt.Println("....---.... Query")
+
+	// test query
+	{
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+
+		// selector2 := NewSelectorRange(
+		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		// )
+
+		query := tokenHistoryTable.Query().
+			With(TokenHistoryByAccountIndex, selector)
+
+		var tokenHistories []*TokenHistory
+		err = query.Execute(context.Background(), &tokenHistories)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
+}
+
+func TestBondTable_Weird2(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenHistoryTableID TableID = 0xD0
+	)
+
+	tokenHistoryTable := NewTable(TableOptions[*TokenHistory]{
+		DB:        db,
+		TableID:   TokenHistoryTableID,
+		TableName: "token_history",
+		TablePrimaryKeyFunc: func(keyBuilder KeyBuilder, th *TokenHistory) []byte {
+			return keyBuilder.
+				AddUint64Field(th.BlockNumber).
+				AddUint64Field(uint64(th.TxnIndex)).
+				AddUint64Field(uint64(th.TxnLogIndex)).
+				Bytes()
+		},
+	})
+
+	require.NotNil(t, tokenHistoryTable)
+	require.Equal(t, TokenHistoryTableID, tokenHistoryTable.ID())
+
+	// add indexes
+	TokenHistoryByAccountIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_history_by_account_idx",
+		// IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+		// 	return builder.AddStringField(th.FromAddress).Bytes()
+		// },
+		IndexMultiKeyFunc: func(builder KeyBuilder, th *TokenHistory) [][]byte {
+			return [][]byte{
+				builder.AddStringField(th.FromAddress).Bytes(),
+				builder.AddStringField(th.ToAddress).Bytes(),
+			}
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+	})
+
+	// add indexes
+
+	// TokenHistoryByAccountToIndex := NewIndex(IndexOptions[*TokenHistory]{
+	// 	IndexID:   PrimaryIndexID + 2,
+	// 	IndexName: "token_history_by_account_to_idx",
+	// 	IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+	// 		// return builder.AddStringField(tb.AccountAddress).Bytes()
+	// 		return builder.AddStringField(th.ToAddress).Bytes()
+	// 	},
+	// 	IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+	// 		return o.
+	// 			OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+	// 			OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+	// 			OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+	// 	},
+	// })
+	// _ = TokenHistoryByAccountToIndex
+
+	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
+		TokenHistoryByAccountIndex,
+		// TokenHistoryByAccountToIndex,
+	})
+
+	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
+	require.NotNil(t, secondaryIndexes)
+	// require.Equal(t, 2, len(secondaryIndexes))
+
+	// add some records
+
+	tokenHistory1 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        1,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc1",
+		ToAddress:       "0xdef1",
+		ContractAddress: "0x1231",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{100},
+		TS:              time.Now(),
+	}
+
+	tokenHistory2 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        2,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc2",
+		ToAddress:       "0xdef2",
+		ContractAddress: "0x1232",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{200},
+		TS:              time.Now(),
+	}
+
+	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2})
+	require.NoError(t, err)
+
+	// test scan index
+
+	{
+		var tokenHistories []*TokenHistory
+		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
+
+	fmt.Println("....---.... ScanIndex")
+
+	{
+		var tokenHistories []*TokenHistory
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
+
+	fmt.Println("....---.... GetPoint")
+
+	{
+		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
+		require.NoError(t, err)
+		spew.Dump(tokenHistory)
+	}
+
+	fmt.Println("....---.... Query")
+
+	// test query
+	{
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+
+		// selector2 := NewSelectorRange(
+		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		// )
+
+		query := tokenHistoryTable.Query().
+			With(TokenHistoryByAccountIndex, selector)
+
+		var tokenHistories []*TokenHistory
+		err = query.Execute(context.Background(), &tokenHistories)
+		require.NoError(t, err)
+		spew.Dump(tokenHistories)
+	}
 }
