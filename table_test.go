@@ -1,7 +1,6 @@
 package bond
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -1496,7 +1495,7 @@ func TestBond_Batch(t *testing.T) {
 	it.Close()
 }
 
-func TestBondTable_Weird(t *testing.T) {
+func TestBondTable_Case_TokenHistory_Basic(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(t, db)
 
@@ -1652,7 +1651,7 @@ func TestBondTable_Weird(t *testing.T) {
 	}
 }
 
-func TestBondTable_Weird2(t *testing.T) {
+func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(t, db)
 
@@ -1693,25 +1692,22 @@ func TestBondTable_Weird2(t *testing.T) {
 			return builder.Bytes()
 		},
 		IndexMultiKeyFunc: func(builder KeyBuilder, record *TokenHistory) [][]byte {
-			var keyParts [][]byte
+			var indexKeys [][]byte
 
 			// Generate key part for FromAddress
 			if record.FromAddress != "" {
 				// Use a *new* builder for each distinct key part
 				fromKeyPart := NewKeyBuilder(nil).AddStringField(record.FromAddress).Bytes()
-				keyParts = append(keyParts, fromKeyPart)
+				indexKeys = append(indexKeys, fromKeyPart)
 			}
 
-			// Generate key part for ToAddress
-			if record.ToAddress != "" {
+			// Generate key part for ToAddress and avoid adding duplicate key parts if FromAddress == ToAddress
+			if record.ToAddress != "" && record.ToAddress != record.FromAddress {
 				// Use a *new* builder
 				toKeyPart := NewKeyBuilder(nil).AddStringField(record.ToAddress).Bytes()
-				// Avoid adding duplicate key parts if FromAddress == ToAddress
-				if len(keyParts) == 0 || !bytes.Equal(keyParts[0], toKeyPart) {
-					keyParts = append(keyParts, toKeyPart)
-				}
+				indexKeys = append(indexKeys, toKeyPart)
 			}
-			return keyParts
+			return indexKeys
 		},
 		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
 			return o.
