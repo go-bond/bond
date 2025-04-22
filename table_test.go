@@ -1,6 +1,7 @@
 package bond
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -1679,14 +1680,38 @@ func TestBondTable_Weird2(t *testing.T) {
 	TokenHistoryByAccountIndex := NewIndex(IndexOptions[*TokenHistory]{
 		IndexID:   PrimaryIndexID + 1,
 		IndexName: "token_history_by_account_idx",
-		// IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
-		// 	return builder.AddStringField(th.FromAddress).Bytes()
-		// },
-		IndexMultiKeyFunc: func(builder KeyBuilder, th *TokenHistory) [][]byte {
-			return [][]byte{
-				builder.AddStringField(th.FromAddress).Bytes(),
-				builder.AddStringField(th.ToAddress).Bytes(),
+		IndexKeyFunc: func(builder KeyBuilder, selector *TokenHistory) []byte {
+			if selector.QueryFromOrToAddress != "" {
+				return builder.AddStringField(selector.QueryFromOrToAddress).Bytes()
 			}
+			if selector.FromAddress != "" {
+				return builder.AddStringField(selector.FromAddress).Bytes()
+			}
+			if selector.ToAddress != "" {
+				return builder.AddStringField(selector.ToAddress).Bytes()
+			}
+			return builder.Bytes()
+		},
+		IndexMultiKeyFunc: func(builder KeyBuilder, record *TokenHistory) [][]byte {
+			var keyParts [][]byte
+
+			// Generate key part for FromAddress
+			if record.FromAddress != "" {
+				// Use a *new* builder for each distinct key part
+				fromKeyPart := NewKeyBuilder(nil).AddStringField(record.FromAddress).Bytes()
+				keyParts = append(keyParts, fromKeyPart)
+			}
+
+			// Generate key part for ToAddress
+			if record.ToAddress != "" {
+				// Use a *new* builder
+				toKeyPart := NewKeyBuilder(nil).AddStringField(record.ToAddress).Bytes()
+				// Avoid adding duplicate key parts if FromAddress == ToAddress
+				if len(keyParts) == 0 || !bytes.Equal(keyParts[0], toKeyPart) {
+					keyParts = append(keyParts, toKeyPart)
+				}
+			}
+			return keyParts
 		},
 		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
 			return o.
@@ -1696,35 +1721,15 @@ func TestBondTable_Weird2(t *testing.T) {
 		},
 	})
 
-	// add indexes
-
-	// TokenHistoryByAccountToIndex := NewIndex(IndexOptions[*TokenHistory]{
-	// 	IndexID:   PrimaryIndexID + 2,
-	// 	IndexName: "token_history_by_account_to_idx",
-	// 	IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
-	// 		// return builder.AddStringField(tb.AccountAddress).Bytes()
-	// 		return builder.AddStringField(th.ToAddress).Bytes()
-	// 	},
-	// 	IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
-	// 		return o.
-	// 			OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
-	// 			OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
-	// 			OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
-	// 	},
-	// })
-	// _ = TokenHistoryByAccountToIndex
-
 	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
 		TokenHistoryByAccountIndex,
-		// TokenHistoryByAccountToIndex,
 	})
 
 	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
 	require.NotNil(t, secondaryIndexes)
-	// require.Equal(t, 2, len(secondaryIndexes))
+	require.Equal(t, 1, len(secondaryIndexes))
 
 	// add some records
-
 	tokenHistory1 := &TokenHistory{
 		BlockNumber:     1,
 		TxnIndex:        1,
@@ -1749,11 +1754,24 @@ func TestBondTable_Weird2(t *testing.T) {
 		TS:              time.Now(),
 	}
 
-	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2})
+	tokenHistory3 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        3,
+		TxnLogIndex:     1,
+		FromAddress:     "0xfff3",
+		ToAddress:       "0xabc1",
+		ContractAddress: "0x1233",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{300},
+		TS:              time.Now(),
+	}
+
+	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2, tokenHistory3})
 	require.NoError(t, err)
 
 	// test scan index
 
+	fmt.Println("....---.... Scan all")
 	{
 		var tokenHistories []*TokenHistory
 		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
@@ -1762,7 +1780,6 @@ func TestBondTable_Weird2(t *testing.T) {
 	}
 
 	fmt.Println("....---.... ScanIndex")
-
 	{
 		var tokenHistories []*TokenHistory
 
@@ -1778,28 +1795,21 @@ func TestBondTable_Weird2(t *testing.T) {
 	}
 
 	fmt.Println("....---.... GetPoint")
-
 	{
 		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
 		require.NoError(t, err)
 		spew.Dump(tokenHistory)
 	}
 
-	fmt.Println("....---.... Query")
-
 	// test query
+	fmt.Println("....---.... Query")
 	{
 		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
 		// of DESC for block number.
 		selector := NewSelectorRange(
-			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
-			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
 		)
-
-		// selector2 := NewSelectorRange(
-		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
-		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
-		// )
 
 		query := tokenHistoryTable.Query().
 			With(TokenHistoryByAccountIndex, selector)

@@ -31,7 +31,6 @@ func (o IndexOrder) OrderInt64(i int64, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = -i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddInt64Field(i)
 	return o
 }
@@ -40,7 +39,6 @@ func (o IndexOrder) OrderInt32(i int32, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = -i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddInt32Field(i)
 	return o
 }
@@ -49,7 +47,6 @@ func (o IndexOrder) OrderInt16(i int16, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = -i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddInt16Field(i)
 	return o
 }
@@ -58,7 +55,6 @@ func (o IndexOrder) OrderUint64(i uint64, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = ^i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddUint64Field(i)
 	return o
 }
@@ -67,7 +63,6 @@ func (o IndexOrder) OrderUint32(i uint32, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = ^i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddUint32Field(i)
 	return o
 }
@@ -76,7 +71,6 @@ func (o IndexOrder) OrderUint16(i uint16, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		i = ^i
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddUint16Field(i)
 	return o
 }
@@ -85,7 +79,6 @@ func (o IndexOrder) OrderByte(b byte, orderType IndexOrderType) IndexOrder {
 	if orderType == IndexOrderTypeDESC {
 		b = ^b
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddByteField(b)
 	return o
 }
@@ -96,7 +89,6 @@ func (o IndexOrder) OrderBytes(b []byte, orderType IndexOrderType) IndexOrder {
 			b[i] = ^b[i]
 		}
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddBytesField(b)
 	return o
 }
@@ -105,7 +97,6 @@ func (o IndexOrder) OrderBigInt(b *big.Int, bits int, orderType IndexOrderType) 
 	if orderType == IndexOrderTypeDESC {
 		b = big.NewInt(0).Neg(b)
 	}
-
 	o.KeyBuilder = o.KeyBuilder.AddBigIntField(b, bits)
 	return o
 }
@@ -127,18 +118,28 @@ type IndexInfo interface {
 }
 
 type IndexOptions[T any] struct {
-	IndexID           IndexID
-	IndexName         string
-	IndexKeyFunc      IndexKeyFunction[T]
+	// .. TODOXXX add comment description
+	IndexID IndexID
+
+	// .. TODOXXX add comment description
+	IndexName string
+
+	// .. TODOXXX add comment description
+	IndexKeyFunc IndexKeyFunction[T]
+
+	// .. TODOXXX add comment description
 	IndexMultiKeyFunc IndexMultiKeyFunction[T]
-	IndexOrderFunc    IndexOrderFunction[T]
-	IndexFilterFunc   IndexFilterFunction[T]
+
+	// .. TODOXXX add comment description
+	IndexOrderFunc IndexOrderFunction[T]
+
+	// .. TODOXXX add comment description
+	IndexFilterFunc IndexFilterFunction[T]
 }
 
 type Index[T any] struct {
-	IndexID   IndexID
-	IndexName string
-
+	IndexID               IndexID
+	IndexName             string
 	IndexKeyFunction      IndexKeyFunction[T]
 	IndexMultiKeyFunction IndexMultiKeyFunction[T]
 	IndexFilterFunction   IndexFilterFunction[T]
@@ -146,18 +147,29 @@ type Index[T any] struct {
 }
 
 func NewIndex[T any](opt IndexOptions[T]) *Index[T] {
+	isSecondary := opt.IndexID != PrimaryIndexID
+	hasKeyFunc := opt.IndexKeyFunc != nil
+	hasMultiKeyFunc := opt.IndexMultiKeyFunc != nil
+
+	if isSecondary && !hasKeyFunc {
+		panic(fmt.Errorf("bond: IndexKeyFunc is required for secondary index %s (ID: %d) to enable iteration/scanning", opt.IndexName, opt.IndexID))
+	}
+	if !isSecondary && hasMultiKeyFunc {
+		panic(fmt.Errorf("bond: IndexMultiKeyFunc cannot be used with the primary index (ID: %d)", opt.IndexID))
+	}
+
 	idx := &Index[T]{
-		IndexID:             opt.IndexID,
-		IndexName:           opt.IndexName,
-		IndexKeyFunction:    opt.IndexKeyFunc,
-		IndexOrderFunction:  opt.IndexOrderFunc,
-		IndexFilterFunction: opt.IndexFilterFunc,
+		IndexID:               opt.IndexID,
+		IndexName:             opt.IndexName,
+		IndexKeyFunction:      opt.IndexKeyFunc,
+		IndexMultiKeyFunction: opt.IndexMultiKeyFunc,
+		IndexOrderFunction:    opt.IndexOrderFunc,
+		IndexFilterFunction:   opt.IndexFilterFunc,
 	}
 
 	if idx.IndexOrderFunction == nil {
 		idx.IndexOrderFunction = IndexOrderDefault[T]
 	}
-
 	if idx.IndexFilterFunction == nil {
 		idx.IndexFilterFunction = func(t T) bool {
 			return true
@@ -178,7 +190,7 @@ func (idx *Index[T]) Name() string {
 // Iter returns an iterator for the index.
 func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batch) Iterator {
 	var iterConstructor Iterable = table.DB()
-	if len(optBatch) > 0 {
+	if len(optBatch) > 0 && optBatch[0] != nil {
 		iterConstructor = optBatch[0]
 	}
 
@@ -187,7 +199,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	switch selector.Type() {
 	case SelectorTypePoint:
 		sel := selector.(SelectorPoint[T])
-
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
 		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
 
@@ -195,7 +206,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 			keyBufferPool.Put(lowerBound[:0])
 			keyBufferPool.Put(upperBound[:0])
 		}
-
 		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
@@ -205,7 +215,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		})
 	case SelectorTypePoints:
 		sel := selector.(SelectorPoints[T])
-
 		var pebbleOpts []*IterOptions
 		for _, point := range sel.Points() {
 			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
@@ -241,7 +250,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 			keyBufferPool.Put(lowerBound[:0])
 			keyBufferPool.Put(upperBound[:0])
 		}
-
 		return iterConstructor.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
 				LowerBound: lowerBound,
@@ -251,7 +259,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		})
 	case SelectorTypeRanges:
 		sel := selector.(SelectorRanges[T])
-
 		var pebbleOpts []*IterOptions
 		for _, r := range sel.Ranges() {
 			low, up := r[0], r[1]
@@ -264,7 +271,6 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 				keyBufferPool.Put(lowerBound[:0])
 				keyBufferPool.Put(upperBound[:0])
 			}
-
 			pebbleOpts = append(pebbleOpts, &IterOptions{
 				IterOptions: pebble.IterOptions{
 					LowerBound: lowerBound,
@@ -273,25 +279,35 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 				releaseBufferOnClose: releaseBuffers,
 			})
 		}
-
 		return newIteratorMulti(iterConstructor, pebbleOpts)
 	default:
 		return errIterator{err: fmt.Errorf("unknown selector type: %v", selector.Type())}
 	}
 }
-
 func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
 		buff = buffs[0]
 	}
 
-	if idx.IndexFilterFunction(tr) {
-		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
+	if idx.IndexMultiKeyFunction != nil {
+		multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
+		for _, part := range multiKey {
+			err := batch.Set(encodeMultiIndexKeyPart(table, tr, idx, part, buff), _indexKeyValue, Sync)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	} else {
+		if idx.IndexFilterFunction(tr) {
+			return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
+		}
 	}
 	return nil
 }
 
+// TODOXXX: add support for multi-index-key
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
 	var (
 		buff  []byte
@@ -340,6 +356,7 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 	return nil
 }
 
+// TODOXXX: add support for multi-index-key
 func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
@@ -355,6 +372,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
+// TODOXXX: add support for multi-index-key
 func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector[T], indexes []*Index[T], sels []Selector[T], optBatch ...Batch) ([][]byte, error) {
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}
@@ -411,6 +429,25 @@ func encodeIndexKey[T any](table Table[T], tr T, idx *Index[T], buff []byte) []b
 		idx.IndexID,
 		func(b []byte) []byte {
 			return idx.IndexKeyFunction(NewKeyBuilder(b), tr)
+		},
+		func(b []byte) []byte {
+			return idx.IndexOrderFunction(
+				IndexOrder{KeyBuilder: NewKeyBuilder(b)}, tr,
+			).Bytes()
+		},
+		func(b []byte) []byte {
+			return table.PrimaryKey(NewKeyBuilder(b), tr)
+		},
+		buff,
+	)
+}
+
+func encodeMultiIndexKeyPart[T any](table Table[T], tr T, idx *Index[T], indexKeyPart []byte, buff []byte) []byte {
+	return KeyEncodeRaw(
+		table.ID(),
+		idx.IndexID,
+		func(b []byte) []byte {
+			return append(b, indexKeyPart...)
 		},
 		func(b []byte) []byte {
 			return idx.IndexOrderFunction(
