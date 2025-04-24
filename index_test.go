@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
@@ -1815,6 +1816,8 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond) // ensure data is flushed to disk
 
 	fmt.Printf("----------------- Database Contents ----------------- \n")
 

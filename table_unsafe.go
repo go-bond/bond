@@ -33,6 +33,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		batch = optBatch[0]
 	} else {
 		batch = t.db.Batch(BatchTypeWriteOnly)
+		defer batch.Close()
 	}
 
 	// key
@@ -50,7 +51,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	// value
 	value := t.db.getValueBufferPool().Get()[:0]
 	valueBuffer := bytes.NewBuffer(value)
-	defer t.db.getValueBufferPool().Put(value)
+	defer t.db.getValueBufferPool().Put(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -156,6 +157,9 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 	}
 
 	err := batched(trs, persistentBatchSize, func(trs []T) error {
+		// Reset the buffer at the beginning of each batch
+		valueBuffer.Reset()
+
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -170,7 +174,13 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 			}
 
 			tr := trs[i]
-			// serialize
+
+			// Before serializing, reset the buffer if it's grown too large.
+			// 1MB threshold for the cycle.
+			if valueBuffer.Cap() > 1<<20 {
+				valueBuffer.Reset()
+			}
+
 			data, err := serialize(&tr)
 			if err != nil {
 				return err
@@ -181,7 +191,7 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 				return err
 			}
 
-			// index keys
+			// index keys - reuse the same buffer for each index
 			for _, idx := range indexes {
 				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 				if err != nil {

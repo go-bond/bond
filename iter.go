@@ -191,8 +191,7 @@ func (it *_iteratorMulti) Close() error {
 }
 
 func childIteratorOptions(opt *IterOptions) *IterOptions {
-	var subOpts IterOptions
-	subOpts = *opt
+	subOpts := *opt
 	subOpts.releaseBufferOnClose = nil
 	return &subOpts
 }

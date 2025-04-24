@@ -48,25 +48,31 @@ func NewPreAllocatedPool[T any](newFunc func() any, size int) *PreAllocatedPool[
 }
 
 func (s *PreAllocatedPool[T]) Get() T {
+	// Fast path: try to get from pre-allocated items with minimal locking
 	s.mu.Lock()
-	if itemsLen := len(s.preAllocItems); itemsLen > 0 {
+	itemsLen := len(s.preAllocItems)
+	if itemsLen > 0 {
 		item := s.preAllocItems[itemsLen-1]
 		s.preAllocItems = s.preAllocItems[:itemsLen-1]
 		s.mu.Unlock()
 		return item
-	} else {
-		s.mu.Unlock()
-		return s.Pool.Get().(T)
 	}
+	s.mu.Unlock()
+
+	// Slow path: get from the underlying pool
+	return s.Pool.Get().(T)
 }
 
 func (s *PreAllocatedPool[T]) Put(t T) {
+	// Fast path: try to put into pre-allocated items with minimal locking
 	s.mu.Lock()
 	if len(s.preAllocItems) < s.preAllocItemsSize {
 		s.preAllocItems = append(s.preAllocItems, t)
 		s.mu.Unlock()
-	} else {
-		s.mu.Unlock()
-		s.Pool.Put(t)
+		return
 	}
+	s.mu.Unlock()
+
+	// Slow path: put into the underlying pool
+	s.Pool.Put(t)
 }

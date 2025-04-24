@@ -198,27 +198,34 @@ func (k Key) IsKeyPrefix() bool {
 func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 	var rawBuff []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
-		rawBuff = rawBuffs[0]
+		rawBuff = rawBuffs[0] // assumes buffer is already cleared
+	} else {
+		// Estimate required capacity to avoid reallocations
+		capacity := 2 + 4 + len(key.Index)
+		if !key.IsKeyPrefix() {
+			capacity += 4 + len(key.IndexOrder) + len(key.PrimaryKey)
+		}
+		rawBuff = make([]byte, 0, capacity)
 	}
 
-	buff := bytes.NewBuffer(rawBuff)
-	buff.Write([]byte{byte(key.TableID)})
-	buff.Write([]byte{byte(key.IndexID)})
+	// Avoid using bytes.Buffer which has overhead for small buffers
+	rawBuff = append(rawBuff, byte(key.TableID))
+	rawBuff = append(rawBuff, byte(key.IndexID))
 
-	var indexLenBuff [4]byte
-	binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.Index)))
-	buff.Write(indexLenBuff[:4])
-	buff.Write(key.Index)
+	// Use a fixed-size array for length encoding
+	var lenBuff [4]byte
+	binary.BigEndian.PutUint32(lenBuff[:], uint32(len(key.Index)))
+	rawBuff = append(rawBuff, lenBuff[:]...)
+	rawBuff = append(rawBuff, key.Index...)
 
 	if !key.IsKeyPrefix() {
-		binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexOrder)))
-		buff.Write(indexLenBuff[:4])
-		buff.Write(key.IndexOrder)
-
-		buff.Write(key.PrimaryKey)
+		binary.BigEndian.PutUint32(lenBuff[:], uint32(len(key.IndexOrder)))
+		rawBuff = append(rawBuff, lenBuff[:]...)
+		rawBuff = append(rawBuff, key.IndexOrder...)
+		rawBuff = append(rawBuff, key.PrimaryKey...)
 	}
 
-	return buff.Bytes()
+	return rawBuff
 }
 
 func KeyEncodeRaw(tableID TableID, indexID IndexID, indexFunc, indexOrderFunc, primaryKeyFunc func(buff []byte) []byte, buffs ...[]byte) []byte {
@@ -260,6 +267,7 @@ func KeyDecode(keyBytes []byte) (Key, error) {
 		return Key{}, fmt.Errorf("key too short: %d bytes", len(keyBytes))
 	}
 
+	// Use direct indexing instead of slicing where possible
 	tableID := TableID(keyBytes[0])
 	indexID := IndexID(keyBytes[1])
 
@@ -269,6 +277,8 @@ func KeyDecode(keyBytes []byte) (Key, error) {
 	if idxEnd > len(keyBytes) {
 		return Key{}, fmt.Errorf("invalid index length: %d exceeds key bounds %d", indexLen, len(keyBytes)-idxStart)
 	}
+
+	// Avoid unnecessary allocations by using slices
 	index := keyBytes[idxStart:idxEnd]
 
 	indexOrderLenStart := idxEnd
@@ -276,6 +286,7 @@ func KeyDecode(keyBytes []byte) (Key, error) {
 	if indexOrderLenEnd > len(keyBytes) {
 		return Key{}, fmt.Errorf("key too short to read index order length at offset %d", indexOrderLenStart)
 	}
+
 	indexOrderLen := binary.BigEndian.Uint32(keyBytes[indexOrderLenStart:indexOrderLenEnd])
 
 	indexOrderStart := indexOrderLenEnd
