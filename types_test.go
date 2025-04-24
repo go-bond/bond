@@ -34,23 +34,3 @@ type TokenHistory struct {
 	// ..
 	QueryFromOrToAddress string `json:"-" cbor:"-"`
 }
-
-// type TokenHistoryQuery struct {
-// 	*TokenHistory
-// 	QueryFromOrToAddress string
-// }
-
-// var _ IndexSelector[*TokenHistory, *TokenHistoryQuery] = &TokenHistoryQuery{}
-
-// func (s *TokenHistoryQuery) Record() *TokenHistory {
-// 	return s.TokenHistory
-// }
-
-// func (s *TokenHistoryQuery) Selector() *TokenHistoryQuery {
-// 	return s
-// }
-
-// type IndexSelector[T any, S any] interface {
-// 	Record() T
-// 	Selector() S
-// }

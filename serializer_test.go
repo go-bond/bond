@@ -8,9 +8,7 @@ import (
 )
 
 func TestCBORSerializer(t *testing.T) {
-	s := serializers.CBORSerializer{
-		// TODOXXX
-	}
+	s := serializers.CBORSerializer{}
 
 	tb := &TokenBalance{
 		ID:              5,
