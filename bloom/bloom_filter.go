@@ -26,7 +26,7 @@ type _bucket struct {
 
 	filter *bloom.BloomFilter
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 type BloomFilter struct {
@@ -36,7 +36,7 @@ type BloomFilter struct {
 	numOfBuckets int
 	buckets      []*_bucket
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte) *BloomFilter {
@@ -70,42 +70,38 @@ func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte)
 		keyPrefix:    keyPrefix,
 		numOfBuckets: numOfBuckets,
 		buckets:      buckets,
-		mutex:        sync.RWMutex{},
+		mu:           sync.RWMutex{},
 	}
 }
 
 func (b *BloomFilter) Add(_ context.Context, key []byte) {
-	b.mutex.RLock()
 	bucketIndex := b.hash(key)
-	b.mutex.RUnlock()
-
 	bucket := b.buckets[bucketIndex]
 
 	// TestOrAdd is thread-safe, but we lock to protect hasChanges update
+	// Lock the specific bucket
+	bucket.mu.Lock()
 	added := bucket.filter.TestOrAdd(key)
-	bucket.mutex.Lock()
 	if added {
 		bucket.hasChanges = true
 	}
-	bucket.mutex.Unlock()
+	bucket.mu.Unlock()
 }
 
 func (b *BloomFilter) MayContain(_ context.Context, key []byte) bool {
-	b.mutex.RLock()
 	bucketIndex := b.hash(key)
-	b.mutex.RUnlock()
-
 	bucket := b.buckets[bucketIndex]
 
-	bucket.mutex.RLock()
+	// Read-lock the specific bucket
+	bucket.mu.RLock()
 	contains := bucket.filter.Test(key)
-	bucket.mutex.RUnlock()
+	bucket.mu.RUnlock()
 	return contains
 }
 
 func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	var keyBuff [1024]byte
 
@@ -138,22 +134,22 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 		_ = closer.Close()
 
 		// Lock the specific bucket before modifying it
-		bucket.mutex.Lock()
+		bucket.mu.Lock()
 		err = bucket.filter.Merge(filter)
 		if err != nil {
-			bucket.mutex.Unlock() // Ensure unlock on error
+			bucket.mu.Unlock()
 			return fmt.Errorf("configuration changed (incompatible filter parameters): %w", err)
 		}
 		bucket.hasBeenWritten = true
-		bucket.mutex.Unlock()
+		bucket.mu.Unlock()
 	}
 
 	return nil
 }
 
 func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	var keyBuff [1024]byte
 	dataBuff := _buffPool.Get()
@@ -167,9 +163,9 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 
 	for _, bucket := range b.buckets {
 		// Lock the bucket early to check flags and potentially write
-		bucket.mutex.Lock()
+		bucket.mu.Lock()
 		if !bucket.hasChanges && bucket.hasBeenWritten {
-			bucket.mutex.Unlock() // Unlock if we skip
+			bucket.mu.Unlock() // Unlock if we skip
 			continue
 		}
 
@@ -201,13 +197,13 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 			bond.Sync,
 		)
 		if err != nil {
-			bucket.mutex.Unlock() // Ensure unlock on error
+			bucket.mu.Unlock()
 			return err
 		}
 
 		bucket.hasChanges = false
 		bucket.hasBeenWritten = true
-		bucket.mutex.Unlock() // Unlock after successful write and flag update
+		bucket.mu.Unlock()
 	}
 
 	return nil
