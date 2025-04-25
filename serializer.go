@@ -1,8 +1,6 @@
 package bond
 
-import (
-	"bytes"
-)
+import "bytes"
 
 type Serializer[T any] interface {
 	Serialize(t T) ([]byte, error)

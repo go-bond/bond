@@ -211,8 +211,8 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	switch selector.Type() {
 	case SelectorTypePoint:
 		sel := selector.(SelectorPoint[T])
-		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get()[:0])
-		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get())
+		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get())
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -229,8 +229,8 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		sel := selector.(SelectorPoints[T])
 		var pebbleOpts []*IterOptions
 		for _, point := range sel.Points() {
-			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get()[:0])
-			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get()[:0])
+			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get())
+			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get())
 			if idx.IndexID == PrimaryIndexID {
 				upperBound = keySuccessor(lowerBound, upperBound[:0])
 			}
@@ -254,8 +254,8 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		sel := selector.(SelectorRange[T])
 		low, up := sel.Range()
 
-		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
-		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+		lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get())
+		upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get())
 		upperBound = keySuccessor(upperBound, nil)
 
 		releaseBuffers := func() {
@@ -275,8 +275,8 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		for _, r := range sel.Ranges() {
 			low, up := r[0], r[1]
 
-			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get()[:0])
-			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get()[:0])
+			lowerBound := encodeIndexKey(table, low, idx, keyBufferPool.Get())
+			upperBound := encodeIndexKey(table, up, idx, keyBufferPool.Get())
 			upperBound = keySuccessor(upperBound, nil)
 
 			releaseBuffers := func() {
@@ -319,7 +319,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key
+// TODOXXX: add support for multi-index-key..
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
 	var (
 		buff  []byte
@@ -368,7 +368,7 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key
+// TODOXXX: add support for multi-index-key..
 func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
@@ -384,7 +384,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key
+// TODOXXX: add support for multi-index-key...
 func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector[T], indexes []*Index[T], sels []Selector[T], optBatch ...Batch) ([][]byte, error) {
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}

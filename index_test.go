@@ -1909,7 +1909,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	err = tokenBalanceTable.ReIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex})
 	require.NoError(t, err)
 
 	it, err := db.Backend().NewIter(&pebble.IterOptions{
@@ -1945,7 +1945,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 		},
 	})
 
-	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex, TokenBalanceAccountAddressIndex}, true)
+	err = tokenBalanceTable.ReIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex, TokenBalanceAccountAddressIndex})
 	require.NoError(t, err)
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{

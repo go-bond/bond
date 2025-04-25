@@ -1773,6 +1773,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
 		require.NoError(t, err)
 		spew.Dump(tokenHistories)
+		// TODOXXX: add assertion to check our list, etc.
 	}
 
 	fmt.Println("....---.... ScanIndex")
@@ -1788,6 +1789,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
 		require.NoError(t, err)
 		spew.Dump(tokenHistories)
+		// TODOXXX: add assertion to check our list, etc.
 	}
 
 	fmt.Println("....---.... GetPoint")
@@ -1795,6 +1797,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
 		require.NoError(t, err)
 		spew.Dump(tokenHistory)
+		// TODOXXX: add assertion to check our list, etc.
 	}
 
 	// test query
@@ -1814,5 +1817,6 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		err = query.Execute(context.Background(), &tokenHistories)
 		require.NoError(t, err)
 		spew.Dump(tokenHistories)
+		// TODOXXX: add assertion to check our list, etc.
 	}
 }

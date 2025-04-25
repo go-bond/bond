@@ -113,10 +113,10 @@ type Backup interface {
 type Closer io.Closer
 
 type internalPools interface {
-	getKeyBufferPool() *utils.PreAllocatedPool[[]byte]
-	getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte]
-	getValueBufferPool() *utils.PreAllocatedPool[[]byte]
-	getBytesArrayPool() *utils.PreAllocatedPool[[][]byte]
+	getKeyBufferPool() utils.SyncPool[[]byte]
+	getMultiKeyBufferPool() utils.SyncPool[[]byte]
+	getValueBufferPool() utils.SyncPool[[]byte]
+	getBytesArrayPool() utils.SyncPool[[][]byte]
 	getKeyArray(numOfKeys int) [][]byte
 	putKeyArray(arr [][]byte)
 	getValueArray(numOfValues int) [][]byte
@@ -128,10 +128,10 @@ type _db struct {
 
 	serializer Serializer[any]
 
-	keyBufferPool      *utils.PreAllocatedPool[[]byte]
-	multiKeyBufferPool *utils.PreAllocatedPool[[]byte]
-	valueBufferPool    *utils.PreAllocatedPool[[]byte]
-	byteArraysPool     *utils.PreAllocatedPool[[][]byte]
+	keyBufferPool      utils.SyncPool[[]byte]
+	multiKeyBufferPool utils.SyncPool[[]byte]
+	valueBufferPool    utils.SyncPool[[]byte]
+	byteArraysPool     utils.SyncPool[[][]byte]
 
 	onCloseCallbacks []func(db DB)
 }
@@ -207,16 +207,16 @@ func Open(dirname string, opts *Options) (DB, error) {
 	db := &_db{
 		pebble:     pdb,
 		serializer: serializer,
-		keyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		keyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize)
 		}, DefaultNumberOfPreAllocKeyBuffers),
-		multiKeyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		multiKeyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize*DefaultNumberOfKeyBuffersInMultiKeyBuffer)
 		}, DefaultNumberOfPreAllocMultiKeyBuffers),
-		valueBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		valueBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultValueBufferSize)
 		}, DefaultNumberOfPreAllocValueBuffers),
-		byteArraysPool: utils.NewPreAllocatedPool[[][]byte](func() any {
+		byteArraysPool: utils.NewPreAllocatedSyncPool[[][]byte](func() any {
 			return make([][]byte, 0, persistentBatchSize)
 		}, DefaultNumberOfPreAllocBytesArrays),
 	}
@@ -322,30 +322,30 @@ func (db *_db) notifyOnClose() {
 	}
 }
 
-func (db *_db) getKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getKeyBufferPool() utils.SyncPool[[]byte] {
 	return db.keyBufferPool
 }
 
-func (db *_db) getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getMultiKeyBufferPool() utils.SyncPool[[]byte] {
 	return db.multiKeyBufferPool
 }
 
-func (db *_db) getValueBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getValueBufferPool() utils.SyncPool[[]byte] {
 	return db.valueBufferPool
 }
 
-func (db *_db) getBytesArrayPool() *utils.PreAllocatedPool[[][]byte] {
+func (db *_db) getBytesArrayPool() utils.SyncPool[[][]byte] {
 	return db.byteArraysPool
 }
 
 func (db *_db) getKeyArray(numOfKeys int) [][]byte {
-	keys := db.byteArraysPool.Get()[:0]
+	keys := db.byteArraysPool.Get()
 	if cap(keys) < numOfKeys {
 		keys = make([][]byte, 0, numOfKeys)
 	}
 
 	for i := 0; i < numOfKeys; i++ {
-		keys = append(keys, db.keyBufferPool.Get()[:0])
+		keys = append(keys, db.keyBufferPool.Get())
 	}
 	return keys
 }
@@ -358,13 +358,13 @@ func (db *_db) putKeyArray(arr [][]byte) {
 }
 
 func (db *_db) getValueArray(numOfValues int) [][]byte {
-	keys := db.byteArraysPool.Get()[:0]
+	keys := db.byteArraysPool.Get()
 	if cap(keys) < numOfValues {
 		keys = make([][]byte, 0, numOfValues)
 	}
 
 	for i := 0; i < numOfValues; i++ {
-		keys = append(keys, db.valueBufferPool.Get()[:0])
+		keys = append(keys, db.valueBufferPool.Get())
 	}
 	return keys
 }

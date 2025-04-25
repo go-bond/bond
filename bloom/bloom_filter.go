@@ -15,7 +15,7 @@ import (
 	"github.com/lithammer/go-jump-consistent-hash"
 )
 
-var _buffPool = utils.NewPreAllocatedPool[[]byte](func() any {
+var _buffPool = utils.NewPreAllocatedSyncPool[[]byte](func() any {
 	return make([]byte, 128<<10) // 128 KB
 }, 10) // Pre-allocate 10 buffers
 
@@ -30,7 +30,7 @@ type _bucket struct {
 }
 
 type BloomFilter struct {
-	hasher *utils.PreAllocatedPool[jump.KeyHasher]
+	hasher utils.SyncPool[jump.KeyHasher]
 
 	keyPrefix    []byte
 	numOfBuckets int
@@ -40,7 +40,7 @@ type BloomFilter struct {
 }
 
 func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte) *BloomFilter {
-	hasher := utils.NewPreAllocatedPool[jump.KeyHasher](func() any {
+	hasher := utils.NewPreAllocatedSyncPool[jump.KeyHasher](func() any {
 		return jump.NewCRC32()
 	}, 4) // Pre-allocate 4 hashers
 
@@ -157,7 +157,7 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 
 	var keyBuff [1024]byte
 	dataBuff := _buffPool.Get()
-	defer _buffPool.Put(dataBuff)
+	defer _buffPool.Put(dataBuff[:0])
 
 	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.numOfBuckets))
 	err := store.Set(buildBucketNumKey(keyBuff[:0], b.keyPrefix), dataBuff[:8], bond.Sync)
@@ -193,7 +193,7 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 		}
 
 		// Put the buffer back BEFORE potential error return from store.Set
-		_buffPool.Put(writeBuff)
+		_buffPool.Put(writeBuff[:0])
 
 		err = store.Set(
 			buildKey(keyBuff[:0], b.keyPrefix, bucket.num),

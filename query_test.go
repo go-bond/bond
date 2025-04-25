@@ -91,7 +91,8 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 		},
 	})
-	_ = TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex}, true)
+	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -125,7 +126,7 @@ func TestBond_Query_OnOrderedIndex(t *testing.T) {
 		Balance:         4,
 	}
 
-	err := TokenBalanceTable.Insert(
+	err = TokenBalanceTable.Insert(
 		context.Background(),
 		[]*TokenBalance{
 			tokenBalanceAccount1,
@@ -195,7 +196,7 @@ func TestBond_Query_OnFilterIndex(t *testing.T) {
 		},
 	})
 
-	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceFilterIndex})
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceFilterIndex}, true)
 	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -262,7 +263,7 @@ func TestBond_Query_Context_Canceled(t *testing.T) {
 			return o.OrderUint64(tb.Balance, IndexOrderTypeDESC)
 		},
 	})
-	_ = TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	_ = TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex}, true)
 
 	tokenBalanceAccount1 := &TokenBalance{
 		ID:              1,
@@ -334,7 +335,7 @@ func TestBond_Query_Last_Row_As_Selector(t *testing.T) {
 		},
 	})
 
-	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex}, true)
 	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{
@@ -425,7 +426,7 @@ func TestBond_Query_After(t *testing.T) {
 		},
 	})
 
-	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex})
+	err := TokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceOrderedIndex}, true)
 	require.NoError(t, err)
 
 	tokenBalanceAccount1 := &TokenBalance{

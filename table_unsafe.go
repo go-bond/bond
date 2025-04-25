@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-
-	"golang.org/x/exp/maps"
 )
 
 // TableUnsafeUpdater provides access to UnsafeUpdate method that allows
@@ -22,11 +20,6 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		return fmt.Errorf("params need to be of equal size")
 	}
 
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var batch Batch
 	var externalBatch = len(optBatch) > 0 && optBatch[0] != nil
 	if externalBatch {
@@ -38,9 +31,9 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 	// key
 	var (
-		keyBuffer       = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
+		keyBuffer       = t.db.getKeyBufferPool().Get()
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()
+		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()
 	)
 	defer func() {
 		t.db.getKeyBufferPool().Put(keyBuffer[:0])
@@ -49,7 +42,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 	}()
 
 	// value
-	value := t.db.getValueBufferPool().Get()[:0]
+	value := t.db.getValueBufferPool().Get()
 	valueBuffer := bytes.NewBuffer(value)
 	defer t.db.getValueBufferPool().Put(value[:0])
 
@@ -91,7 +84,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		// TODOXXX: perhaps we can skip having to update the index since we know it wont change..
 		// if we are updating the object, and if caller knows for sure it wont change, etc.
 		// .. is is an .OnUpdat() .. so lets check how those work..
-		for _, idx := range indexes {
+		for _, idx := range t.secondaryIndexes {
 			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 			if err != nil {
 				return err
@@ -119,11 +112,6 @@ type TableUnsafeInserter[T any] interface {
 }
 
 func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch) error {
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var (
 		batch         Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
@@ -137,16 +125,17 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 	}
 
 	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer = t.db.getKeyBufferPool().Get()
 	)
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
 	// key buffers
-	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	batchSize := min(len(trs), persistentBatchSize)
+	keysBuffer := t.db.getKeyArray(batchSize)
 	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := t.db.getValueBufferPool().Get()[:0]
+	value := t.db.getValueBufferPool().Get()
 	valueBuffer := bytes.NewBuffer(value)
 	defer t.db.getValueBufferPool().Put(value[:0])
 
@@ -156,7 +145,7 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	err := batched(trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, batchSize, func(trs []T) error {
 		// Reset the buffer at the beginning of each batch
 		valueBuffer.Reset()
 
@@ -192,7 +181,7 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 			}
 
 			// index keys - reuse the same buffer for each index
-			for _, idx := range indexes {
+			for _, idx := range t.secondaryIndexes {
 				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 				if err != nil {
 					return err

@@ -213,7 +213,6 @@ func (k Key) IsKeyPrefix() bool {
 }
 
 func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
-	// ---------- pick / grow destination slice ----------
 	var b []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
 		b = rawBuffs[0][:0] // re-use caller’s storage
@@ -227,7 +226,6 @@ func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
 		b = make([]byte, 0, need) // one exact allocation
 	}
 
-	// ---------- encode ----------
 	b = append(b, byte(key.TableID), byte(key.IndexID))
 	b = binary.BigEndian.AppendUint32(b, uint32(len(key.Index)))
 	b = append(b, key.Index...)
