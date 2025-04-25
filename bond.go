@@ -614,10 +614,10 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	return err
 }
 
-// UnsafeByteString is a helper function to convert a byte slice to a string without
+// UnsafeBytesToString is a helper function to convert a byte slice to a string without
 // allocating a new string. This is unsafe because it assumes the byte slice will not
 // be modified or garbage collected before the string is used.
-func UnsafeByteString(b []byte) string {
+func UnsafeBytesToString(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}

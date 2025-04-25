@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -175,8 +174,6 @@ func TestBond_RestoreDifferentVersion(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-
-	time.Sleep(100 * time.Millisecond) // ensure data is flushed to disk
 
 	err := db.Dump(context.TODO(), "./export", []TableID{TokenBalanceTableID, TokenTableID}, true)
 	require.NoError(t, err)

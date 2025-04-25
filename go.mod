@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
-	github.com/cockroachdb/pebble v0.0.0-20250422144005-57c482fb4e96
+	github.com/cockroachdb/pebble v0.0.0-20250424153547-47869634ee52
 	github.com/davecgh/go-spew v1.1.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0

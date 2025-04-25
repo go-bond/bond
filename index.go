@@ -118,22 +118,34 @@ type IndexInfo interface {
 }
 
 type IndexOptions[T any] struct {
-	// .. TODOXXX add comment description
+	// IndexID is the ID of the index used when generating the index prefix
+	// of an index entry.
 	IndexID IndexID
 
-	// .. TODOXXX add comment description
+	// IndexName is the name of the index useful for a human readable name.
 	IndexName string
 
-	// .. TODOXXX add comment description
+	// IndexKeyFunc is the function that generates the index key for a given
+	// record. It is also used querying data via an index where you pass the
+	// partial record and set the field values that you want to query on,
+	// which then generates the corresponding index key entry.
 	IndexKeyFunc IndexKeyFunction[T]
 
-	// .. TODOXXX add comment description
+	// IndexMultiKeyFunc is the function that generates multiple index keys
+	// for a given record. This is helpful for a some what "OR" query operation
+	// on multiple fields that will always point to the same record. Note, that
+	// during query time, the IndexKeyFunc is still used during query time.
+	// See table_test.go for an example of how to use this.
 	IndexMultiKeyFunc IndexMultiKeyFunction[T]
 
-	// .. TODOXXX add comment description
+	// IndexOrderFunc is the function that generates the index order for a given
+	// record. This is useful for a query operation that you want to sort the
+	// results by a given field.
 	IndexOrderFunc IndexOrderFunction[T]
 
-	// .. TODOXXX add comment description
+	// IndexFilterFunc is the function that filters the records that will be
+	// indexed. This is useful for a query operation that you want to filter
+	// the records that will be indexed.
 	IndexFilterFunc IndexFilterFunction[T]
 }
 

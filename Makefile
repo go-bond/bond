@@ -40,10 +40,10 @@ test-with-reset: db-reset test-all
 test-clean: db-reset
 	GOGC=off go clean -testcache
 
-bench:
+bench: clean
 	@cd _benchmarks && go test -timeout=25m -bench=.
 
-bench-csv:
+bench-csv: clean
 	@cd _benchmarks && go run ./benchmark.go --report=csv
 
 todo:

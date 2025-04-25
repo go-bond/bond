@@ -221,9 +221,10 @@ func (b *BloomFilter) Clear(_ context.Context, store bond.FilterStorer) error {
 }
 
 func (b *BloomFilter) hash(key []byte) int {
-	hasher := b.hasher.Get().(jump.KeyHasher)
-	defer b.hasher.Put(hasher)
-	return int(HashBytes(key, int32(b.numOfBuckets), hasher))
+	hasher := b.hasher.Get()
+	v := int(HashBytes(key, int32(b.numOfBuckets), hasher))
+	b.hasher.Put(hasher)
+	return v
 }
 
 func buildKey(buff []byte, keyPrefix []byte, bucketNo int) []byte {

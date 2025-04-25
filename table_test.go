@@ -543,8 +543,6 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 	require.NoError(t, err)
 	defer it.Close()
 
-	time.Sleep(100 * time.Millisecond) // ensure data is flushed to disk
-
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()
 

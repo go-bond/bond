@@ -3,7 +3,6 @@ package bond
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
@@ -125,8 +124,6 @@ func TestBondTable_UnsafeInsert(t *testing.T) {
 		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
 	})
 	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond) // ensure data is flushed to disk
 
 	for it.First(); it.Valid(); it.Next() {
 		rawData := it.Value()

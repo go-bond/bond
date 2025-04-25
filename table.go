@@ -987,7 +987,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			}
 		}
 
-		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+		if len(keys[i]) <= _KeyPrefixSplitIndexOffset || !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			if errorOnNotExist {
 				return nil, ErrNotFound
 			} else {
