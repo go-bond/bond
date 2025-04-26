@@ -19,12 +19,12 @@ const NumberSequenceSequenceNumberMask = 0x0000000000FFFFFF
 
 type NumberSequence struct {
 	lastId uint64
-	mutex  sync.Mutex
+	mu     sync.Mutex
 }
 
 func (n *NumberSequence) Next() (uint64, error) {
-	n.mutex.Lock()
-	defer n.mutex.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	nextId := uint64(time.Now().Unix() << NumberSequenceBitShift)
 	if n.lastId&NumberSequenceTimestampMask == nextId&NumberSequenceTimestampMask {

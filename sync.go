@@ -6,8 +6,7 @@ import (
 
 type SyncBatch struct {
 	batch Batch
-
-	mu sync.Mutex
+	mu    sync.Mutex
 }
 
 func NewSyncBatch(batch Batch) *SyncBatch {
@@ -17,7 +16,6 @@ func NewSyncBatch(batch Batch) *SyncBatch {
 	}
 }
 
-// todo rename to like "WithLock" or "OneAtATime" .. or something.. // TODOXXX: rename
 func (s *SyncBatch) WithSync(f func(batch Batch) error) error {
 	s.mu.Lock()
 	err := f(s.batch)

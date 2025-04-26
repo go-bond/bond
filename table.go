@@ -116,12 +116,9 @@ type TableOptions[T any] struct {
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[any]
+	Filter              Filter
 
 	ScanPrefetchSize int
-
-	// TODOXXX: should we always require a bloom filter for every table..?
-	// currently we use this on Insert .. maybe, maybe not..
-	Filter Filter
 }
 
 type _table[T any] struct {
@@ -146,11 +143,10 @@ type _table[T any] struct {
 
 	filter Filter
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewTable[T any](opt TableOptions[T]) Table[T] {
-	// TODOXXX: what do we need this "AnyWrapper" for ..?
 	var serializer = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer}
@@ -184,7 +180,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		scanPrefetchSize:  scanPrefetchSize,
 		serializer:        serializer,
 		filter:            opt.Filter,
-		mutex:             sync.RWMutex{},
+		mu:                sync.RWMutex{},
 	}
 
 	return table
@@ -199,8 +195,8 @@ func (t *_table[T]) Name() string {
 }
 
 func (t *_table[T]) Indexes() []IndexInfo {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	indexInfos := []IndexInfo{t.primaryIndex}
 	for _, idx := range t.secondaryIndexes {
@@ -235,14 +231,12 @@ func (t *_table[T]) PrimaryIndex() *Index[T] {
 }
 
 func (t *_table[T]) SecondaryIndexes() []*Index[T] {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	var indexes []*Index[T]
 	for _, idx := range t.secondaryIndexes {
 		indexes = append(indexes, idx)
 	}
-
 	return indexes
 }
 
@@ -251,9 +245,9 @@ func (t *_table[T]) Serializer() Serializer[*T] {
 }
 
 func (t *_table[T]) AddIndex(idxs []*Index[T], mutable ...bool) error {
-	t.mutex.Lock()
+	t.mu.Lock()
 	if len(t.secondaryIndexes) > 0 && (len(mutable) == 0 || !mutable[0]) {
-		t.mutex.Unlock()
+		t.mu.Unlock()
 		return fmt.Errorf("cannot add index to table with existing indexes")
 	}
 	for _, idx := range idxs {
@@ -263,7 +257,7 @@ func (t *_table[T]) AddIndex(idxs []*Index[T], mutable ...bool) error {
 		}
 		t.secondaryIndexes[idx.IndexID] = idx
 	}
-	t.mutex.Unlock()
+	t.mu.Unlock()
 	return nil
 }
 
