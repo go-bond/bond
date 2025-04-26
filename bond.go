@@ -614,14 +614,21 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	return err
 }
 
-// UnsafeBytesToString is a helper function to convert a byte slice to a string without
-// allocating a new string. This is unsafe because it assumes the byte slice will not
-// be modified or garbage collected before the string is used.
-func UnsafeBytesToString(b []byte) string {
+// StringToBytes converts a string to a byte slice without copying.
+// IMPORTANT: The returned byte slice must NOT be modified, as this will
+// corrupt the original string. Only use this for READ-ONLY operations.
+func StringToBytes(s string) []byte {
+	if s == "" {
+		return nil
+	}
+	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
+// BytesToString converts a byte slice to a string without copying.
+// IMPORTANT: The original byte slice should not be modified after this conversion.
+func BytesToString(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
-	// NOTE: This is still unsafe if the underlying bytes are modified
-	// or if the byte slice is garbage collected before the string.
 	return unsafe.String(&b[0], len(b))
 }

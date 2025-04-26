@@ -17,7 +17,7 @@ type TableUnsafeUpdater[T any] interface {
 
 func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBatch ...Batch) error {
 	if len(trs) != len(oldTrs) {
-		return fmt.Errorf("params need to be of equal size")
+		return fmt.Errorf("UnsafeUpdate: params need to be of equal size")
 	}
 
 	var batch Batch
@@ -59,7 +59,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		if i%100 == 0 {
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
+				return fmt.Errorf("UnsafeUpdate:context done: %w", ctx.Err())
 			default:
 			}
 		}
@@ -70,24 +70,21 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		// serialize
 		data, err := serialize(&tr)
 		if err != nil {
-			return err
+			return fmt.Errorf("UnsafeUpdate: serialize: %w", err)
 		}
 
 		// update entry
 		err = batch.Set(key, data, Sync)
 		if err != nil {
 			_ = batch.Close()
-			return err
+			return fmt.Errorf("UnsafeUpdate: batch.Set: %w", err)
 		}
 
 		// update indexes
-		// TODOXXX: perhaps we can skip having to update the index since we know it wont change..
-		// if we are updating the object, and if caller knows for sure it wont change, etc.
-		// .. is is an .OnUpdat() .. so lets check how those work..
 		for _, idx := range t.secondaryIndexes {
 			err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 			if err != nil {
-				return err
+				return fmt.Errorf("UnsafeUpdate: idx.OnUpdate: %w", err)
 			}
 		}
 	}
@@ -96,7 +93,7 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 		err := batch.Commit(Sync)
 		if err != nil {
 			_ = batch.Close()
-			return err
+			return fmt.Errorf("UnsafeUpdate: batch.Commit: %w", err)
 		}
 	}
 
@@ -124,9 +121,7 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 		defer batch.Close()
 	}
 
-	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()
-	)
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
 	// key buffers
@@ -172,19 +167,19 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 
 			data, err := serialize(&tr)
 			if err != nil {
-				return err
+				return fmt.Errorf("serialize: %w", err)
 			}
 
 			err = batch.Set(key, data, Sync)
 			if err != nil {
-				return err
+				return fmt.Errorf("batch.Set: %w", err)
 			}
 
 			// index keys - reuse the same buffer for each index
 			for _, idx := range t.secondaryIndexes {
 				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 				if err != nil {
-					return err
+					return fmt.Errorf("idx.OnInsert: %w", err)
 				}
 			}
 
@@ -197,13 +192,13 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("UnsafeInsert: %w", err)
 	}
 
 	if !externalBatch {
 		err = batch.Commit(Sync)
 		if err != nil {
-			return err
+			return fmt.Errorf("UnsafeInsert: batch.Commit: %w", err)
 		}
 	}
 

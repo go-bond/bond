@@ -352,7 +352,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		batchReadWrite = batch
 	}
 
-	var indexKeyBuffer = t.db.getKeyBufferPool().Get()
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
 	// key buffers
@@ -435,13 +435,13 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Insert: %w", err)
 	}
 
 	if !externalBatch {
 		err = batch.Commit(Sync)
 		if err != nil {
-			return err
+			return fmt.Errorf("Insert: %w", err)
 		}
 	}
 
@@ -466,10 +466,8 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		batchReadWrite = batch
 	}
 
-	var (
-		indexKeyBuffer  = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()
-	)
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
+	indexKeyBuffer2 := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
@@ -519,15 +517,17 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// skip this records since the next record updating the
-			// same primary key.
+			// same primary key, in case of a duplicate in a sorted list.
 			if i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
 				continue
 			}
 
-			if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
+			// check if exist efficiently (via bloom filter)
+			if !t.exist(key, batch, iter) {
 				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
 			}
 
+			// deserialize the old record
 			err := t.serializer.Deserialize(iter.Value(), &oldTr)
 			if err != nil {
 				return err
@@ -585,10 +585,8 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer batch.Close()
 	}
 
-	var (
-		keyBuffer      = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()
-	)
+	keyBuffer := t.db.getKeyBufferPool().Get()
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 

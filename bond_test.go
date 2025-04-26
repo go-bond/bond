@@ -49,13 +49,10 @@ func tearDownDB(t *testing.T, name string, db DB) {
 			t.Fatalf("failed to remove db: %v", err)
 		}
 	}()
-	// the close error sometimes returns an iterator not closed error
-	// which doesn't seem to be the case, so we're ignoring it
-	_ = db.Close()
-	// err := db.Close()
-	// if err != nil {
-	// 	t.Fatalf("failed to close db: %v", err)
-	// }
+	err := db.Close()
+	if err != nil {
+		t.Fatalf("failed to close db: %v", err)
+	}
 }
 
 func TestBond_Open(t *testing.T) {

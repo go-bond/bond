@@ -22,7 +22,7 @@ func TestBond_NewTable(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -42,7 +42,7 @@ func TestBondTable_Interfaces(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -70,7 +70,7 @@ func TestBondTable_PrimaryIndex(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -94,7 +94,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -110,7 +110,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -140,7 +140,7 @@ func TestDuplicateIndexID(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -151,7 +151,7 @@ func TestDuplicateIndexID(t *testing.T) {
 	require.NotNil(t, tokenBalanceTable)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   PrimaryIndexID + 1,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -159,7 +159,7 @@ func TestDuplicateIndexID(t *testing.T) {
 			},
 			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
 		})
-		TokenBalanceAccountAddressIndex2 = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex2 = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   PrimaryIndexID + 1,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -184,7 +184,7 @@ func TestBondTable_Serializer(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -204,7 +204,7 @@ func TestBondTable_SerializerOption(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -225,7 +225,7 @@ func TestBondTable_Get(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -267,7 +267,7 @@ func TestBondTable_Get_Range(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -319,7 +319,7 @@ func TestBondTable_Get_Points(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -372,7 +372,7 @@ func TestBondTable_Get_Ranges(t *testing.T) {
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -436,7 +436,7 @@ func TestBondTable_Insert(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -481,7 +481,7 @@ func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -513,7 +513,7 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -561,7 +561,7 @@ func TestBondTable_Update(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -635,7 +635,7 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -712,7 +712,7 @@ func TestBondTable_Upsert(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -806,7 +806,7 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -901,7 +901,7 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1012,7 +1012,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1101,6 +1101,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		require.NoError(t, err)
 		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
 	}
 
@@ -1119,7 +1120,7 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1156,7 +1157,7 @@ func TestBondTable_Delete(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1196,7 +1197,7 @@ func TestBondTable_Exist(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1231,7 +1232,7 @@ func TestBondTable_Scan(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1301,7 +1302,7 @@ func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1360,7 +1361,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1375,7 +1376,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -1441,7 +1442,7 @@ func TestBond_Batch(t *testing.T) {
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
