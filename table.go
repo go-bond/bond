@@ -1021,7 +1021,6 @@ func (t *_table[T]) ScanIndexForEach(ctx context.Context, idx *Index[T], s Selec
 	}
 }
 
-// TODOXXX: performance review..?
 func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 
@@ -1068,7 +1067,6 @@ func (t *_table[T]) scanForEachPrimaryIndex(ctx context.Context, idx *Index[T], 
 	return it.Close()
 }
 
-// TODOXXX: performance review..?
 func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error {
 	it := idx.Iter(t, s, optBatch...)
 

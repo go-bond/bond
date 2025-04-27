@@ -22,7 +22,7 @@ func setupDB(name string, serializer ...Serializer[any]) DB {
 		options.Serializer = serializer[0]
 	}
 
-	db, err := Open(name, options)
+	db, err := Open(name, options, MediumPerformance)
 	if err != nil {
 		panic(err)
 	}

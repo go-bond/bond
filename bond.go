@@ -136,13 +136,12 @@ type _db struct {
 	onCloseCallbacks []func(db DB)
 }
 
-func Open(dirname string, opts *Options) (DB, error) {
+func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfile) (DB, error) {
 	if opts == nil {
-		opts = DefaultOptions()
+		opts = DefaultOptions(performanceProfile...)
 	}
-
 	if opts.PebbleOptions == nil {
-		opts.PebbleOptions = DefaultPebbleOptions()
+		opts.PebbleOptions = DefaultPebbleOptions(performanceProfile...)
 	}
 
 	// expand the path if it is not absolute
