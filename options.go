@@ -14,6 +14,8 @@ import (
 	"github.com/go-bond/bond/serializers"
 )
 
+const PebbleDBFormat = pebble.FormatTableFormatV6
+
 const DefaultMaxConcurrentCompactions = 4
 const DefaultMaxWriterConcurrency = 8
 
@@ -99,7 +101,7 @@ func LowPerformancePebbleOptions() *pebble.Options {
 		return true
 	}
 
-	opts.FormatMajorVersion = pebble.FormatTableFormatV6
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -177,7 +179,7 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 		return true
 	}
 
-	opts.FormatMajorVersion = pebble.FormatTableFormatV6
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -257,7 +259,7 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		return true
 	}
 
-	opts.FormatMajorVersion = pebble.FormatTableFormatV6
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
