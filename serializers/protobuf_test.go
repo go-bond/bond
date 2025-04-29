@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/serializers/sample/pb"
 	"google.golang.org/protobuf/proto"
@@ -46,7 +45,7 @@ func TestSerializeProtobuf(t *testing.T) {
 
 	fmt.Println("serialized num of bytes:", len(serialized))
 	fmt.Printf("serialized: %v\n", serialized)
-	spew.Dump(serialized)
+	// spew.Dump(serialized)
 }
 
 func BenchmarkSerializeProtobuf(b *testing.B) {

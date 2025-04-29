@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/require"
@@ -62,7 +61,7 @@ func TestCBOR(t *testing.T) {
 
 	fmt.Println("serialized num of bytes:", len(serialized))
 	fmt.Printf("serialized: %v\n", serialized)
-	spew.Dump(serialized)
+	// spew.Dump(serialized)
 
 	// assertion to ensure that the serialized data is less than 90 bytes
 	// to confirm that the cbor serialization is efficient.

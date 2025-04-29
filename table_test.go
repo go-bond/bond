@@ -2,13 +2,11 @@ package bond
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1599,11 +1597,10 @@ func TestBondTable_Case_TokenHistory_Basic(t *testing.T) {
 		var tokenHistories []*TokenHistory
 		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
 		require.NoError(t, err)
-		spew.Dump(tokenHistories)
+		// spew.Dump(tokenHistories)
 	}
 
-	fmt.Println("....---.... ScanIndex")
-
+	t.Log("ScanIndex")
 	{
 		var tokenHistories []*TokenHistory
 
@@ -1615,20 +1612,18 @@ func TestBondTable_Case_TokenHistory_Basic(t *testing.T) {
 		)
 		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
 		require.NoError(t, err)
-		spew.Dump(tokenHistories)
+		// spew.Dump(tokenHistories)
 	}
 
-	fmt.Println("....---.... GetPoint")
-
+	t.Log("GetPoint")
 	{
 		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
 		require.NoError(t, err)
-		spew.Dump(tokenHistory)
+		require.NotNil(t, tokenHistory)
+		// spew.Dump(tokenHistory)
 	}
 
-	fmt.Println("....---.... Query")
-
-	// test query
+	t.Log("Query")
 	{
 		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
 		// of DESC for block number.
@@ -1637,18 +1632,14 @@ func TestBondTable_Case_TokenHistory_Basic(t *testing.T) {
 			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
 		)
 
-		// selector2 := NewSelectorRange(
-		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
-		// 	&TokenHistory{ToAddress: "0xdef2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
-		// )
-
 		query := tokenHistoryTable.Query().
 			With(TokenHistoryByAccountIndex, selector)
 
 		var tokenHistories []*TokenHistory
 		err = query.Execute(context.Background(), &tokenHistories)
 		require.NoError(t, err)
-		spew.Dump(tokenHistories)
+		require.Equal(t, 1, len(tokenHistories))
+		// spew.Dump(tokenHistories)
 	}
 }
 
@@ -1767,10 +1758,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 	require.NoError(t, err)
 
 	// test scan index
-
 	t.Run("Scan all", func(t *testing.T) {
-		fmt.Println("....---.... Scan all")
-
 		var tokenHistories []*TokenHistory
 		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
 		require.NoError(t, err)
@@ -1808,8 +1796,6 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 	})
 
 	t.Run("ScanIndex", func(t *testing.T) {
-		fmt.Println("....---.... ScanIndex")
-
 		var tokenHistories []*TokenHistory
 
 		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
@@ -1844,7 +1830,6 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 	})
 
 	t.Run("GetPoint", func(t *testing.T) {
-		fmt.Println("....---.... GetPoint")
 		{
 			tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
 			require.NoError(t, err)
@@ -1862,7 +1847,6 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 
 	// test query
 	t.Run("Query", func(t *testing.T) {
-		fmt.Println("....---.... Query")
 		{
 			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
 			// of DESC for block number.
@@ -1903,9 +1887,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 
 	// test update and query
 	t.Run("Update And Query", func(t *testing.T) {
-		fmt.Println("....---.... Update And Query")
 		{
-
 			tokenHistory1.Amounts = []uint64{1000}
 
 			err = tokenHistoryTable.Update(context.Background(), []*TokenHistory{tokenHistory1})
@@ -1947,7 +1929,7 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 			assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
 		}
 
-		fmt.Println("....---.... Update Change Address And Query")
+		t.Log("Update Change Address And Query")
 		{
 			tokenHistory1.FromAddress = "0xfff3"
 
@@ -1982,7 +1964,6 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 	})
 
 	t.Run("Delete And Query", func(t *testing.T) {
-		fmt.Println("....---.... Delete And Query")
 		{
 			err = tokenHistoryTable.Delete(context.Background(), []*TokenHistory{tokenHistory2})
 			require.NoError(t, err)
