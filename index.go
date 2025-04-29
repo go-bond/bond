@@ -319,7 +319,6 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key..
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
 	var (
 		buff  []byte
@@ -401,7 +400,6 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key..
 func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
@@ -427,7 +425,6 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	return nil
 }
 
-// TODOXXX: add support for multi-index-key...
 func (idx *Index[T]) Intersect(ctx context.Context, table Table[T], sel Selector[T], indexes []*Index[T], sels []Selector[T], optBatch ...Batch) ([][]byte, error) {
 	tempKeysMap := map[string]struct{}{}
 	intersectKeysMap := map[string]struct{}{}
