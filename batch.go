@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 )
 
 var sequenceId = NumberSequence{}
@@ -27,7 +27,8 @@ const (
 
 type Batch interface {
 	ID() uint64
-	Len() int
+	Len() int      // len is the length in bytes
+	Count() uint32 // count is the number of keys in the batch
 	Empty() bool
 	Reset()
 
@@ -37,7 +38,7 @@ type Batch interface {
 	Setter
 	Deleter
 	DeleterWithRange
-	Iterationer
+	Iterable
 
 	Applier
 	Committer
@@ -78,6 +79,10 @@ func (b *_batch) Type() BatchType {
 		return BatchTypeReadWrite
 	}
 	return BatchTypeWriteOnly
+}
+
+func (b *_batch) Count() uint32 {
+	return b.Batch.Count()
 }
 
 func (b *_batch) Reset() {
@@ -121,7 +126,7 @@ func (b *_batch) Apply(batch Batch, opt WriteOptions) error {
 	if err != nil {
 		return err
 	}
-	defer innerBatch.notifyOnCommitted()
+	defer innerBatch.notifyOnCommitted() // TODO: rather not use a defer if we dont have to..
 
 	err = b.Batch.Apply(innerBatch.Batch, pebbleWriteOptions(opt))
 	if err != nil {
@@ -202,7 +207,7 @@ func (b *_batch) notifyOnError(err error) {
 }
 
 func (b *_batch) notifyOnClose() {
-	for _, f := range b.onCommittedCallbacks {
+	for _, f := range b.onClose {
 		f(b)
 	}
 }

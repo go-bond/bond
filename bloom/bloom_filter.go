@@ -5,19 +5,19 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/utils"
 	"github.com/klauspost/compress/zstd"
 	"github.com/lithammer/go-jump-consistent-hash"
 )
 
-var _buffPool = sync.Pool{
-	New: func() any {
-		return make([]byte, 128<<10) // 128 KB
-	},
-}
+var _buffPool = utils.NewPreAllocatedSyncPool[[]byte](func() any {
+	return make([]byte, 128<<10) // 128 KB
+}, 10) // Pre-allocate 10 buffers
 
 type _bucket struct {
 	num            int
@@ -26,25 +26,23 @@ type _bucket struct {
 
 	filter *bloom.BloomFilter
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 type BloomFilter struct {
-	hasher *sync.Pool
+	hasher utils.SyncPool[jump.KeyHasher]
 
 	keyPrefix    []byte
 	numOfBuckets int
 	buckets      []*_bucket
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte) *BloomFilter {
-	hasher := &sync.Pool{
-		New: func() any {
-			return jump.NewCRC32()
-		},
-	}
+	hasher := utils.NewPreAllocatedSyncPool[jump.KeyHasher](func() any {
+		return jump.NewCRC32()
+	}, 4) // Pre-allocate 4 hashers
 
 	buckets := make([]*_bucket, 0, numOfBuckets)
 	for i := 0; i < numOfBuckets; i++ {
@@ -72,27 +70,38 @@ func NewBloomFilter(n uint, fp float64, numOfBuckets int, keyPrefixes ...[]byte)
 		keyPrefix:    keyPrefix,
 		numOfBuckets: numOfBuckets,
 		buckets:      buckets,
-		mutex:        sync.RWMutex{},
+		mu:           sync.RWMutex{},
 	}
 }
 
 func (b *BloomFilter) Add(_ context.Context, key []byte) {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
+	bucketIndex := b.hash(key)
+	bucket := b.buckets[bucketIndex]
 
-	bucket := b.buckets[b.hash(key)]
-	bucket.hasChanges = !bucket.filter.TestOrAdd(key) || bucket.hasChanges
+	// TestOrAdd is thread-safe, but we lock to protect hasChanges update
+	// Lock the specific bucket
+	bucket.mu.Lock()
+	added := bucket.filter.TestOrAdd(key)
+	if added {
+		bucket.hasChanges = true
+	}
+	bucket.mu.Unlock()
 }
 
 func (b *BloomFilter) MayContain(_ context.Context, key []byte) bool {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-	return b.buckets[b.hash(key)].filter.Test(key)
+	bucketIndex := b.hash(key)
+	bucket := b.buckets[bucketIndex]
+
+	// Read-lock the specific bucket
+	bucket.mu.RLock()
+	contains := bucket.filter.Test(key)
+	bucket.mu.RUnlock()
+	return contains
 }
 
 func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	var keyBuff [1024]byte
 
@@ -124,24 +133,27 @@ func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 		zr.Close()
 		_ = closer.Close()
 
+		// Lock the specific bucket before modifying it
+		bucket.mu.Lock()
 		err = bucket.filter.Merge(filter)
 		if err != nil {
-			return fmt.Errorf("configuration changed: %w", err)
+			bucket.mu.Unlock()
+			return fmt.Errorf("configuration changed (incompatible filter parameters): %w", err)
 		}
-
 		bucket.hasBeenWritten = true
+		bucket.mu.Unlock()
 	}
 
 	return nil
 }
 
 func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	var keyBuff [1024]byte
-	dataBuff := _buffPool.Get().([]byte)
-	defer _buffPool.Put(dataBuff)
+	dataBuff := _buffPool.Get()
+	defer _buffPool.Put(dataBuff[:0])
 
 	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.numOfBuckets))
 	err := store.Set(buildBucketNumKey(keyBuff[:0], b.keyPrefix), dataBuff[:8], bond.Sync)
@@ -150,11 +162,17 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 	}
 
 	for _, bucket := range b.buckets {
+		// Lock the bucket early to check flags and potentially write
+		bucket.mu.Lock()
 		if !bucket.hasChanges && bucket.hasBeenWritten {
+			bucket.mu.Unlock() // Unlock if we skip
 			continue
 		}
 
-		buff := bytes.NewBuffer(dataBuff[:0])
+		// Use a temporary buffer from the pool for writing
+		writeBuff := _buffPool.Get()
+		buff := bytes.NewBuffer(writeBuff[:0]) // Use the pooled buffer
+
 		zw, err := zstd.NewWriter(buff)
 		if err != nil {
 			return err
@@ -170,17 +188,22 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 			return err
 		}
 
+		// Put the buffer back BEFORE potential error return from store.Set
+		_buffPool.Put(writeBuff[:0])
+
 		err = store.Set(
 			buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
-			buff.Bytes(),
+			buff.Bytes(), // Use the compressed data from the buffer
 			bond.Sync,
 		)
 		if err != nil {
+			bucket.mu.Unlock()
 			return err
 		}
 
 		bucket.hasChanges = false
 		bucket.hasBeenWritten = true
+		bucket.mu.Unlock()
 	}
 
 	return nil
@@ -194,21 +217,22 @@ func (b *BloomFilter) Clear(_ context.Context, store bond.FilterStorer) error {
 }
 
 func (b *BloomFilter) hash(key []byte) int {
-	hasher := b.hasher.Get().(jump.KeyHasher)
-	defer b.hasher.Put(hasher)
-	return int(HashBytes(key, int32(b.numOfBuckets), hasher))
+	hasher := b.hasher.Get()
+	v := int(HashBytes(key, int32(b.numOfBuckets), hasher))
+	b.hasher.Put(hasher)
+	return v
 }
 
 func buildKey(buff []byte, keyPrefix []byte, bucketNo int) []byte {
-	buffer := bytes.NewBuffer(buff)
-	_, _ = buffer.Write(append(keyPrefix, []byte(fmt.Sprintf("%d", bucketNo))...))
-	return buffer.Bytes()
+	buff = append(buff, keyPrefix...)
+	buff = strconv.AppendInt(buff, int64(bucketNo), 10)
+	return buff
 }
 
 func buildBucketNumKey(buff []byte, keyPrefix []byte) []byte {
-	buffer := bytes.NewBuffer(buff)
-	_, _ = buffer.Write(append(keyPrefix, []byte("bn")...))
-	return buffer.Bytes()
+	buff = append(buff, keyPrefix...)
+	buff = append(buff, "bn"...)
+	return buff
 }
 
 func HashBytes(key []byte, buckets int32, h jump.KeyHasher) int32 {

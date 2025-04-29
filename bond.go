@@ -11,11 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unsafe"
 
-	"github.com/cockroachdb/pebble/v2"
-	"github.com/cockroachdb/pebble/v2/objstorage/objstorageprovider"
-	"github.com/cockroachdb/pebble/v2/sstable"
-	"github.com/cockroachdb/pebble/v2/vfs"
+	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/objstorage/objstorageprovider"
+	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 	"github.com/go-bond/bond/utils"
 	"golang.org/x/sync/errgroup"
@@ -29,13 +30,43 @@ const (
 	BOND_DB_DATA_USER_SPACE_INDEX_ID = 0xFF
 )
 
-const exportFileSize = 17 << 20
+const exportFileSize = 17 << 20 // 17 MB
 
 const PebbleFormatFile = "PEBBLE_FORMAT_VERSION"
 
 var (
 	ErrNotFound = fmt.Errorf("bond: not found")
 )
+
+const DefaultKeyBufferSize = 512
+const DefaultValueBufferSize = 1024
+const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
+
+const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
+const DefaultNumberOfPreAllocMultiKeyBuffers = 10
+const DefaultNumberOfPreAllocValueBuffers = 10 * DefaultScanPrefetchSize
+const DefaultNumberOfPreAllocBytesArrays = 50
+
+type DB interface {
+	internalPools
+
+	Backend() *pebble.DB
+	Serializer() Serializer[any]
+
+	Getter
+	Setter
+	Deleter
+	DeleterWithRange
+	Iterable
+
+	Batcher
+	Applier
+
+	Closer
+	Backup
+
+	OnClose(func(db DB))
+}
 
 type WriteOptions struct {
 	Sync bool
@@ -66,7 +97,7 @@ type Batcher interface {
 	Batch(bType BatchType) Batch
 }
 
-type Iterationer interface { // TODO: weird name
+type Iterable interface {
 	Iter(opt *IterOptions, batch ...Batch) Iterator
 }
 
@@ -81,45 +112,15 @@ type Backup interface {
 
 type Closer io.Closer
 
-const DefaultKeyBufferSize = 2048
-const DefaultValueBufferSize = 2048
-const DefaultNumberOfKeyBuffersInMultiKeyBuffer = 1000
-
-const DefaultNumberOfPreAllocKeyBuffers = 2 * persistentBatchSize
-const DefaultNumberOfPreAllocMultiKeyBuffers = 10
-const DefaultNumberOfPreAllocValueBuffers = 10 * DefaultScanPrefetchSize
-const DefaultNumberOfPreAllocBytesArrays = 50
-
 type internalPools interface {
-	getKeyBufferPool() *utils.PreAllocatedPool[[]byte]
-	getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte]
-	getValueBufferPool() *utils.PreAllocatedPool[[]byte]
-	getBytesArrayPool() *utils.PreAllocatedPool[[][]byte]
+	getKeyBufferPool() utils.SyncPool[[]byte]
+	getMultiKeyBufferPool() utils.SyncPool[[]byte]
+	getValueBufferPool() utils.SyncPool[[]byte]
+	getBytesArrayPool() utils.SyncPool[[][]byte]
 	getKeyArray(numOfKeys int) [][]byte
 	putKeyArray(arr [][]byte)
 	getValueArray(numOfValues int) [][]byte
 	putValueArray(arr [][]byte)
-}
-
-type DB interface {
-	internalPools
-
-	Backend() *pebble.DB
-	Serializer() Serializer[any]
-
-	Getter
-	Setter
-	Deleter
-	DeleterWithRange
-	Iterationer
-
-	Batcher
-	Applier
-
-	Closer
-	Backup
-
-	OnClose(func(db DB))
 }
 
 type _db struct {
@@ -127,21 +128,20 @@ type _db struct {
 
 	serializer Serializer[any]
 
-	keyBufferPool      *utils.PreAllocatedPool[[]byte]
-	multiKeyBufferPool *utils.PreAllocatedPool[[]byte]
-	valueBufferPool    *utils.PreAllocatedPool[[]byte]
-	byteArraysPool     *utils.PreAllocatedPool[[][]byte]
+	keyBufferPool      utils.SyncPool[[]byte]
+	multiKeyBufferPool utils.SyncPool[[]byte]
+	valueBufferPool    utils.SyncPool[[]byte]
+	byteArraysPool     utils.SyncPool[[][]byte]
 
 	onCloseCallbacks []func(db DB)
 }
 
-func Open(dirname string, opts *Options) (DB, error) {
+func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfile) (DB, error) {
 	if opts == nil {
-		opts = DefaultOptions()
+		opts = DefaultOptions(performanceProfile...)
 	}
-
 	if opts.PebbleOptions == nil {
-		opts.PebbleOptions = DefaultPebbleOptions()
+		opts.PebbleOptions = DefaultPebbleOptions(performanceProfile...)
 	}
 
 	// expand the path if it is not absolute
@@ -206,16 +206,16 @@ func Open(dirname string, opts *Options) (DB, error) {
 	db := &_db{
 		pebble:     pdb,
 		serializer: serializer,
-		keyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		keyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize)
 		}, DefaultNumberOfPreAllocKeyBuffers),
-		multiKeyBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		multiKeyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize*DefaultNumberOfKeyBuffersInMultiKeyBuffer)
 		}, DefaultNumberOfPreAllocMultiKeyBuffers),
-		valueBufferPool: utils.NewPreAllocatedPool[[]byte](func() any {
+		valueBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultValueBufferSize)
 		}, DefaultNumberOfPreAllocValueBuffers),
-		byteArraysPool: utils.NewPreAllocatedPool[[][]byte](func() any {
+		byteArraysPool: utils.NewPreAllocatedSyncPool[[][]byte](func() any {
 			return make([][]byte, 0, persistentBatchSize)
 		}, DefaultNumberOfPreAllocBytesArrays),
 	}
@@ -321,30 +321,30 @@ func (db *_db) notifyOnClose() {
 	}
 }
 
-func (db *_db) getKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getKeyBufferPool() utils.SyncPool[[]byte] {
 	return db.keyBufferPool
 }
 
-func (db *_db) getMultiKeyBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getMultiKeyBufferPool() utils.SyncPool[[]byte] {
 	return db.multiKeyBufferPool
 }
 
-func (db *_db) getValueBufferPool() *utils.PreAllocatedPool[[]byte] {
+func (db *_db) getValueBufferPool() utils.SyncPool[[]byte] {
 	return db.valueBufferPool
 }
 
-func (db *_db) getBytesArrayPool() *utils.PreAllocatedPool[[][]byte] {
+func (db *_db) getBytesArrayPool() utils.SyncPool[[][]byte] {
 	return db.byteArraysPool
 }
 
 func (db *_db) getKeyArray(numOfKeys int) [][]byte {
-	keys := db.byteArraysPool.Get()[:0]
+	keys := db.byteArraysPool.Get()
 	if cap(keys) < numOfKeys {
 		keys = make([][]byte, 0, numOfKeys)
 	}
 
 	for i := 0; i < numOfKeys; i++ {
-		keys = append(keys, db.keyBufferPool.Get()[:0])
+		keys = append(keys, db.keyBufferPool.Get())
 	}
 	return keys
 }
@@ -357,13 +357,13 @@ func (db *_db) putKeyArray(arr [][]byte) {
 }
 
 func (db *_db) getValueArray(numOfValues int) [][]byte {
-	keys := db.byteArraysPool.Get()[:0]
+	keys := db.byteArraysPool.Get()
 	if cap(keys) < numOfValues {
 		keys = make([][]byte, 0, numOfValues)
 	}
 
 	for i := 0; i < numOfValues; i++ {
-		keys = append(keys, db.valueBufferPool.Get()[:0])
+		keys = append(keys, db.valueBufferPool.Get())
 	}
 	return keys
 }
@@ -524,7 +524,8 @@ func (db *_db) getIndexIDS(tableID TableID) []IndexID {
 	return indexIDS
 }
 
-// write all the key/value of iterator to the SST file.
+// iteratorToSST is used by Dump method to write all the key/value of
+// iterator to the SST file.
 func iteratorToSST(itr Iterator, path string) error {
 	defer itr.Close()
 
@@ -536,7 +537,7 @@ func iteratorToSST(itr Iterator, path string) error {
 	}
 
 	opts := sstable.WriterOptions{
-		TableFormat: sstable.TableFormatPebblev2, Parallelism: true, Comparer: DefaultKeyComparer(),
+		TableFormat: sstable.TableFormatPebblev2, Comparer: DefaultKeyComparer(),
 	}
 	writer := sstable.NewWriter(objstorageprovider.NewFileWritable(file), opts)
 
@@ -610,4 +611,23 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	defer versionFile.Close()
 	_, err = versionFile.Write([]byte(fmt.Sprintf("%d", upgradeVersion)))
 	return err
+}
+
+// StringToBytes converts a string to a byte slice without copying.
+// IMPORTANT: The returned byte slice must NOT be modified, as this will
+// corrupt the original string. Only use this for READ-ONLY operations.
+func StringToBytes(s string) []byte {
+	if s == "" {
+		return nil
+	}
+	return unsafe.Slice(unsafe.StringData(s), len(s))
+}
+
+// BytesToString converts a byte slice to a string without copying.
+// IMPORTANT: The original byte slice should not be modified after this conversion.
+func BytesToString(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return unsafe.String(&b[0], len(b))
 }

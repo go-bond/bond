@@ -6,8 +6,7 @@ import (
 
 type SyncBatch struct {
 	batch Batch
-
-	mu sync.Mutex
+	mu    sync.Mutex
 }
 
 func NewSyncBatch(batch Batch) *SyncBatch {

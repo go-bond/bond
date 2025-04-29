@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBondTable_UnsafeUpdate(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -92,7 +92,7 @@ func TestBondTable_UnsafeUpdate(t *testing.T) {
 
 func TestBondTable_UnsafeInsert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)

@@ -4,8 +4,9 @@ import (
 	"context"
 	"math"
 	"testing"
+	"time"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/serializers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,13 +14,13 @@ import (
 
 func TestBond_NewTable(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -33,13 +34,13 @@ func TestBond_NewTable(t *testing.T) {
 
 func TestBondTable_Interfaces(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -61,13 +62,13 @@ func TestBondTable_Interfaces(t *testing.T) {
 
 func TestBondTable_PrimaryIndex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -85,13 +86,13 @@ func TestBondTable_PrimaryIndex(t *testing.T) {
 
 func TestBondTable_SecondaryIndexes(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -107,7 +108,7 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -131,13 +132,13 @@ func TestBondTable_SecondaryIndexes(t *testing.T) {
 
 func TestDuplicateIndexID(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -148,7 +149,7 @@ func TestDuplicateIndexID(t *testing.T) {
 	require.NotNil(t, tokenBalanceTable)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   PrimaryIndexID + 1,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -156,7 +157,7 @@ func TestDuplicateIndexID(t *testing.T) {
 			},
 			IndexOrderFunc: IndexOrderDefault[*TokenBalance],
 		})
-		TokenBalanceAccountAddressIndex2 = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex2 = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   PrimaryIndexID + 1,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -175,13 +176,13 @@ func TestDuplicateIndexID(t *testing.T) {
 
 func TestBondTable_Serializer(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -195,13 +196,13 @@ func TestBondTable_Serializer(t *testing.T) {
 
 func TestBondTable_SerializerOption(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -216,13 +217,13 @@ func TestBondTable_SerializerOption(t *testing.T) {
 
 func TestBondTable_Get(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -258,13 +259,13 @@ func TestBondTable_Get(t *testing.T) {
 
 func TestBondTable_Get_Range(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -310,13 +311,13 @@ func TestBondTable_Get_Range(t *testing.T) {
 
 func TestBondTable_Get_Points(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -352,26 +353,24 @@ func TestBondTable_Get_Points(t *testing.T) {
 	tokenBalances, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 1}, &TokenBalance{ID: 3}))
 	require.NoError(t, err)
 	require.Equal(t, len(insertTokenBalances), len(tokenBalances))
-
-	assert.Equal(t, insertTokenBalances, tokenBalances)
+	require.Equal(t, insertTokenBalances, tokenBalances)
 
 	// get token balance with non-existing points
 	tokenBalances, err = tokenBalanceTable.Get(context.Background(), NewSelectorPoints(&TokenBalance{ID: 2}))
 	require.NoError(t, err)
 	require.Equal(t, 1, len(tokenBalances))
-
-	assert.Nil(t, tokenBalances[0])
+	require.Nil(t, tokenBalances[0])
 }
 
 func TestBondTable_Get_Ranges(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID TableID = 0xC0
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -429,13 +428,13 @@ func TestBondTable_Get_Ranges(t *testing.T) {
 
 func TestBondTable_Insert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -474,13 +473,13 @@ func TestBondTable_Insert(t *testing.T) {
 
 func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -506,13 +505,13 @@ func TestBondTable_Insert_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Insert_When_Exist(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -554,13 +553,13 @@ func TestBondTable_Insert_When_Exist(t *testing.T) {
 
 func TestBondTable_Update(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -628,13 +627,13 @@ func TestBondTable_Update(t *testing.T) {
 
 func TestBondTable_Update_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -705,13 +704,13 @@ func TestBondTable_Update_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Upsert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -799,13 +798,13 @@ func TestBondTable_Upsert(t *testing.T) {
 
 func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -894,13 +893,13 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 
 func TestBondTable_Upsert_OnConflict(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1005,13 +1004,13 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 
 func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1100,6 +1099,7 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 
 		var tokenBalanceAccountFromDB TokenBalance
 		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
+		require.NoError(t, err)
 		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
 	}
 
@@ -1112,13 +1112,13 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 
 func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1149,13 +1149,13 @@ func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 
 func TestBondTable_Delete(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1189,13 +1189,13 @@ func TestBondTable_Delete(t *testing.T) {
 
 func TestBondTable_Exist(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1224,13 +1224,13 @@ func TestBondTable_Exist(t *testing.T) {
 
 func TestBondTable_Scan(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1294,13 +1294,13 @@ func TestBondTable_Scan(t *testing.T) {
 
 func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1353,13 +1353,13 @@ func TestBondTable_Scan_Context_Canceled(t *testing.T) {
 
 func TestBondTable_ScanIndex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1374,7 +1374,7 @@ func TestBondTable_ScanIndex(t *testing.T) {
 	)
 
 	var (
-		TokenBalanceAccountAddressIndex = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
+		TokenBalanceAccountAddressIndex = NewIndex(IndexOptions[*TokenBalance]{
 			IndexID:   TokenBalanceAccountAddressIndexID,
 			IndexName: "account_address_idx",
 			IndexKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
@@ -1434,13 +1434,13 @@ func TestBondTable_ScanIndex(t *testing.T) {
 
 func TestBond_Batch(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
@@ -1492,4 +1492,496 @@ func TestBond_Batch(t *testing.T) {
 		assert.Equal(t, tokenBalance, &tokenBalanceAccountFromDB)
 	}
 	it.Close()
+}
+
+func TestBondTable_Case_TokenHistory_Basic(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenHistoryTableID TableID = 0xD0
+	)
+
+	tokenHistoryTable := NewTable(TableOptions[*TokenHistory]{
+		DB:        db,
+		TableID:   TokenHistoryTableID,
+		TableName: "token_history",
+		TablePrimaryKeyFunc: func(keyBuilder KeyBuilder, th *TokenHistory) []byte {
+			return keyBuilder.
+				AddUint64Field(th.BlockNumber).
+				AddUint64Field(uint64(th.TxnIndex)).
+				AddUint64Field(uint64(th.TxnLogIndex)).
+				Bytes()
+		},
+	})
+
+	require.NotNil(t, tokenHistoryTable)
+	require.Equal(t, TokenHistoryTableID, tokenHistoryTable.ID())
+
+	// add indexes
+	TokenHistoryByAccountIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_history_by_account_idx",
+		IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+			// return builder.AddStringField(tb.AccountAddress).Bytes()
+			return builder.AddStringField(th.FromAddress).Bytes()
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+		// IndexOrderFunc: IndexOrderDefault[*TokenHistory],
+	})
+
+	// add indexes
+
+	TokenHistoryByAccountToIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 2,
+		IndexName: "token_history_by_account_to_idx",
+		IndexKeyFunc: func(builder KeyBuilder, th *TokenHistory) []byte {
+			// return builder.AddStringField(tb.AccountAddress).Bytes()
+			return builder.AddStringField(th.ToAddress).Bytes()
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+	})
+	// _ = TokenHistoryByAccountToIndex
+
+	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
+		TokenHistoryByAccountIndex, // from ..
+		TokenHistoryByAccountToIndex,
+	})
+
+	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
+	require.NotNil(t, secondaryIndexes)
+	// require.Equal(t, 2, len(secondaryIndexes))
+
+	// add some records
+
+	tokenHistory1 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        1,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc1",
+		ToAddress:       "0xdef1",
+		ContractAddress: "0x1231",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{100},
+		TS:              time.Now(),
+	}
+
+	tokenHistory2 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        2,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc2",
+		ToAddress:       "0xdef2",
+		ContractAddress: "0x1232",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{200},
+		TS:              time.Now(),
+	}
+
+	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2})
+	require.NoError(t, err)
+
+	// test scan index
+
+	{
+		var tokenHistories []*TokenHistory
+		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
+		require.NoError(t, err)
+		// spew.Dump(tokenHistories)
+	}
+
+	t.Log("ScanIndex")
+	{
+		var tokenHistories []*TokenHistory
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		// spew.Dump(tokenHistories)
+	}
+
+	t.Log("GetPoint")
+	{
+		tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
+		require.NoError(t, err)
+		require.NotNil(t, tokenHistory)
+		// spew.Dump(tokenHistory)
+	}
+
+	t.Log("Query")
+	{
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+
+		query := tokenHistoryTable.Query().
+			With(TokenHistoryByAccountIndex, selector)
+
+		var tokenHistories []*TokenHistory
+		err = query.Execute(context.Background(), &tokenHistories)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(tokenHistories))
+		// spew.Dump(tokenHistories)
+	}
+}
+
+func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenHistoryTableID TableID = 0xD0
+	)
+
+	tokenHistoryTable := NewTable(TableOptions[*TokenHistory]{
+		DB:        db,
+		TableID:   TokenHistoryTableID,
+		TableName: "token_history",
+		TablePrimaryKeyFunc: func(keyBuilder KeyBuilder, th *TokenHistory) []byte {
+			return keyBuilder.
+				AddUint64Field(th.BlockNumber).
+				AddUint64Field(uint64(th.TxnIndex)).
+				AddUint64Field(uint64(th.TxnLogIndex)).
+				Bytes()
+		},
+	})
+
+	require.NotNil(t, tokenHistoryTable)
+	require.Equal(t, TokenHistoryTableID, tokenHistoryTable.ID())
+
+	// add indexes
+	TokenHistoryByAccountIndex := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 1,
+		IndexName: "token_history_by_account_idx",
+		IndexKeyFunc: func(builder KeyBuilder, selector *TokenHistory) []byte {
+			if selector.QueryFromOrToAddress != "" {
+				return builder.AddStringField(selector.QueryFromOrToAddress).Bytes()
+			}
+			if selector.FromAddress != "" {
+				return builder.AddStringField(selector.FromAddress).Bytes()
+			}
+			if selector.ToAddress != "" {
+				return builder.AddStringField(selector.ToAddress).Bytes()
+			}
+			return builder.Bytes()
+		},
+		IndexMultiKeyFunc: func(builder KeyBuilder, record *TokenHistory) [][]byte {
+			var indexKeys [][]byte
+
+			// Generate key part for FromAddress
+			if record.FromAddress != "" {
+				// Use a *new* builder for each distinct key part
+				fromKeyPart := NewKeyBuilder(nil).AddStringField(record.FromAddress).Bytes()
+				indexKeys = append(indexKeys, fromKeyPart)
+			}
+
+			// Generate key part for ToAddress and avoid adding duplicate key parts if FromAddress == ToAddress
+			if record.ToAddress != "" && record.ToAddress != record.FromAddress {
+				// Use a *new* builder
+				toKeyPart := NewKeyBuilder(nil).AddStringField(record.ToAddress).Bytes()
+				indexKeys = append(indexKeys, toKeyPart)
+			}
+			return indexKeys
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+	})
+
+	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
+		TokenHistoryByAccountIndex,
+	})
+
+	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
+	require.NotNil(t, secondaryIndexes)
+	require.Equal(t, 1, len(secondaryIndexes))
+
+	// add some records
+	tokenHistory1 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        1,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc1",
+		ToAddress:       "0xdef1",
+		ContractAddress: "0x1231",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{100},
+		TS:              time.Now(),
+	}
+
+	tokenHistory2 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        2,
+		TxnLogIndex:     1,
+		FromAddress:     "0xabc2",
+		ToAddress:       "0xdef2",
+		ContractAddress: "0x1232",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{200},
+		TS:              time.Now(),
+	}
+
+	tokenHistory3 := &TokenHistory{
+		BlockNumber:     1,
+		TxnIndex:        3,
+		TxnLogIndex:     1,
+		FromAddress:     "0xfff3",
+		ToAddress:       "0xabc1",
+		ContractAddress: "0x1233",
+		TokenIDs:        []uint64{1},
+		Amounts:         []uint64{300},
+		TS:              time.Now(),
+	}
+
+	err := tokenHistoryTable.Insert(context.Background(), []*TokenHistory{tokenHistory1, tokenHistory2, tokenHistory3})
+	require.NoError(t, err)
+
+	// test scan index
+	t.Run("Scan all", func(t *testing.T) {
+		var tokenHistories []*TokenHistory
+		err = tokenHistoryTable.Scan(context.Background(), &tokenHistories, false)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(tokenHistories))
+
+		assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory1.BlockNumber)
+		assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory1.TxnIndex)
+		assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory1.TxnLogIndex)
+		assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory1.TxnHash)
+		assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory1.FromAddress)
+		assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory1.ToAddress)
+		assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory1.ContractAddress)
+		assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory1.TokenIDs)
+		assert.Equal(t, tokenHistories[0].Amounts, tokenHistory1.Amounts)
+
+		assert.Equal(t, tokenHistories[1].BlockNumber, tokenHistory2.BlockNumber)
+		assert.Equal(t, tokenHistories[1].TxnIndex, tokenHistory2.TxnIndex)
+		assert.Equal(t, tokenHistories[1].TxnLogIndex, tokenHistory2.TxnLogIndex)
+		assert.Equal(t, tokenHistories[1].TxnHash, tokenHistory2.TxnHash)
+		assert.Equal(t, tokenHistories[1].FromAddress, tokenHistory2.FromAddress)
+		assert.Equal(t, tokenHistories[1].ToAddress, tokenHistory2.ToAddress)
+		assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory2.ContractAddress)
+		assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory2.TokenIDs)
+		assert.Equal(t, tokenHistories[1].Amounts, tokenHistory2.Amounts)
+
+		assert.Equal(t, tokenHistories[2].BlockNumber, tokenHistory3.BlockNumber)
+		assert.Equal(t, tokenHistories[2].TxnIndex, tokenHistory3.TxnIndex)
+		assert.Equal(t, tokenHistories[2].TxnLogIndex, tokenHistory3.TxnLogIndex)
+		assert.Equal(t, tokenHistories[2].TxnHash, tokenHistory3.TxnHash)
+		assert.Equal(t, tokenHistories[2].FromAddress, tokenHistory3.FromAddress)
+		assert.Equal(t, tokenHistories[2].ToAddress, tokenHistory3.ToAddress)
+		assert.Equal(t, tokenHistories[2].ContractAddress, tokenHistory3.ContractAddress)
+		assert.Equal(t, tokenHistories[2].TokenIDs, tokenHistory3.TokenIDs)
+		assert.Equal(t, tokenHistories[2].Amounts, tokenHistory3.Amounts)
+	})
+
+	t.Run("ScanIndex", func(t *testing.T) {
+		var tokenHistories []*TokenHistory
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndex, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(tokenHistories))
+
+		assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory1.BlockNumber)
+		assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory1.TxnIndex)
+		assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory1.TxnLogIndex)
+		assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory1.TxnHash)
+		assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory1.FromAddress)
+		assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory1.ToAddress)
+		assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory1.ContractAddress)
+		assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory1.TokenIDs)
+		assert.Equal(t, tokenHistories[0].Amounts, tokenHistory1.Amounts)
+
+		assert.Equal(t, tokenHistories[1].BlockNumber, tokenHistory3.BlockNumber)
+		assert.Equal(t, tokenHistories[1].TxnIndex, tokenHistory3.TxnIndex)
+		assert.Equal(t, tokenHistories[1].TxnLogIndex, tokenHistory3.TxnLogIndex)
+		assert.Equal(t, tokenHistories[1].TxnHash, tokenHistory3.TxnHash)
+		assert.Equal(t, tokenHistories[1].FromAddress, tokenHistory3.FromAddress)
+		assert.Equal(t, tokenHistories[1].ToAddress, tokenHistory3.ToAddress)
+		assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory3.ContractAddress)
+		assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory3.TokenIDs)
+		assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
+	})
+
+	t.Run("GetPoint", func(t *testing.T) {
+		{
+			tokenHistory, err := tokenHistoryTable.GetPoint(context.Background(), &TokenHistory{BlockNumber: 1, TxnIndex: 1, TxnLogIndex: 1}, nil)
+			require.NoError(t, err)
+			require.Equal(t, tokenHistory.BlockNumber, tokenHistory1.BlockNumber)
+			require.Equal(t, tokenHistory.TxnIndex, tokenHistory1.TxnIndex)
+			require.Equal(t, tokenHistory.TxnLogIndex, tokenHistory1.TxnLogIndex)
+			require.Equal(t, tokenHistory.TxnHash, tokenHistory1.TxnHash)
+			require.Equal(t, tokenHistory.FromAddress, tokenHistory1.FromAddress)
+			require.Equal(t, tokenHistory.ToAddress, tokenHistory1.ToAddress)
+			require.Equal(t, tokenHistory.ContractAddress, tokenHistory1.ContractAddress)
+			require.Equal(t, tokenHistory.TokenIDs, tokenHistory1.TokenIDs)
+			require.Equal(t, tokenHistory.Amounts, tokenHistory1.Amounts)
+		}
+	})
+
+	// test query
+	t.Run("Query", func(t *testing.T) {
+		{
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 2, len(tokenHistories))
+
+			assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory1.BlockNumber)
+			assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory1.TxnIndex)
+			assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory1.TxnLogIndex)
+			assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory1.TxnHash)
+			assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory1.FromAddress)
+			assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory1.ToAddress)
+			assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory1.ContractAddress)
+			assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory1.TokenIDs)
+			assert.Equal(t, tokenHistories[0].Amounts, tokenHistory1.Amounts)
+
+			assert.Equal(t, tokenHistories[1].BlockNumber, tokenHistory3.BlockNumber)
+			assert.Equal(t, tokenHistories[1].TxnIndex, tokenHistory3.TxnIndex)
+			assert.Equal(t, tokenHistories[1].TxnLogIndex, tokenHistory3.TxnLogIndex)
+			assert.Equal(t, tokenHistories[1].TxnHash, tokenHistory3.TxnHash)
+			assert.Equal(t, tokenHistories[1].FromAddress, tokenHistory3.FromAddress)
+			assert.Equal(t, tokenHistories[1].ToAddress, tokenHistory3.ToAddress)
+			assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory3.ContractAddress)
+			assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory3.TokenIDs)
+			assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
+		}
+	})
+
+	// test update and query
+	t.Run("Update And Query", func(t *testing.T) {
+		{
+			tokenHistory1.Amounts = []uint64{1000}
+
+			err = tokenHistoryTable.Update(context.Background(), []*TokenHistory{tokenHistory1})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 2, len(tokenHistories))
+
+			assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory1.BlockNumber)
+			assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory1.TxnIndex)
+			assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory1.TxnLogIndex)
+			assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory1.TxnHash)
+			assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory1.FromAddress)
+			assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory1.ToAddress)
+			assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory1.ContractAddress)
+			assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory1.TokenIDs)
+			assert.Equal(t, tokenHistories[0].Amounts, tokenHistory1.Amounts)
+
+			assert.Equal(t, tokenHistories[1].BlockNumber, tokenHistory3.BlockNumber)
+			assert.Equal(t, tokenHistories[1].TxnIndex, tokenHistory3.TxnIndex)
+			assert.Equal(t, tokenHistories[1].TxnLogIndex, tokenHistory3.TxnLogIndex)
+			assert.Equal(t, tokenHistories[1].TxnHash, tokenHistory3.TxnHash)
+			assert.Equal(t, tokenHistories[1].FromAddress, tokenHistory3.FromAddress)
+			assert.Equal(t, tokenHistories[1].ToAddress, tokenHistory3.ToAddress)
+			assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory3.ContractAddress)
+			assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory3.TokenIDs)
+			assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
+		}
+
+		t.Log("Update Change Address And Query")
+		{
+			tokenHistory1.FromAddress = "0xfff3"
+
+			err = tokenHistoryTable.Update(context.Background(), []*TokenHistory{tokenHistory1})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(tokenHistories))
+
+			assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory3.BlockNumber)
+			assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory3.TxnIndex)
+			assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory3.TxnLogIndex)
+			assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory3.TxnHash)
+			assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory3.FromAddress)
+			assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory3.ToAddress)
+			assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory3.ContractAddress)
+			assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory3.TokenIDs)
+			assert.Equal(t, tokenHistories[0].Amounts, tokenHistory3.Amounts)
+		}
+	})
+
+	t.Run("Delete And Query", func(t *testing.T) {
+		{
+			err = tokenHistoryTable.Delete(context.Background(), []*TokenHistory{tokenHistory2})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 0, len(tokenHistories))
+		}
+	})
 }

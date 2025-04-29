@@ -31,7 +31,8 @@ func setupDatabase(serializer ...bond.Serializer[any]) bond.DB {
 	return db
 }
 
-func tearDownDatabase(db bond.DB) {
+func tearDownDatabase(t *testing.T, db bond.DB) {
+	t.Helper()
 	_ = db.Close()
 	_ = os.RemoveAll(dbName)
 }
@@ -106,7 +107,7 @@ func TestBond_Open(t *testing.T) {
 
 func TestInspect_Tables(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
@@ -122,7 +123,7 @@ func TestInspect_Tables(t *testing.T) {
 
 func TestInspect_Indexes(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
@@ -140,7 +141,7 @@ func TestInspect_Indexes(t *testing.T) {
 
 func TestInspect_EntryFields(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	insp, err := NewInspect([]bond.TableInfo{table})
 	require.NoError(t, err)
@@ -161,7 +162,7 @@ func TestInspect_EntryFields(t *testing.T) {
 
 func TestInspect_Query(t *testing.T) {
 	db, table, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	insertTokenBalance := []*TokenBalance{
 		{

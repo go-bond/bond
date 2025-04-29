@@ -1,6 +1,5 @@
 SHELL            = bash -o pipefail
-TEST_FLAGS       ?= -p 1 -v -race
-
+TEST_FLAGS       ?= -p 1 -v -race -failfast
 
 all:
 	@echo "make <cmd>"
@@ -27,7 +26,7 @@ all:
 build:
 	go build ./...
 
-clean:
+clean: test-clean
 	go clean -cache -testcache
 
 test: test-clean
@@ -38,18 +37,17 @@ test-all: test-clean
 
 test-with-reset: db-reset test-all
 
-test-clean:
-	GOGC=off go clean -testcache && rm -rf test_db tmp_db
+test-clean: db-reset
+	GOGC=off go clean -testcache
 
-bench:
+bench: clean
 	@cd _benchmarks && go test -timeout=25m -bench=.
 
-bench-csv:
-	go run ./_benchmarks/benchmark.go --report=csv
+bench-csv: clean
+	@cd _benchmarks && go run ./benchmark.go --report=csv
 
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
 
-.PHONY: pb
-pb:
-	protoc -I=./tests/pb --go_out=./tests ./tests/pb/demo.proto
+db-reset:
+	rm -rf test_db tmp_db _benchmarks/bench_db

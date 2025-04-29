@@ -8,9 +8,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond/utils"
-	"golang.org/x/exp/maps"
 )
 
 var _indexKeyValue = []byte{}
@@ -58,7 +57,7 @@ type TableScanner[T any] interface {
 	ScanIndexForEach(ctx context.Context, idx *Index[T], s Selector[T], f func(keyBytes KeyBytes, t Lazy[T]) (bool, error), reverse bool, optBatch ...Batch) error
 }
 
-type TableIterationer[T any] interface {
+type TableIterable[T any] interface {
 	Iter(sel Selector[T], optBatch ...Batch) Iterator
 }
 
@@ -76,7 +75,7 @@ type TableReader[T any] interface {
 	TableQuerier[T]
 
 	TableScanner[T]
-	TableIterationer[T]
+	TableIterable[T]
 }
 
 type TableInserter[T any] interface {
@@ -96,7 +95,7 @@ type TableDeleter[T any] interface {
 }
 
 type TableWriter[T any] interface {
-	AddIndex(idxs []*Index[T], reIndex ...bool) error
+	AddIndex(idxs []*Index[T], mutable ...bool) error
 	ReIndex(idxs []*Index[T]) error
 
 	TableInserter[T]
@@ -117,10 +116,9 @@ type TableOptions[T any] struct {
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[any]
+	Filter              Filter
 
 	ScanPrefetchSize int
-
-	Filter Filter
 }
 
 type _table[T any] struct {
@@ -145,7 +143,7 @@ type _table[T any] struct {
 
 	filter Filter
 
-	mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewTable[T any](opt TableOptions[T]) Table[T] {
@@ -159,7 +157,10 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		scanPrefetchSize = opt.ScanPrefetchSize
 	}
 
-	// TODO: check if id == 0, and if so, return error that its reserved for bond
+	// TODO: perhaps switch to error instead of a panic.
+	if opt.TableID == 0 {
+		panic(fmt.Errorf("bond: table id 0 is reserved for bond"))
+	}
 
 	table := &_table[T]{
 		db:             opt.DB,
@@ -179,7 +180,7 @@ func NewTable[T any](opt TableOptions[T]) Table[T] {
 		scanPrefetchSize:  scanPrefetchSize,
 		serializer:        serializer,
 		filter:            opt.Filter,
-		mutex:             sync.RWMutex{},
+		mu:                sync.RWMutex{},
 	}
 
 	return table
@@ -194,8 +195,8 @@ func (t *_table[T]) Name() string {
 }
 
 func (t *_table[T]) Indexes() []IndexInfo {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	indexInfos := []IndexInfo{t.primaryIndex}
 	for _, idx := range t.secondaryIndexes {
@@ -230,14 +231,12 @@ func (t *_table[T]) PrimaryIndex() *Index[T] {
 }
 
 func (t *_table[T]) SecondaryIndexes() []*Index[T] {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	var indexes []*Index[T]
 	for _, idx := range t.secondaryIndexes {
 		indexes = append(indexes, idx)
 	}
-
 	return indexes
 }
 
@@ -245,8 +244,12 @@ func (t *_table[T]) Serializer() Serializer[*T] {
 	return t.serializer
 }
 
-func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
-	t.mutex.Lock()
+func (t *_table[T]) AddIndex(idxs []*Index[T], mutable ...bool) error {
+	t.mu.Lock()
+	if len(t.secondaryIndexes) > 0 && (len(mutable) == 0 || !mutable[0]) {
+		t.mu.Unlock()
+		return fmt.Errorf("cannot add index to table with existing indexes")
+	}
 	for _, idx := range idxs {
 		_, ok := t.secondaryIndexes[idx.IndexID]
 		if ok {
@@ -254,11 +257,7 @@ func (t *_table[T]) AddIndex(idxs []*Index[T], reIndex ...bool) error {
 		}
 		t.secondaryIndexes[idx.IndexID] = idx
 	}
-	t.mutex.Unlock()
-
-	if len(reIndex) > 0 && reIndex[0] {
-		return t.ReIndex(idxs)
-	}
+	t.mu.Unlock()
 	return nil
 }
 
@@ -336,11 +335,6 @@ func (t *_table[T]) ReIndex(idxs []*Index[T]) error {
 }
 
 func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) error {
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var (
 		batch          Batch
 		batchReadWrite Batch
@@ -358,17 +352,16 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		batchReadWrite = batch
 	}
 
-	var (
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
-	)
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
 	// key buffers
-	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	batchSize := min(len(trs), persistentBatchSize)
+	keysBuffer := t.db.getKeyArray(batchSize)
 	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := t.db.getValueBufferPool().Get()[:0]
+	value := t.db.getValueBufferPool().Get()
 	valueBuffer := bytes.NewBuffer(value)
 	defer t.db.getValueBufferPool().Put(value[:0])
 
@@ -378,7 +371,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, batchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -396,38 +389,44 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 		// process rows
 		for i, key := range keys {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
-			// check if exist
+			// check if exist efficiently (via bloom filter)
 			if t.keyDuplicate(i, keys) || t.exist(key, batch, iter) {
 				return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
 			}
 
-			// serialize
+			// serialize the row
 			tr := trs[keyOrder[i]]
 			data, err := serialize(&tr)
 			if err != nil {
 				return err
 			}
 
+			// write the row to the batch for key
 			err = batch.Set(key, data, Sync)
 			if err != nil {
 				return err
 			}
 
-			// index keys
-			for _, idx := range indexes {
+			// index keys by writing index entries for this row, in this model
+			// we add index entries at the same time we write the row to the batch.
+			for _, idx := range t.secondaryIndexes {
 				err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 				if err != nil {
 					return err
 				}
 			}
 
-			// add to bloom filter
+			// add object to the bloom filter
 			if t.filter != nil {
 				t.filter.Add(ctx, key)
 			}
@@ -436,13 +435,13 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Insert: %w", err)
 	}
 
 	if !externalBatch {
 		err = batch.Commit(Sync)
 		if err != nil {
-			return err
+			return fmt.Errorf("Insert: %w", err)
 		}
 	}
 
@@ -450,11 +449,6 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 }
 
 func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) error {
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var (
 		batch          Batch
 		batchReadWrite Batch
@@ -472,19 +466,18 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		batchReadWrite = batch
 	}
 
-	var (
-		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
-	)
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
+	indexKeyBuffer2 := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// key buffers
-	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	batchSize := min(len(trs), persistentBatchSize)
+	keysBuffer := t.db.getKeyArray(batchSize)
 	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := t.db.getValueBufferPool().Get()[:0]
+	value := t.db.getValueBufferPool().Get()
 	valueBuffer := bytes.NewBuffer(value)
 	defer t.db.getValueBufferPool().Put(value[:0])
 
@@ -497,7 +490,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 	// reusable object
 	var oldTr T
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, batchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -514,22 +507,27 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer iter.Close()
 
 		for i, key := range keys {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
 			// skip this records since the next record updating the
-			// same primary key.
+			// same primary key, in case of a duplicate in a sorted list.
 			if i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
 				continue
 			}
 
-			if !iter.SeekGE(key) || !bytes.Equal(iter.Key(), key) {
+			// check if exist efficiently (via bloom filter)
+			if !t.exist(key, batch, iter) {
 				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
 			}
 
+			// deserialize the old record
 			err := t.serializer.Deserialize(iter.Value(), &oldTr)
 			if err != nil {
 				return err
@@ -550,7 +548,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 			}
 
 			// update indexes
-			for _, idx := range indexes {
+			for _, idx := range t.secondaryIndexes {
 				err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 				if err != nil {
 					return err
@@ -575,11 +573,6 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 }
 
 func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) error {
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var (
 		batch         Batch
 		externalBatch = len(optBatch) > 0 && optBatch[0] != nil
@@ -592,18 +585,19 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		defer batch.Close()
 	}
 
-	var (
-		keyBuffer      = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer = t.db.getKeyBufferPool().Get()[:0]
-	)
+	keyBuffer := t.db.getKeyBufferPool().Get()
+	indexKeyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 
-	for _, tr := range trs {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context done: %w", ctx.Err())
-		default:
+	for i, tr := range trs {
+		// Check every 100 iterations if context is done, with micro-optimization.
+		if i%100 == 0 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context done: %w", ctx.Err())
+			default:
+			}
 		}
 
 		// data key
@@ -616,7 +610,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 		}
 
 		// delete from index
-		for _, idx := range indexes {
+		for _, idx := range t.secondaryIndexes {
 			err = idx.OnDelete(t, tr, batch, indexKeyBuffer[:0])
 			if err != nil {
 				return err
@@ -635,11 +629,6 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 }
 
 func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error {
-	t.mutex.RLock()
-	indexes := make(map[IndexID]*Index[T])
-	maps.Copy(indexes, t.secondaryIndexes)
-	t.mutex.RUnlock()
-
 	var (
 		batch          Batch
 		batchReadWrite Batch
@@ -658,18 +647,19 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}
 
 	var (
-		indexKeyBuffer  = t.db.getKeyBufferPool().Get()[:0]
-		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()[:0]
+		indexKeyBuffer  = t.db.getKeyBufferPool().Get()
+		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()
 	)
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
 	defer t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
 
 	// key buffers
-	keysBuffer := t.db.getKeyArray(minInt(len(trs), persistentBatchSize))
+	batchSize := min(len(trs), persistentBatchSize)
+	keysBuffer := t.db.getKeyArray(batchSize)
 	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := t.db.getValueBufferPool().Get()[:0]
+	value := t.db.getValueBufferPool().Get()
 	valueBuffer := bytes.NewBuffer(value)
 	defer t.db.getValueBufferPool().Put(value[:0])
 
@@ -682,7 +672,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	// reusable object
 	var oldTr T
 
-	err := batched[T](trs, persistentBatchSize, func(trs []T) error {
+	err := batched(trs, batchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
 
@@ -700,10 +690,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 		for i := 0; i < len(keys); {
 			tr := trs[keyOrder[i]]
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("context done: %w", ctx.Err())
-			default:
+
+			// Check every 100 iterations if context is done, with micro-optimization.
+			if i%100 == 0 {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context done: %w", ctx.Err())
+				default:
+				}
 			}
 
 			// update key
@@ -749,14 +743,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 			// update indexes
 			if isUpdate {
-				for _, idx := range indexes {
+				for _, idx := range t.secondaryIndexes {
 					err = idx.OnUpdate(t, oldTr, tr, batch, indexKeyBuffer[:0], indexKeyBuffer2[:0])
 					if err != nil {
 						return err
 					}
 				}
 			} else {
-				for _, idx := range indexes {
+				for _, idx := range t.secondaryIndexes {
 					err = idx.OnInsert(t, tr, batch, indexKeyBuffer[:0])
 					if err != nil {
 						return err
@@ -796,7 +790,7 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 		batch = nil
 	}
 
-	keyBuffer := t.db.getKeyBufferPool().Get()[:0]
+	keyBuffer := t.db.getKeyBufferPool().Get()
 	defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
 	key := t.key(tr, keyBuffer[:0])
@@ -816,10 +810,13 @@ func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
 }
 
 func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
+	// search the bloom filter first
 	if t.filter != nil && !t.filter.MayContain(context.Background(), key) {
 		return false
 	}
 
+	// create an iterator if not provided, which is a slow operation,
+	// we want to avoid this.
 	if iter == nil {
 		iter = t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
@@ -858,7 +855,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 	case SelectorTypePoint:
 		tr := sel.(SelectorPoint[T]).Point()
 
-		keyBuffer := t.db.getKeyBufferPool().Get()[:0]
+		keyBuffer := t.db.getKeyBufferPool().Get()
 		defer t.db.getKeyBufferPool().Put(keyBuffer[:0])
 
 		key := t.key(tr, keyBuffer[:0])
@@ -892,7 +889,7 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		defer t.db.putKeyArray(valueArray)
 
 		var trs []T
-		err := batched[T](selPoints, len(selPoints), func(selPoints []T) error {
+		err := batched(selPoints, len(selPoints), func(selPoints []T) error {
 			keys := t.keysExternal(selPoints, keyArray)
 
 			values, err := t.get(keys, batch, valueArray, false)
@@ -964,7 +961,7 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			}
 		}
 
-		if !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+		if len(keys[i]) <= _KeyPrefixSplitIndexOffset || !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
 			if errorOnNotExist {
 				return nil, ErrNotFound
 			} else {
@@ -1094,14 +1091,16 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		batch = optBatch[0]
 	}
 
-	keys := t.db.getBytesArrayPool().Get()[:0]
-	indexKeys := t.db.getBytesArrayPool().Get()[:0]
-	multiKeyBuffer := t.db.getMultiKeyBufferPool().Get()[:0]
+	keys := t.db.getBytesArrayPool().Get()
+	indexKeys := t.db.getBytesArrayPool().Get()
+	multiKeyBuffer := t.db.getMultiKeyBufferPool().Get()
 	valuesBuffer := t.db.getValueArray(t.scanPrefetchSize)
-	defer t.db.getBytesArrayPool().Put(keys[:0])
-	defer t.db.getBytesArrayPool().Put(indexKeys[:0])
-	defer t.db.getMultiKeyBufferPool().Put(multiKeyBuffer[:0])
-	defer t.db.putValueArray(valuesBuffer)
+	defer func() {
+		t.db.getBytesArrayPool().Put(keys[:0])
+		t.db.getBytesArrayPool().Put(indexKeys[:0])
+		t.db.getMultiKeyBufferPool().Put(multiKeyBuffer[:0])
+		t.db.putValueArray(valuesBuffer)
+	}()
 
 	var prefetchedValues [][]byte
 	var prefetchedValuesIndex int
@@ -1292,14 +1291,5 @@ func batched[T any](items []T, batchSize int, f func(batch []T) error) error {
 
 		batchNum++
 	}
-
 	return nil
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
 }

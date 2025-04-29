@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -23,11 +23,11 @@ type TestStructure struct {
 }
 
 func TestIndexOrder_Single_Int64_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt64(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt64(-1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt64(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt64(-10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt64(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(-1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(-10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -53,11 +53,11 @@ func TestIndexOrder_Single_Int64_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Int32_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt32(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt32(-1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt32(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt32(-10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt32(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(-1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(-10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -83,11 +83,11 @@ func TestIndexOrder_Single_Int32_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Int16_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt16(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt16(-1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt16(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt16(-10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt16(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(-1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(-10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -113,11 +113,11 @@ func TestIndexOrder_Single_Int16_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Int64_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt64(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt64(-1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt64(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt64(-10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt64(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(-1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(-10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt64(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -143,11 +143,11 @@ func TestIndexOrder_Single_Int64_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Int32_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt32(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt32(-1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt32(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt32(-10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt32(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(-1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(-10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt32(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -173,11 +173,11 @@ func TestIndexOrder_Single_Int32_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Int16_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderInt16(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderInt16(-1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderInt16(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderInt16(-10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderInt16(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(-1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(-10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderInt16(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -203,11 +203,11 @@ func TestIndexOrder_Single_Int16_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint64_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint64(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint64(1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint64(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint64(10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint64(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -233,11 +233,11 @@ func TestIndexOrder_Single_Uint64_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint32_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint32(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint32(1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint32(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint32(10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint32(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -263,11 +263,11 @@ func TestIndexOrder_Single_Uint32_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint16_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint16(5, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint16(1, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint16(7, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint16(10, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint16(2, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(5, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(1, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(7, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(10, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(2, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -293,11 +293,11 @@ func TestIndexOrder_Single_Uint16_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint64_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint64(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint64(1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint64(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint64(10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint64(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint64(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -323,11 +323,11 @@ func TestIndexOrder_Single_Uint64_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint32_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint32(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint32(1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint32(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint32(10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint32(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint32(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -353,11 +353,11 @@ func TestIndexOrder_Single_Uint32_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_Uint16_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderUint16(5, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderUint16(1, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderUint16(7, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderUint16(10, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderUint16(2, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(5, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(1, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(7, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(10, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderUint16(2, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -383,11 +383,11 @@ func TestIndexOrder_Single_Uint16_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_BigInt256_ASC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderBigInt(big.NewInt(5), 256, IndexOrderTypeASC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderBigInt(big.NewInt(-1), 256, IndexOrderTypeASC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderBigInt(big.NewInt(7), 256, IndexOrderTypeASC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderBigInt(big.NewInt(-10), 256, IndexOrderTypeASC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderBigInt(big.NewInt(2), 256, IndexOrderTypeASC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(5), 256, IndexOrderTypeASC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(-1), 256, IndexOrderTypeASC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(7), 256, IndexOrderTypeASC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(-10), 256, IndexOrderTypeASC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(2), 256, IndexOrderTypeASC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -413,11 +413,11 @@ func TestIndexOrder_Single_BigInt256_ASC(t *testing.T) {
 }
 
 func TestIndexOrder_Single_BigInt256_DESC(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.OrderBigInt(big.NewInt(5), 256, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.OrderBigInt(big.NewInt(-1), 256, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.OrderBigInt(big.NewInt(7), 256, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.OrderBigInt(big.NewInt(-10), 256, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.OrderBigInt(big.NewInt(2), 256, IndexOrderTypeDESC).Bytes()
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(5), 256, IndexOrderTypeDESC).Bytes()
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(-1), 256, IndexOrderTypeDESC).Bytes()
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(7), 256, IndexOrderTypeDESC).Bytes()
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(-10), 256, IndexOrderTypeDESC).Bytes()
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.OrderBigInt(big.NewInt(2), 256, IndexOrderTypeDESC).Bytes()
 
 	keyList := [][]byte{
 		indexOrderKey1,
@@ -443,19 +443,19 @@ func TestIndexOrder_Single_BigInt256_DESC(t *testing.T) {
 }
 
 func TestIndexOrder_Multi(t *testing.T) {
-	indexOrderKey1 := IndexOrder{}.
+	indexOrderKey1 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.
 		OrderUint64(2, IndexOrderTypeASC).
 		OrderUint64(50, IndexOrderTypeDESC).Bytes()
-	indexOrderKey2 := IndexOrder{}.
+	indexOrderKey2 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.
 		OrderUint64(1, IndexOrderTypeASC).
 		OrderUint64(100, IndexOrderTypeDESC).Bytes()
-	indexOrderKey3 := IndexOrder{}.
+	indexOrderKey3 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.
 		OrderUint64(2, IndexOrderTypeASC).
 		OrderUint64(100, IndexOrderTypeDESC).Bytes()
-	indexOrderKey4 := IndexOrder{}.
+	indexOrderKey4 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.
 		OrderUint64(2, IndexOrderTypeASC).
 		OrderUint64(90, IndexOrderTypeDESC).Bytes()
-	indexOrderKey5 := IndexOrder{}.
+	indexOrderKey5 := IndexOrder{KeyBuilder: NewKeyBuilder([]byte{})}.
 		OrderUint64(1, IndexOrderTypeASC).
 		OrderUint64(100000000, IndexOrderTypeDESC).Bytes()
 
@@ -537,7 +537,7 @@ func TestIndex_IndexKeyFunction(t *testing.T) {
 
 func TestIndex_Iter(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -906,7 +906,7 @@ func TestIndex_Iter(t *testing.T) {
 
 func TestIndex_Callbacks(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1167,7 +1167,7 @@ func TestBond_NewIndex_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Insert(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1293,7 +1293,7 @@ func TestBond_Table_Index_Insert(t *testing.T) {
 
 func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1422,7 +1422,7 @@ func TestBond_Table_Index_Insert_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Update(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1561,7 +1561,7 @@ func TestBond_Table_Index_Update(t *testing.T) {
 
 func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1704,7 +1704,7 @@ func TestBond_Table_Index_Update_Ordered(t *testing.T) {
 
 func TestBond_Table_Index_Delete(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1826,7 +1826,7 @@ func TestBond_Table_Index_Delete(t *testing.T) {
 
 func TestBond_Table_Reindex(t *testing.T) {
 	db := setupDatabase()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	const (
 		TokenBalanceTableID = TableID(1)
@@ -1909,7 +1909,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex}, true)
+	err = tokenBalanceTable.ReIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex})
 	require.NoError(t, err)
 
 	it, err := db.Backend().NewIter(&pebble.IterOptions{
@@ -1945,7 +1945,7 @@ func TestBond_Table_Reindex(t *testing.T) {
 		},
 	})
 
-	err = tokenBalanceTable.AddIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex, TokenBalanceAccountAddressIndex}, true)
+	err = tokenBalanceTable.ReIndex([]*Index[*TokenBalance]{TokenBalanceAccountAndContractAddressIndex, TokenBalanceAccountAddressIndex})
 	require.NoError(t, err)
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{

@@ -1,9 +1,13 @@
 package serializers
 
-import "fmt"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/proto"
+)
 
 // ProtobufSerializer with support for vtproto (code-gen'd) protobuf,
-// and standard protobuf (github.com/golang/protobuf/proto).
+// and standard protobuf (google.golang.org/protobuf/proto).
 //
 // To use standard protobuf, set the Encoder and Decoder to
 // proto.Marshal and proto.Unmarshal respectively. You can
@@ -11,6 +15,7 @@ import "fmt"
 type ProtobufSerializer struct {
 	Encoder ProtobufMarshaler
 	Decoder ProtobufUnmarshaler
+	SkipVT  bool
 }
 
 type ProtobufVTMmarshaler interface {
@@ -22,29 +27,25 @@ type ProtobufVTUnmarshaler interface {
 }
 
 type ProtobufMarshaler interface {
-	Marshal(m ProtobufMessageV1) ([]byte, error)
+	Marshal(m proto.Message) ([]byte, error)
 }
 
 type ProtobufUnmarshaler interface {
-	Unmarshal(b []byte, m ProtobufMessageV1) error
-}
-
-type ProtobufMessageV1 interface {
-	Reset()
-	String() string
-	ProtoMessage()
+	Unmarshal(b []byte, m proto.Message) error
 }
 
 func (s *ProtobufSerializer) Serialize(i interface{}) ([]byte, error) {
 	// check if protobuf type uses vtproto, which is code-generated
 	// marshaler which is faster than the default protobuf marshaler.
-	if v, ok := i.(ProtobufVTMmarshaler); ok {
-		return v.MarshalVT()
+	if !s.SkipVT {
+		if v, ok := i.(ProtobufVTMmarshaler); ok {
+			return v.MarshalVT()
+		}
 	}
 
-	// check if default marshaller is set, via github.com/golang/protobuf/proto
+	// check if default marshaller is set, via google.golang.org/protobuf/proto
 	if s.Encoder != nil {
-		if v, ok := i.(ProtobufMessageV1); ok {
+		if v, ok := i.(proto.Message); ok {
 			return s.Encoder.Marshal(v)
 		}
 	}
@@ -55,13 +56,15 @@ func (s *ProtobufSerializer) Serialize(i interface{}) ([]byte, error) {
 func (s *ProtobufSerializer) Deserialize(b []byte, i interface{}) error {
 	// check if protobuf type uses vtproto, which is code-generated
 	// unmarshaler which is faster than the default protobuf unmarshaler.
-	if v, ok := i.(ProtobufVTUnmarshaler); ok {
-		return v.UnmarshalVT(b)
+	if !s.SkipVT {
+		if v, ok := i.(ProtobufVTUnmarshaler); ok {
+			return v.UnmarshalVT(b)
+		}
 	}
 
-	// check if default unmarshaller is set, via github.com/golang/protobuf/proto
+	// check if default unmarshaller is set, via google.golang.org/protobuf/proto
 	if s.Decoder != nil {
-		if v, ok := i.(ProtobufMessageV1); ok {
+		if v, ok := i.(proto.Message); ok {
 			return s.Decoder.Unmarshal(b, v)
 		}
 	}

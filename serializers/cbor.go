@@ -26,16 +26,16 @@ func (c *CBORSerializer) Deserialize(b []byte, i interface{}) error {
 }
 
 func (c *CBORSerializer) SerializeFuncWithBuffer(buff *bytes.Buffer) func(T any) ([]byte, error) {
-	var encoder *cbor.Encoder
+	var userEncMode cbor.UserBufferEncMode
 	if c.EncMode != nil {
-		encoder = c.EncMode.NewEncoder(buff)
+		userEncMode, _ = c.EncMode.EncOptions().UserBufferEncMode()
 	} else {
-		encoder = cbor.NewEncoder(buff)
+		userEncMode, _ = cbor.EncOptions{}.UserBufferEncMode()
 	}
 
 	return func(v any) ([]byte, error) {
 		buff.Reset()
-		if err := encoder.Encode(v); err != nil {
+		if err := userEncMode.MarshalToBuffer(v, buff); err != nil {
 			return nil, err
 		}
 		return buff.Bytes(), nil

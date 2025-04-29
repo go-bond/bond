@@ -7,66 +7,82 @@ type SyncPool[T any] interface {
 	Put(T)
 }
 
-type SyncPoolWrapper[T any] struct {
+func NewSyncPool[T any](newFunc func() any) SyncPool[T] {
+	return &syncPool[T]{
+		Pool: sync.Pool{
+			New: newFunc,
+		},
+	}
+}
+
+type syncPool[T any] struct {
 	sync.Pool
 }
 
-func (s *SyncPoolWrapper[T]) Get() T {
+func (s *syncPool[T]) Get() T {
 	return s.Pool.Get().(T)
 }
 
-func (s *SyncPoolWrapper[T]) Put(t T) {
+func (s *syncPool[T]) Put(t T) {
 	s.Pool.Put(t)
 }
 
-type PreAllocatedPool[T any] struct {
-	*SyncPoolWrapper[T]
-
+type preAllocatedSyncPool[T any] struct {
+	*syncPool[T]
 	preAllocItems     []T
 	preAllocItemsSize int
-
-	mu sync.Mutex
+	mu                sync.Mutex
 }
 
-func NewPreAllocatedPool[T any](newFunc func() any, size int) *PreAllocatedPool[T] {
-	syncPool := &SyncPoolWrapper[T]{
+func NewPreAllocatedSyncPool[T any](newFunc func() any, size int) SyncPool[T] {
+	syncPool := &syncPool[T]{
 		Pool: sync.Pool{
 			New: newFunc,
 		},
 	}
 
+	// allocate pre-allocated items and put them into the pool
 	preAllocItems := make([]T, 0, size)
 	for i := 0; i < size; i++ {
 		preAllocItems = append(preAllocItems, syncPool.Get())
 	}
+	for _, item := range preAllocItems {
+		syncPool.Put(item)
+	}
 
-	return &PreAllocatedPool[T]{
-		SyncPoolWrapper:   syncPool,
+	return &preAllocatedSyncPool[T]{
+		syncPool:          syncPool,
 		preAllocItems:     preAllocItems,
 		preAllocItemsSize: size,
 	}
 }
 
-func (s *PreAllocatedPool[T]) Get() T {
+func (s *preAllocatedSyncPool[T]) Get() T {
+	// Fast path: try to get from pre-allocated items with minimal locking
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if itemsLen := len(s.preAllocItems); itemsLen > 0 {
+	itemsLen := len(s.preAllocItems)
+	if itemsLen > 0 {
 		item := s.preAllocItems[itemsLen-1]
 		s.preAllocItems = s.preAllocItems[:itemsLen-1]
+		s.mu.Unlock()
 		return item
-	} else {
-		return s.Pool.Get().(T)
 	}
+	s.mu.Unlock()
+
+	// Slow path: get from the underlying pool
+	return s.Pool.Get().(T)
 }
 
-func (s *PreAllocatedPool[T]) Put(t T) {
+func (s *preAllocatedSyncPool[T]) Put(t T) {
+	// Fast path: try to put into pre-allocated items with minimal locking
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if len(s.preAllocItems) < s.preAllocItemsSize {
 		s.preAllocItems = append(s.preAllocItems, t)
-	} else {
-		s.Pool.Put(t)
+		s.mu.Unlock()
+		return
 	}
+	s.mu.Unlock()
+
+	// Slow path: put into the underlying pool
+	s.Pool.Put(t)
 }

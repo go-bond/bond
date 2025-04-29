@@ -1,146 +1,164 @@
 package bond
 
 import (
-	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 )
 
-type KeyBuilder struct {
+func NewKeyBuilder(buff []byte) KeyBuilder {
+	return &keyBuilder{buff: buff}
+}
+
+type KeyBuilder interface {
+	Reset() KeyBuilder
+	AddInt64Field(i int64) KeyBuilder
+	AddInt32Field(i int32) KeyBuilder
+	AddInt16Field(i int16) KeyBuilder
+	AddUint64Field(i uint64) KeyBuilder
+	AddUint32Field(i uint32) KeyBuilder
+	AddUint16Field(i uint16) KeyBuilder
+	AddByteField(btt byte) KeyBuilder
+	AddStringField(s string) KeyBuilder
+	AddBytesField(bs []byte) KeyBuilder
+	AddBigIntField(bi *big.Int, bits int) KeyBuilder
+	Bytes() []byte
+}
+
+type keyBuilder struct {
 	buff []byte
 	fid  byte
 }
 
-func NewKeyBuilder(buff []byte) KeyBuilder {
-	return KeyBuilder{buff: buff}
+const (
+	signNegative byte = 0x00
+	signZero     byte = 0x01
+	signPositive byte = 0x02
+)
+
+func (b *keyBuilder) Reset() KeyBuilder {
+	b.buff = b.buff[:0] // Keep allocated memory, reset length
+	b.fid = 0
+	return b
 }
 
-func (b KeyBuilder) AddInt64Field(i int64) KeyBuilder {
-	bt := b.putFieldID()
-
+func (b *keyBuilder) AddInt64Field(i int64) KeyBuilder {
+	b.putFieldID()
+	var sign byte
+	u := uint64(i)
 	if i > 0 {
-		bt.buff = append(bt.buff, 0x02)
+		sign = signPositive
 	} else if i == 0 {
-		bt.buff = append(bt.buff, 0x01)
+		sign = signZero
 	} else {
-		bt.buff = append(bt.buff, 0x00)
-		i = ^-i
+		sign = signNegative
+		u = uint64(^-i)
 	}
-
-	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
-	binary.BigEndian.PutUint64(bt.buff[len(bt.buff)-8:], uint64(i))
-	return bt
+	b.buff = append(b.buff, sign)
+	b.buff = binary.BigEndian.AppendUint64(b.buff, u)
+	return b
 }
 
-func (b KeyBuilder) AddInt32Field(i int32) KeyBuilder {
-	bt := b.putFieldID()
-
+func (b *keyBuilder) AddInt32Field(i int32) KeyBuilder {
+	b.putFieldID()
+	var sign byte
+	u := uint32(i)
 	if i > 0 {
-		bt.buff = append(bt.buff, 0x02)
+		sign = signPositive
 	} else if i == 0 {
-		bt.buff = append(bt.buff, 0x01)
+		sign = signZero
 	} else {
-		bt.buff = append(bt.buff, 0x00)
-		i = ^-i
+		sign = signNegative
+		u = uint32(^-i)
 	}
-
-	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
-	binary.BigEndian.PutUint32(bt.buff[len(bt.buff)-4:], uint32(i))
-	return bt
+	b.buff = append(b.buff, sign)
+	b.buff = binary.BigEndian.AppendUint32(b.buff, u)
+	return b
 }
 
-func (b KeyBuilder) AddInt16Field(i int16) KeyBuilder {
-	bt := b.putFieldID()
-
+func (b *keyBuilder) AddInt16Field(i int16) KeyBuilder {
+	b.putFieldID()
+	var sign byte
+	u := uint16(i)
 	if i > 0 {
-		bt.buff = append(bt.buff, 0x02)
+		sign = signPositive
 	} else if i == 0 {
-		bt.buff = append(bt.buff, 0x01)
+		sign = signZero
 	} else {
-		bt.buff = append(bt.buff, 0x00)
-		i = ^-i
+		sign = signNegative
+		u = uint16(^-i)
 	}
-
-	bt.buff = append(bt.buff, []byte{0, 0}...)
-	binary.BigEndian.PutUint16(bt.buff[len(bt.buff)-2:], uint16(i))
-	return bt
+	b.buff = append(b.buff, sign)
+	b.buff = binary.BigEndian.AppendUint16(b.buff, u)
+	return b
 }
 
-func (b KeyBuilder) AddUint64Field(i uint64) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, []byte{0, 0, 0, 0, 0, 0, 0, 0}...)
-	binary.BigEndian.PutUint64(bt.buff[len(bt.buff)-8:], i)
-	return bt
+func (b *keyBuilder) AddUint64Field(i uint64) KeyBuilder {
+	b.putFieldID()
+	b.buff = binary.BigEndian.AppendUint64(b.buff, i)
+	return b
 }
 
-func (b KeyBuilder) AddUint32Field(i uint32) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, []byte{0, 0, 0, 0}...)
-	binary.BigEndian.PutUint32(bt.buff[len(bt.buff)-4:], i)
-	return bt
+func (b *keyBuilder) AddUint32Field(i uint32) KeyBuilder {
+	b.putFieldID()
+	b.buff = binary.BigEndian.AppendUint32(b.buff, i)
+	return b
 }
 
-func (b KeyBuilder) AddUint16Field(i uint16) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, []byte{0, 0}...)
-	binary.BigEndian.PutUint16(bt.buff[len(bt.buff)-2:], i)
-	return bt
+func (b *keyBuilder) AddUint16Field(i uint16) KeyBuilder {
+	b.putFieldID()
+	b.buff = binary.BigEndian.AppendUint16(b.buff, i)
+	return b
 }
 
-func (b KeyBuilder) AddByteField(btt byte) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, btt)
-	return bt
+func (b *keyBuilder) AddByteField(btt byte) KeyBuilder {
+	b.putFieldID()
+	b.buff = append(b.buff, btt)
+	return b
 }
 
-func (b KeyBuilder) AddStringField(s string) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, []byte(s)...)
-	return bt
+func (b *keyBuilder) AddStringField(s string) KeyBuilder {
+	b.putFieldID()
+	b.buff = append(b.buff, s...)
+	return b
 }
 
-func (b KeyBuilder) AddBytesField(bs []byte) KeyBuilder {
-	bt := b.putFieldID()
-	bt.buff = append(bt.buff, bs...)
-	return bt
+func (b *keyBuilder) AddBytesField(bs []byte) KeyBuilder {
+	b.putFieldID()
+	b.buff = append(b.buff, bs...)
+	return b
 }
 
-func (b KeyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
-	bt := b.putFieldID()
+func (b *keyBuilder) AddBigIntField(bi *big.Int, bits int) KeyBuilder {
+	b.putFieldID()
+	sign := bi.Sign() + 1 // -1,0,1  -> 0,1,2
+	b.buff = append(b.buff, byte(sign))
 
-	sign := bi.Sign() + 1
-	bt.buff = append(bt.buff, byte(sign)) // 0 - negative, 1 - zero, 2 - positive
-
-	if sign == 0 {
-		bi = big.NewInt(0).Sub(big.NewInt(0), bi)
+	if sign == 0 { // negative
+		tmp := big.NewInt(0).Neg(bi) // no new allocation after Go1.22
+		bi = tmp
 	}
+	bytesLen := bits >> 3 // /8
+	pos := len(b.buff)
+	b.buff = append(b.buff, make([]byte, bytesLen)...)
+	bi.FillBytes(b.buff[pos:])
 
-	bytesLen := bits / 8
-	for i := 0; i < bytesLen; i++ {
-		bt.buff = append(bt.buff, 0x00)
-	}
-	bi.FillBytes(bt.buff[len(bt.buff)-bytesLen:])
-
-	if sign == 0 {
-		index := len(bt.buff)
+	if sign == 0 { // two’s-complement flip
 		for i := 0; i < bytesLen; i++ {
-			bt.buff[index-i-1] = 0xFF - bt.buff[index-i-1]
+			b.buff[pos+i] = ^b.buff[pos+i]
 		}
 	}
-
-	return bt
+	return b
 }
 
-func (b KeyBuilder) putFieldID() KeyBuilder {
-	return KeyBuilder{
-		buff: append(b.buff, b.fid+1),
-		fid:  b.fid + 1,
-	}
+func (b *keyBuilder) putFieldID() {
+	b.buff = append(b.buff, b.fid+1)
+	b.fid++
 }
 
-func (b KeyBuilder) Bytes() []byte {
+func (b *keyBuilder) Bytes() []byte {
 	return b.buff
 }
 
@@ -195,29 +213,30 @@ func (k Key) IsKeyPrefix() bool {
 }
 
 func KeyEncode(key Key, rawBuffs ...[]byte) []byte {
-	var rawBuff []byte
+	var b []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
-		rawBuff = rawBuffs[0]
+		b = rawBuffs[0][:0] // re-use caller’s storage
+	}
+	// upper-bound size ↓ (2 tag bytes + 4 len words + data)
+	need := 2 + 4 + len(key.Index)
+	if !key.IsKeyPrefix() {
+		need += 4 + len(key.IndexOrder) + len(key.PrimaryKey)
+	}
+	if cap(b) < need {
+		b = make([]byte, 0, need) // one exact allocation
 	}
 
-	buff := bytes.NewBuffer(rawBuff)
-	buff.Write([]byte{byte(key.TableID)})
-	buff.Write([]byte{byte(key.IndexID)})
-
-	var indexLenBuff [4]byte
-	binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.Index)))
-	buff.Write(indexLenBuff[:4])
-	buff.Write(key.Index)
+	b = append(b, byte(key.TableID), byte(key.IndexID))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(key.Index)))
+	b = append(b, key.Index...)
 
 	if !key.IsKeyPrefix() {
-		binary.BigEndian.PutUint32(indexLenBuff[:4], uint32(len(key.IndexOrder)))
-		buff.Write(indexLenBuff[:4])
-		buff.Write(key.IndexOrder)
-
-		buff.Write(key.PrimaryKey)
+		b = binary.BigEndian.AppendUint32(b, uint32(len(key.IndexOrder)))
+		b = append(b, key.IndexOrder...)
+		b = append(b, key.PrimaryKey...)
 	}
 
-	return buff.Bytes()
+	return b
 }
 
 func KeyEncodeRaw(tableID TableID, indexID IndexID, indexFunc, indexOrderFunc, primaryKeyFunc func(buff []byte) []byte, buffs ...[]byte) []byte {
@@ -254,61 +273,60 @@ func KeyEncodeRaw(tableID TableID, indexID IndexID, indexFunc, indexOrderFunc, p
 	return buff
 }
 
-func KeyDecode(keyBytes []byte) Key {
-	buff := bytes.NewBuffer(keyBytes)
+func KeyDecode(keyBytes []byte) (Key, error) {
+	if len(keyBytes) < 6 {
+		return Key{}, fmt.Errorf("malformed key")
+	}
+	tableID, indexID := TableID(keyBytes[0]), IndexID(keyBytes[1])
 
-	tableID, _ := buff.ReadByte()
-	indexID, _ := buff.ReadByte()
+	idxLen := int(binary.BigEndian.Uint32(keyBytes[2:6]))
+	off := 6 + idxLen
+	if len(keyBytes) < off {
+		return Key{}, fmt.Errorf("malformed key")
+	}
+	index := keyBytes[6:off] // zero-copy reference
 
-	indexLenBuff := make([]byte, 4)
-	_, _ = buff.Read(indexLenBuff)
-	indexLen := binary.BigEndian.Uint32(indexLenBuff)
+	if len(keyBytes) == off { // prefix key stops here
+		return Key{TableID: tableID, IndexID: indexID, Index: index}, nil
+	}
 
-	index := make([]byte, indexLen)
-	_, _ = buff.Read(index)
-
-	indexOrderLenBuff := make([]byte, 4)
-	_, _ = buff.Read(indexOrderLenBuff)
-	indexOrderLen := binary.BigEndian.Uint32(indexOrderLenBuff)
-
-	indexOrder := make([]byte, indexOrderLen)
-	_, _ = buff.Read(indexOrder)
-
-	primaryKeyLen := len(keyBytes) - int(indexLen) - int(indexOrderLen) - 10
-	primaryKey := make([]byte, primaryKeyLen)
-	_, _ = buff.Read(primaryKey)
+	idxOrdLen := int(binary.BigEndian.Uint32(keyBytes[off : off+4]))
+	off += 4
+	if len(keyBytes) < off+idxOrdLen {
+		return Key{}, fmt.Errorf("malformed key")
+	}
+	indexOrd := keyBytes[off : off+idxOrdLen]
+	primary := keyBytes[off+idxOrdLen:]
 
 	return Key{
-		TableID:    TableID(tableID),
-		IndexID:    IndexID(indexID),
+		TableID:    tableID,
+		IndexID:    indexID,
 		Index:      index,
-		IndexOrder: indexOrder,
-		PrimaryKey: primaryKey,
-	}
+		IndexOrder: indexOrd,
+		PrimaryKey: primary,
+	}, nil
 }
 
 type KeyBytes []byte
 
 func (key KeyBytes) ToDataKeyBytes(rawBuffs ...[]byte) KeyBytes {
-	var rawBuff []byte
+	var b []byte
 	if len(rawBuffs) > 0 && rawBuffs[0] != nil {
-		rawBuff = rawBuffs[0]
+		b = rawBuffs[0][:0]
 	}
 
-	buff := bytes.NewBuffer(rawBuff)
+	idxLen := int(binary.BigEndian.Uint32(key[2:6]))
+	ordLen := int(binary.BigEndian.Uint32(key[6+idxLen : 10+idxLen]))
+	need := 2 + 4 + 4 + (len(key) - (10 + idxLen + ordLen))
+	if cap(b) < need {
+		b = make([]byte, 0, need)
+	}
 
-	buff.WriteByte(key[0])
-	buff.WriteByte(0)
-
-	buff.Write([]byte{0, 0, 0, 0})
-	buff.Write([]byte{0, 0, 0, 0})
-
-	indexLen := int(binary.BigEndian.Uint32(key[2:6]))
-	indexOrderLen := int(binary.BigEndian.Uint32(key[6+indexLen : 10+indexLen]))
-
-	buff.Write(key[10+indexLen+indexOrderLen:])
-
-	return buff.Bytes()
+	b = append(b, key[0], 0)                 // TableID + PrimaryIndexID
+	b = binary.BigEndian.AppendUint32(b, 0)  // empty Index
+	b = binary.BigEndian.AppendUint32(b, 0)  // empty IndexOrder
+	b = append(b, key[10+idxLen+ordLen:]...) // copy PK only
+	return b
 }
 
 func (key KeyBytes) TableID() TableID {
@@ -333,7 +351,11 @@ func (key KeyBytes) IsIndexKey() bool {
 }
 
 func (key KeyBytes) ToKey() Key {
-	return KeyDecode(key)
+	k, err := KeyDecode(key)
+	if err != nil {
+		panic(err) // unexpected
+	}
+	return k
 }
 
 func DefaultKeyComparer() *pebble.Comparer {
@@ -342,6 +364,12 @@ func DefaultKeyComparer() *pebble.Comparer {
 	return &comparer
 }
 
+// _KeyPrefixSplitIndex defines the prefix as TableID (1 byte) + IndexID (1 byte) + IndexLen (4 bytes) + Index (variable)
+const _KeyPrefixSplitIndexOffset = 6
+
 func _KeyPrefixSplitIndex(rawKey []byte) int {
-	return 6 + int(binary.BigEndian.Uint32(rawKey[2:6]))
+	if len(rawKey) < _KeyPrefixSplitIndexOffset {
+		return len(rawKey)
+	}
+	return _KeyPrefixSplitIndexOffset + int(binary.BigEndian.Uint32(rawKey[2:6]))
 }

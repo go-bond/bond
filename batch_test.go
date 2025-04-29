@@ -10,7 +10,7 @@ import (
 
 func Test_Batch_Callbacks(t *testing.T) {
 	db, t1, _, _, _ := setupDatabaseForQuery()
-	defer tearDownDatabase(db)
+	defer tearDownDatabase(t, db)
 
 	counter := 0
 

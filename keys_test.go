@@ -187,7 +187,7 @@ func TestKey_Encode_Decode(t *testing.T) {
 			return append(buff, key.PrimaryKey...)
 		},
 	)
-	keyReconstructed := KeyDecode(keyRaw)
+	keyReconstructed, _ := KeyDecode(keyRaw)
 
 	assert.Equal(t, keyRaw, keyRawDirect)
 	assert.Equal(t, key, keyReconstructed)

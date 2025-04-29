@@ -1,7 +1,7 @@
 package bond
 
 import (
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 )
 
 type IterOptions struct {
@@ -73,11 +73,11 @@ type _iteratorMulti struct {
 	iteratorOptions      []*IterOptions
 	iteratorOptionsIndex int
 
-	iteratorConstuctor Iterationer
+	iteratorConstuctor Iterable
 	iterator           Iterator
 }
 
-func newIteratorMulti(itc Iterationer, opts []*IterOptions) *_iteratorMulti {
+func newIteratorMulti(itc Iterable, opts []*IterOptions) *_iteratorMulti {
 	return &_iteratorMulti{
 		iteratorOptions:      opts,
 		iteratorOptionsIndex: 0,
@@ -191,8 +191,7 @@ func (it *_iteratorMulti) Close() error {
 }
 
 func childIteratorOptions(opt *IterOptions) *IterOptions {
-	var subOpts IterOptions
-	subOpts = *opt
+	subOpts := *opt
 	subOpts.releaseBufferOnClose = nil
 	return &subOpts
 }

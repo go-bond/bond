@@ -14,3 +14,5 @@ bond-cli
 
 .ipynb_checkpoints
 *.ipynb
+
+_benchmarks/bench_db

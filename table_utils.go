@@ -43,7 +43,7 @@ func TableAnyScanner[T any](scanner TableScanner[T]) TableScanner[any] {
 		scanIndex: func(ctx context.Context, i *Index[any], s Selector[any], tr *[]any, reverse bool, optBatch ...Batch) error {
 			var ttr []T
 
-			iAny := NewIndex[T](IndexOptions[T]{
+			iAny := NewIndex(IndexOptions[T]{
 				IndexID:   i.IndexID,
 				IndexName: i.IndexName,
 				IndexKeyFunc: func(keyBuilder KeyBuilder, t T) []byte {
@@ -84,7 +84,7 @@ func TableAnyScanner[T any](scanner TableScanner[T]) TableScanner[any] {
 			}, reverse)
 		},
 		scanIndexForEach: func(ctx context.Context, i *Index[any], s Selector[any], f func(keyBytes KeyBytes, t Lazy[any]) (bool, error), reverse bool, optBatch ...Batch) error {
-			iAny := NewIndex[T](IndexOptions[T]{
+			iAny := NewIndex(IndexOptions[T]{
 				IndexID:   i.IndexID,
 				IndexName: i.IndexName,
 				IndexKeyFunc: func(keyBuilder KeyBuilder, t T) []byte {

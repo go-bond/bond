@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,28 +22,36 @@ func setupDB(name string, serializer ...Serializer[any]) DB {
 		options.Serializer = serializer[0]
 	}
 
-	db, err := Open(name, options)
+	db, err := Open(name, options, MediumPerformance)
 	if err != nil {
 		panic(err)
 	}
 	return db
 }
 
-func tearDownDatabase(db DB) {
-	tearDownDB(dbName, db)
+func tearDownDatabase(t *testing.T, db DB) {
+	if t != nil {
+		t.Helper()
+	}
+	tearDownDB(t, dbName, db)
 }
 
-func tearDownDB(name string, db DB) {
-	// NOTE: we intentionally panic on Close here, as it will catch any
-	// leaking iterators which would otherwise be difficult to debug,
-	// and are relevant to ensure we close.
+func tearDownDB(t *testing.T, name string, db DB) {
+	if t != nil {
+		t.Helper()
+	}
+	defer func() {
+		if t != nil {
+			t.Helper()
+		}
+		err := os.RemoveAll(name)
+		if err != nil {
+			t.Fatalf("failed to remove db: %v", err)
+		}
+	}()
 	err := db.Close()
 	if err != nil {
-		panic(err)
-	}
-	err = os.RemoveAll(name)
-	if err != nil {
-		panic(err)
+		t.Fatalf("failed to close db: %v", err)
 	}
 }
 
