@@ -1900,4 +1900,107 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 			assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
 		}
 	})
+
+	// test update and query
+	t.Run("Update And Query", func(t *testing.T) {
+		fmt.Println("....---.... Update And Query")
+		{
+
+			tokenHistory1.Amounts = []uint64{1000}
+
+			err = tokenHistoryTable.Update(context.Background(), []*TokenHistory{tokenHistory1})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 2, len(tokenHistories))
+
+			assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory1.BlockNumber)
+			assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory1.TxnIndex)
+			assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory1.TxnLogIndex)
+			assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory1.TxnHash)
+			assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory1.FromAddress)
+			assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory1.ToAddress)
+			assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory1.ContractAddress)
+			assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory1.TokenIDs)
+			assert.Equal(t, tokenHistories[0].Amounts, tokenHistory1.Amounts)
+
+			assert.Equal(t, tokenHistories[1].BlockNumber, tokenHistory3.BlockNumber)
+			assert.Equal(t, tokenHistories[1].TxnIndex, tokenHistory3.TxnIndex)
+			assert.Equal(t, tokenHistories[1].TxnLogIndex, tokenHistory3.TxnLogIndex)
+			assert.Equal(t, tokenHistories[1].TxnHash, tokenHistory3.TxnHash)
+			assert.Equal(t, tokenHistories[1].FromAddress, tokenHistory3.FromAddress)
+			assert.Equal(t, tokenHistories[1].ToAddress, tokenHistory3.ToAddress)
+			assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory3.ContractAddress)
+			assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory3.TokenIDs)
+			assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
+		}
+
+		fmt.Println("....---.... Update Change Address And Query")
+		{
+			tokenHistory1.FromAddress = "0xfff3"
+
+			err = tokenHistoryTable.Update(context.Background(), []*TokenHistory{tokenHistory1})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc1", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(tokenHistories))
+
+			assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory3.BlockNumber)
+			assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory3.TxnIndex)
+			assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory3.TxnLogIndex)
+			assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory3.TxnHash)
+			assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory3.FromAddress)
+			assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory3.ToAddress)
+			assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory3.ContractAddress)
+			assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory3.TokenIDs)
+			assert.Equal(t, tokenHistories[0].Amounts, tokenHistory3.Amounts)
+		}
+	})
+
+	t.Run("Delete And Query", func(t *testing.T) {
+		fmt.Println("....---.... Delete And Query")
+		{
+			err = tokenHistoryTable.Delete(context.Background(), []*TokenHistory{tokenHistory2})
+			require.NoError(t, err)
+
+			// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+			// of DESC for block number.
+			selector := NewSelectorRange(
+				&TokenHistory{QueryFromOrToAddress: "0xabc2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+				&TokenHistory{QueryFromOrToAddress: "0xabc2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+			)
+
+			query := tokenHistoryTable.Query().
+				With(TokenHistoryByAccountIndex, selector)
+
+			var tokenHistories []*TokenHistory
+			err = query.Execute(context.Background(), &tokenHistories)
+			require.NoError(t, err)
+			require.Equal(t, 0, len(tokenHistories))
+		}
+	})
 }

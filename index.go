@@ -295,6 +295,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		return errIterator{err: fmt.Errorf("unknown selector type: %v", selector.Type())}
 	}
 }
+
 func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte) error {
 	var buff []byte
 	if len(buffs) > 0 {
@@ -304,7 +305,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	if idx.IndexMultiKeyFunction != nil {
 		multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
 		for _, part := range multiKey {
-			err := batch.Set(encodeMultiIndexKeyPart(table, tr, idx, part, buff), _indexKeyValue, Sync)
+			err := batch.Set(encodeMultiIndexKeyPart(table, tr, idx, part, nil), _indexKeyValue, Sync)
 			if err != nil {
 				return err
 			}
@@ -332,35 +333,68 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		buff = buffs[0]
 	}
 
-	var deleteKey, setKey []byte
-	if idx.IndexFilterFunction(oldTr) {
-		deleteKey = encodeIndexKey(table, oldTr, idx, buff)
-	}
-	if idx.IndexFilterFunction(tr) {
-		setKey = encodeIndexKey(table, tr, idx, buff2)
+	var deleteKeys, setKeys [][]byte
+	if idx.IndexMultiKeyFunction != nil {
+		if idx.IndexFilterFunction(oldTr) {
+			multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), oldTr)
+			for _, part := range multiKey {
+				deleteKeys = append(deleteKeys, encodeMultiIndexKeyPart(table, oldTr, idx, part, nil))
+			}
+		}
+		if idx.IndexFilterFunction(tr) {
+			multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
+			for _, part := range multiKey {
+				setKeys = append(setKeys, encodeMultiIndexKeyPart(table, tr, idx, part, nil))
+			}
+		}
+
+		for i := len(setKeys); i < len(deleteKeys); i++ {
+			deleteKeys = append(deleteKeys, nil)
+		}
+
+		for i := len(deleteKeys); i < len(setKeys); i++ {
+			setKeys = append(setKeys, nil)
+		}
+
+	} else {
+		if idx.IndexFilterFunction(oldTr) {
+			deleteKeys = append(deleteKeys, encodeIndexKey(table, oldTr, idx, buff))
+		} else {
+			deleteKeys = append(deleteKeys, nil)
+		}
+		if idx.IndexFilterFunction(tr) {
+			setKeys = append(setKeys, encodeIndexKey(table, tr, idx, buff2))
+		} else {
+			setKeys = append(setKeys, nil)
+		}
 	}
 
-	if deleteKey != nil && setKey != nil {
-		if !bytes.Equal(deleteKey, setKey) {
+	for i := 0; i < len(deleteKeys); i++ {
+		deleteKey := deleteKeys[i]
+		setKey := setKeys[i]
+
+		if deleteKey != nil && setKey != nil {
+			if !bytes.Equal(deleteKey, setKey) {
+				err := batch.Delete(deleteKey, Sync)
+				if err != nil {
+					return err
+				}
+
+				err = batch.Set(setKey, _indexKeyValue, Sync)
+				if err != nil {
+					return err
+				}
+			}
+		} else if deleteKey != nil {
 			err := batch.Delete(deleteKey, Sync)
 			if err != nil {
 				return err
 			}
-
-			err = batch.Set(setKey, _indexKeyValue, Sync)
+		} else if setKey != nil {
+			err := batch.Set(setKey, _indexKeyValue, Sync)
 			if err != nil {
 				return err
 			}
-		}
-	} else if deleteKey != nil {
-		err := batch.Delete(deleteKey, Sync)
-		if err != nil {
-			return err
-		}
-	} else if setKey != nil {
-		err := batch.Set(setKey, _indexKeyValue, Sync)
-		if err != nil {
-			return err
 		}
 	}
 
@@ -375,9 +409,19 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 	}
 
 	if idx.IndexFilterFunction(tr) {
-		err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
-		if err != nil {
-			return err
+		if idx.IndexMultiKeyFunction != nil {
+			deleteKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
+			for _, part := range deleteKey {
+				err := batch.Delete(encodeMultiIndexKeyPart(table, tr, idx, part, nil), Sync)
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			err := batch.Delete(encodeIndexKey(table, tr, idx, buff), Sync)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
