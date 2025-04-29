@@ -305,7 +305,7 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 	if idx.IndexMultiKeyFunction != nil {
 		multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
 		for _, part := range multiKey {
-			err := batch.Set(encodeMultiIndexKeyPart(table, tr, idx, part, nil), _indexKeyValue, Sync)
+			err := batch.Set(encodeMultiIndexKeyPart(table, tr, idx, part, buff), _indexKeyValue, Sync)
 			if err != nil {
 				return err
 			}
@@ -410,7 +410,7 @@ func (idx *Index[T]) OnDelete(table Table[T], tr T, batch Batch, buffs ...[]byte
 		if idx.IndexMultiKeyFunction != nil {
 			deleteKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
 			for _, part := range deleteKey {
-				err := batch.Delete(encodeMultiIndexKeyPart(table, tr, idx, part, nil), Sync)
+				err := batch.Delete(encodeMultiIndexKeyPart(table, tr, idx, part, buff), Sync)
 				if err != nil {
 					return err
 				}
