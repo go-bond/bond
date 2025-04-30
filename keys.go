@@ -360,16 +360,28 @@ func (key KeyBytes) ToKey() Key {
 
 func DefaultKeyComparer() *pebble.Comparer {
 	comparer := *pebble.DefaultComparer
-	comparer.Split = _KeyPrefixSplitIndex
+	comparer.Split = _KeyPrefixSplitForBloomFilter
 	return &comparer
 }
 
 // _KeyPrefixSplitIndex defines the prefix as TableID (1 byte) + IndexID (1 byte) + IndexLen (4 bytes) + Index (variable)
 const _KeyPrefixSplitIndexOffset = 6
 
-func _KeyPrefixSplitIndex(rawKey []byte) int {
+func _KeyPrefixSplitForBloomFilter(rawKey []byte) int {
 	if len(rawKey) < _KeyPrefixSplitIndexOffset {
 		return len(rawKey)
 	}
+
+	if KeyBytes(rawKey).IndexID() != PrimaryIndexID {
+		return _KeyPrefixSplitIndexOffset + int(binary.BigEndian.Uint32(rawKey[2:6]))
+	}
+	return len(rawKey)
+}
+
+func _KeyPrefix(rawKey []byte) int {
+	if len(rawKey) < _KeyPrefixSplitIndexOffset {
+		return len(rawKey)
+	}
+
 	return _KeyPrefixSplitIndexOffset + int(binary.BigEndian.Uint32(rawKey[2:6]))
 }
