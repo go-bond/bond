@@ -218,7 +218,7 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	maxOpenFileLimit := getMaxOpenFileLimit(slog.Default())
 
 	opts := &pebble.Options{
-		CacheSize:                   8 << 30, // 8 GB
+		CacheSize:                   512 << 20, // 512 MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
 		L0CompactionThreshold:       2,
