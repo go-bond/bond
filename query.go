@@ -441,7 +441,7 @@ func (q Query[T]) selectorWithAfter() (Selector[T], error) {
 			if bytes.Compare(afterKey, pntKey) < 0 {
 				newPoints = append(newPoints, pnt)
 			} else if bytes.Compare(afterKey, pntKey) >= 0 &&
-				bytes.Compare(afterKey[:_KeyPrefixSplitIndex(afterKey)], pntKey[:_KeyPrefixSplitIndex(pntKey)]) == 0 {
+				bytes.Compare(afterKey[:_KeyPrefix(afterKey)], pntKey[:_KeyPrefix(pntKey)]) == 0 {
 				newPoints = append(newPoints, q.afterSelector)
 			}
 		}

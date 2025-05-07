@@ -211,7 +211,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 	case SelectorTypePoint:
 		sel := selector.(SelectorPoint[T])
 		lowerBound := encodeIndexKey(table, sel.Point(), idx, keyBufferPool.Get())
-		upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get())
+		upperBound := keySuccessor(lowerBound[0:_KeyPrefix(lowerBound)], keyBufferPool.Get())
 
 		releaseBuffers := func() {
 			keyBufferPool.Put(lowerBound[:0])
@@ -229,7 +229,7 @@ func (idx *Index[T]) Iter(table Table[T], selector Selector[T], optBatch ...Batc
 		var pebbleOpts []*IterOptions
 		for _, point := range sel.Points() {
 			lowerBound := encodeIndexKey(table, point, idx, keyBufferPool.Get())
-			upperBound := keySuccessor(lowerBound[0:_KeyPrefixSplitIndex(lowerBound)], keyBufferPool.Get())
+			upperBound := keySuccessor(lowerBound[0:_KeyPrefix(lowerBound)], keyBufferPool.Get())
 			if idx.IndexID == PrimaryIndexID {
 				upperBound = keySuccessor(lowerBound, upperBound[:0])
 			}

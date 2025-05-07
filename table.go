@@ -381,8 +381,9 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -401,7 +402,7 @@ func (t *_table[T]) Insert(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 			// check if exist efficiently (via bloom filter)
 			if t.keyDuplicate(i, keys) || t.exist(key, batch, iter) {
-				return fmt.Errorf("record: %x already exist", key[_KeyPrefixSplitIndex(key):])
+				return fmt.Errorf("record: %x already exist", key[_KeyPrefix(key):])
 			}
 
 			// serialize the row
@@ -500,8 +501,9 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -524,7 +526,7 @@ func (t *_table[T]) Update(ctx context.Context, trs []T, optBatch ...Batch) erro
 
 			// check if exist efficiently (via bloom filter)
 			if !t.exist(key, batch, iter) {
-				return fmt.Errorf("record: %x not found", key[_KeyPrefixSplitIndex(key):])
+				return fmt.Errorf("record: %x not found", key[_KeyPrefix(key):])
 			}
 
 			// deserialize the old record
@@ -682,8 +684,9 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		// iter
 		iter := t.db.Iter(&IterOptions{
 			IterOptions: pebble.IterOptions{
-				LowerBound: keys[0],
-				UpperBound: t.dataKeySpaceEnd,
+				LowerBound:   keys[0],
+				UpperBound:   t.dataKeySpaceEnd,
+				UseL6Filters: true,
 			},
 		}, batchReadWrite)
 		defer iter.Close()
@@ -827,7 +830,7 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 		defer iter.Close()
 	}
 
-	return iter.SeekGE(key) && bytes.Equal(iter.Key(), key)
+	return iter.SeekPrefixGE(key) && bytes.Equal(iter.Key(), key)
 }
 
 func (t *_table[T]) GetPoint(ctx context.Context, in T, optBatch ...Batch) (T, error) {

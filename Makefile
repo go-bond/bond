@@ -30,10 +30,12 @@ clean: test-clean
 	go clean -cache -testcache
 
 test: test-clean
-	GOGC=off go test $(TEST_FLAGS) $(MOD_VENDOR) -run=$(TEST) ./...
+	GOGC=off go test -json $(TEST_FLAGS) $(MOD_VENDOR) -run=$(TEST) ./... | \
+	go run github.com/mfridman/tparse $(TPARSE_OPTIONS)
 
 test-all: test-clean
-	GOGC=off go test $(TEST_FLAGS) $(MOD_VENDOR) -run=$(TEST) ./...
+	GOGC=off go test -json $(TEST_FLAGS) $(MOD_VENDOR) -run=$(TEST) ./... | \
+	go run github.com/mfridman/tparse $(TPARSE_OPTIONS)
 
 test-with-reset: db-reset test-all
 
