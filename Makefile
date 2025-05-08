@@ -1,5 +1,6 @@
 SHELL            = bash -o pipefail
 TEST_FLAGS       ?= -p 1 -v -race -failfast
+TPARSE_OPTIONS   ?= -all -follow
 
 all:
 	@echo "make <cmd>"

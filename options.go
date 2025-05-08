@@ -16,8 +16,7 @@ import (
 
 const PebbleDBFormat = pebble.FormatTableFormatV6
 
-const DefaultMaxConcurrentCompactions = 4
-const DefaultMaxWriterConcurrency = 8
+const DefaultMaxConcurrentCompactions = 8
 
 type Options struct {
 	PebbleOptions *pebble.Options
@@ -70,13 +69,14 @@ func LowPerformancePebbleOptions() *pebble.Options {
 		LBaseMaxBytes:               16 << 20, // 16 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
-		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                8 << 20, // 8 MB
 		MemTableStopWritesThreshold: 2,
 		BytesPerSync:                512 << 10, // 512 KB
 	}
 
 	opts.EnsureDefaults()
+
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	opts.WALMinSyncInterval = func() time.Duration {
 		return 250 * time.Millisecond
@@ -86,22 +86,29 @@ func LowPerformancePebbleOptions() *pebble.Options {
 	opts.FlushDelayRangeKey = 10 * time.Second
 	opts.TargetByteDeletionRate = 64 << 20 // 64 MB
 
-	opts.MaxConcurrentCompactions = func() int { return 6 }
-
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 512 << 20 // 512 MB
 
-	// max writer is used for compression concurrency
+	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
+	opts.MaxConcurrentDownloads = func() int { return 2 }
+
+	opts.Experimental.L0CompactionConcurrency = 2
+	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
+
+	opts.Experimental.EnableColumnarBlocks = func() bool { return true }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+	// 	return pebble.ValueSeparationPolicy{
+	// 		Enabled:               true,
+	// 		MinimumSize:           1024,
+	// 		MaxBlobReferenceDepth: 10,
+	// 	}
+	// }
+
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
 	opts.Experimental.MultiLevelCompactionHeuristic = pebble.NoMultiLevel{}
-
-	opts.Experimental.EnableColumnarBlocks = func() bool {
-		return true
-	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -148,13 +155,14 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
-		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                64 << 20, // 64 MB
 		MemTableStopWritesThreshold: 4,
 		BytesPerSync:                1024 << 10, // 1024 KB
 	}
 
 	opts.EnsureDefaults()
+
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	opts.WALMinSyncInterval = func() time.Duration {
 		return 250 * time.Millisecond
@@ -164,22 +172,29 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 	opts.FlushDelayRangeKey = 10 * time.Second
 	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
 
-	opts.MaxConcurrentCompactions = func() int { return 6 }
+	opts.Experimental.L0CompactionConcurrency = 2
+	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
+
+	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
+	opts.MaxConcurrentDownloads = func() int { return 2 }
 
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// max writer is used for compression concurrency
+	opts.Experimental.EnableColumnarBlocks = func() bool { return true }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+	// 	return pebble.ValueSeparationPolicy{
+	// 		Enabled:               true,
+	// 		MinimumSize:           1024,
+	// 		MaxBlobReferenceDepth: 10,
+	// 	}
+	// }
+
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
 	opts.Experimental.MultiLevelCompactionHeuristic = pebble.NoMultiLevel{}
-
-	opts.Experimental.EnableColumnarBlocks = func() bool {
-		return true
-	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -226,13 +241,14 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		LBaseMaxBytes:               128 << 20, // 128 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      make([]pebble.LevelOptions, 7),
-		MaxConcurrentCompactions:    func() int { return max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) },
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
 		BytesPerSync:                4024 << 10, // 4024 KB
 	}
 
 	opts.EnsureDefaults()
+
+	opts.FormatMajorVersion = PebbleDBFormat
 
 	opts.WALMinSyncInterval = func() time.Duration {
 		return 250 * time.Millisecond
@@ -242,24 +258,26 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.FlushDelayRangeKey = 10 * time.Second
 	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
 
-	// opts.MaxConcurrentCompactions = func() int { return 8 }
-	opts.MaxConcurrentCompactions = func() int { return 6 }
+	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
+	opts.MaxConcurrentDownloads = func() int { return 2 }
 
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// max writer is used for compression concurrency
-	// opts.Experimental.MaxWriterConcurrency = max(DefaultMaxWriterConcurrency, runtime.NumCPU())
+	opts.Experimental.EnableColumnarBlocks = func() bool { return true }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+	// 	return pebble.ValueSeparationPolicy{
+	// 		Enabled:               true,
+	// 		MinimumSize:           1024,
+	// 		MaxBlobReferenceDepth: 10,
+	// 	}
+	// }
+
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
 	opts.Experimental.MultiLevelCompactionHeuristic = pebble.NoMultiLevel{}
-
-	opts.Experimental.EnableColumnarBlocks = func() bool {
-		return true
-	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
 
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
