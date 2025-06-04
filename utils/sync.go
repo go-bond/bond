@@ -1,6 +1,8 @@
 package utils
 
-import "sync"
+import (
+	"sync"
+)
 
 type SyncPool[T any] interface {
 	Get() T
@@ -24,6 +26,10 @@ func (s *syncPool[T]) Get() T {
 }
 
 func (s *syncPool[T]) Put(t T) {
+	// prevent the dirty slice from being returned to the pool
+	t = resetSlice(t)
+
+	// put the item back to the pool
 	s.Pool.Put(t)
 }
 
@@ -45,9 +51,6 @@ func NewPreAllocatedSyncPool[T any](newFunc func() any, size int) SyncPool[T] {
 	preAllocItems := make([]T, 0, size)
 	for i := 0; i < size; i++ {
 		preAllocItems = append(preAllocItems, syncPool.Get())
-	}
-	for _, item := range preAllocItems {
-		syncPool.Put(item)
 	}
 
 	return &preAllocatedSyncPool[T]{
@@ -74,6 +77,9 @@ func (s *preAllocatedSyncPool[T]) Get() T {
 }
 
 func (s *preAllocatedSyncPool[T]) Put(t T) {
+	// prevent the dirty slice from being returned to the pool
+	t = resetSlice(t)
+
 	// Fast path: try to put into pre-allocated items with minimal locking
 	s.mu.Lock()
 	if len(s.preAllocItems) < s.preAllocItemsSize {
@@ -85,4 +91,31 @@ func (s *preAllocatedSyncPool[T]) Put(t T) {
 
 	// Slow path: put into the underlying pool
 	s.Pool.Put(t)
+}
+
+func resetSlice[T any](v T) T {
+	switch s := any(v).(type) {
+	case []byte:
+		if len(s) > 0 {
+			v = any(s[:0]).(T)
+		}
+	case [][]byte:
+		for i := range s {
+			s[i] = nil
+		}
+
+		if len(s) > 0 {
+			v = any(s[:0]).(T)
+		}
+	case []string:
+		if len(s) > 0 {
+			v = any(s[:0]).(T)
+		}
+	case []int:
+		if len(s) > 0 {
+			v = any(s[:0]).(T)
+		}
+		// Add more specific types as needed
+	}
+	return v
 }
