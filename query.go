@@ -186,7 +186,7 @@ func (q Query[T]) executeQuery(ctx context.Context, optBatch ...Batch) ([]T, err
 			afterApplied = true
 
 			keyBuffer := q.table.db.getKeyBufferPool().Get()
-			defer q.table.db.getKeyBufferPool().Put(keyBuffer)
+			defer q.table.db.getKeyBufferPool().Put(keyBuffer[:0])
 
 			rowIdxKey := key.ToKey()
 			selIdxKey := KeyBytes(encodeIndexKey(q.table, q.afterSelector, q.index, keyBuffer[:0])).ToKey()
