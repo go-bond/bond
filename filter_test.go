@@ -221,12 +221,12 @@ func TestFilter_Upsert(t *testing.T) {
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
 	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
 
-	err := tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccount}, TableUpsertOnConflictReplace[*TokenBalance])
+	_, err := tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccount}, TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
 
-	err = tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated}, TableUpsertOnConflictReplace[*TokenBalance])
+	_, err = tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated}, TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
 	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()

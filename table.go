@@ -87,7 +87,7 @@ type TableUpdater[T any] interface {
 }
 
 type TableUpserter[T any] interface {
-	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error
+	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) ([]T, error)
 }
 
 type TableDeleter[T any] interface {
@@ -630,7 +630,7 @@ func (t *_table[T]) Delete(ctx context.Context, trs []T, optBatch ...Batch) erro
 	return nil
 }
 
-func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error {
+func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) ([]T, error) {
 	var (
 		batch          Batch
 		batchReadWrite Batch
@@ -672,7 +672,10 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 	}
 
 	// reusable object
-	var oldTr T
+	var (
+		oldTr  T
+		retTrs = make([]T, 0, len(trs))
+	)
 
 	err := batched(trs, batchSize, func(trs []T) error {
 		// keys
@@ -766,23 +769,26 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				t.filter.Add(ctx, key)
 			}
 
+			// add to return slice
+			retTrs = append(retTrs, tr)
+
 			i++
 		}
 
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if !externalBatch {
 		err = batch.Commit(Sync)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return retTrs, nil
 }
 
 func (t *_table[T]) Exist(tr T, optBatch ...Batch) bool {
