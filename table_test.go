@@ -763,11 +763,15 @@ func TestBondTable_Upsert(t *testing.T) {
 
 	_ = it.Close()
 
-	err = tokenBalanceTable.Upsert(
+	retTrsUpserted, err := tokenBalanceTable.Upsert(
 		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2},
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
+
+	require.Equal(t, 2, len(retTrsUpserted))
+	assert.Equal(t, tokenBalanceAccountUpdated, retTrsUpserted[0])
+	assert.Equal(t, tokenBalanceAccount2, retTrsUpserted[1])
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
@@ -860,11 +864,13 @@ func TestBondTable_Upsert_Context_Canceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = tokenBalanceTable.Upsert(
+	retTrsUpserted, err := tokenBalanceTable.Upsert(
 		ctx,
 		[]*TokenBalance{tokenBalanceAccountUpdated, tokenBalanceAccount2},
 		TableUpsertOnConflictReplace[*TokenBalance])
 	require.Error(t, err)
+
+	require.Equal(t, 0, len(retTrsUpserted))
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
@@ -971,10 +977,14 @@ func TestBondTable_Upsert_OnConflict(t *testing.T) {
 		}
 	}
 
-	err = tokenBalanceTable.Upsert(
+	retTrsUpserted, err := tokenBalanceTable.Upsert(
 		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
+
+	require.Equal(t, 2, len(retTrsUpserted))
+	assert.Equal(t, expectedTokenBalanceAccountUpdated, retTrsUpserted[0])
+	assert.Equal(t, tokenBalanceAccount2, retTrsUpserted[1])
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
@@ -1082,10 +1092,14 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		}
 	}
 
-	err = tokenBalanceTable.Upsert(
+	retTrsUpserted, err := tokenBalanceTable.Upsert(
 		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
 	require.NoError(t, err)
+
+	require.Equal(t, 2, len(retTrsUpserted))
+	assert.Equal(t, expectedTokenBalanceAccountUpdated, retTrsUpserted[0])
+	assert.Equal(t, tokenBalanceAccount2, retTrsUpserted[1])
 
 	it, err = db.Backend().NewIter(&pebble.IterOptions{
 		LowerBound: []byte{byte(TokenBalanceTableID)},
