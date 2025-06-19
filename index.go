@@ -354,7 +354,6 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		for i := len(deleteKeys); i < len(setKeys); i++ {
 			setKeys = append(setKeys, nil)
 		}
-
 	} else {
 		if idx.IndexFilterFunction(oldTr) {
 			deleteKeys = append(deleteKeys, encodeIndexKey(table, oldTr, idx, buff))

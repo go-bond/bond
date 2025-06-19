@@ -694,6 +694,10 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		}, batchReadWrite)
 		defer iter.Close()
 
+		// return batch
+		retTrsBatch := make([]T, min(batchSize, len(trs)))
+
+		// process insertions and updates
 		for i := 0; i < len(keys); {
 			tr := trs[keyOrder[i]]
 
@@ -769,11 +773,14 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 				t.filter.Add(ctx, key)
 			}
 
-			// add to return slice
-			retTrs = append(retTrs, tr)
+			// add to return batch
+			retTrsBatch[keyOrder[i]] = tr
 
 			i++
 		}
+
+		// add to return slice
+		retTrs = append(retTrs, retTrsBatch...)
 
 		return nil
 	})
