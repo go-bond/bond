@@ -733,10 +733,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 
 			// apply conficts recursively if duplicate exist
 			for i < len(keys)-1 && t.keyDuplicate(i+1, keys) {
-				oldTr = tr
-				i++
-				tr = onConflict(oldTr, trs[i])
-				continue
+				return fmt.Errorf("duplicate record found: %x", key)
 			}
 
 			// serialize

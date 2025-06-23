@@ -2613,7 +2613,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 3, AccountAddress: "charlie", ContractAddress: "tokenA", Balance: 1000}, // In balance index
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), records, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err := tokenBalanceTable.Upsert(context.Background(), records, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Verify database state
@@ -2636,7 +2636,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 3, AccountAddress: "charlie", ContractAddress: "tokenC", Balance: 2000},  // Still in balance index, changed contract
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), updates, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err := tokenBalanceTable.Upsert(context.Background(), updates, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Verify database state
@@ -2660,7 +2660,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 3, AccountAddress: "charlie", ContractAddress: "tokenC", Balance: 75},      // Update existing, remove from balance index
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), mixed, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err := tokenBalanceTable.Upsert(context.Background(), mixed, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Verify database state
@@ -2694,7 +2694,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 5, AccountAddress: "eve_original", ContractAddress: "tokenE", Balance: 500},
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), baseRecords, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err := tokenBalanceTable.Upsert(context.Background(), baseRecords, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Test custom conflict resolution function
@@ -2716,7 +2716,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 6, AccountAddress: "frank", ContractAddress: "tokenF", Balance: 800},          // New record
 		}
 
-		err = tokenBalanceTable.Upsert(context.Background(), conflicts, customConflictResolver)
+		_, err = tokenBalanceTable.Upsert(context.Background(), conflicts, customConflictResolver)
 		require.NoError(t, err)
 
 		// Verify the conflict resolution worked
@@ -2773,7 +2773,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 4, AccountAddress: "david_base", ContractAddress: "tokenD", Balance: 50},  // Below threshold
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), baseRecords, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err := tokenBalanceTable.Upsert(context.Background(), baseRecords, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Test records crossing filter boundaries during upsert
@@ -2784,7 +2784,7 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			{ID: 4, AccountAddress: "david_boundary", ContractAddress: "tokenD", Balance: 200}, // Update, cross above threshold
 		}
 
-		err = tokenBalanceTable.Upsert(context.Background(), boundaryTests, TableUpsertOnConflictReplace[*TokenBalance])
+		_, err = tokenBalanceTable.Upsert(context.Background(), boundaryTests, TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
 
 		// Verify filter transitions
@@ -2830,34 +2830,8 @@ func TestIndex_Operations_WithUpsert(t *testing.T) {
 			}
 		}
 
-		err := tokenBalanceTable.Upsert(context.Background(), duplicates, combineResolver)
-		require.NoError(t, err)
-
-		// Verify the duplicate resolution
-		actualRecords := getRecords(t)
-		var record9, record10 *TokenBalance
-		for _, r := range actualRecords {
-			if r.ID == 9 {
-				record9 = r
-			} else if r.ID == 10 {
-				record10 = r
-			}
-		}
-
-		require.NotNil(t, record9)
-		require.NotNil(t, record10)
-		assert.Equal(t, "user9_v1_user9_v2", record9.AccountAddress, "Should combine account addresses")
-		assert.Equal(t, uint64(300), record9.Balance, "Should sum balances (100 + 200)")
-
-		// Verify index counts
-		counts := countKeysByIndex(t)
-		assert.Equal(t, 2, counts[PrimaryIndexID], "Should have 2 primary keys")
-		// Balance index should include both records with balance > 100
-		assert.Equal(t, 2, counts[TokenBalanceBalanceIndexID], "Should have 2 balance index keys")
-
-		// Cleanup for next test
-		err = tokenBalanceTable.Delete(context.Background(), actualRecords)
-		require.NoError(t, err)
+		_, err := tokenBalanceTable.Upsert(context.Background(), duplicates, combineResolver)
+		require.ErrorContains(t, err, "duplicate record found")
 	})
 
 	// Cleanup for next test

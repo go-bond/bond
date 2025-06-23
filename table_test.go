@@ -1053,14 +1053,6 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 		Balance:         7,
 	}
 
-	expectedTokenBalanceAccountUpdated := &TokenBalance{
-		ID:              1,
-		AccountID:       1,
-		ContractAddress: "0xtestContract",
-		AccountAddress:  "0xtestAccount",
-		Balance:         19,
-	}
-
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
@@ -1095,33 +1087,8 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	retTrsUpserted, err := tokenBalanceTable.Upsert(
 		context.Background(),
 		[]*TokenBalance{tokenBalanceAccountUpdate, tokenBalanceAccountUpdate, tokenBalanceAccount2}, onConflictAddBalance)
-	require.NoError(t, err)
-
-	require.Equal(t, 2, len(retTrsUpserted))
-	assert.Equal(t, expectedTokenBalanceAccountUpdated, retTrsUpserted[0])
-	assert.Equal(t, tokenBalanceAccount2, retTrsUpserted[1])
-
-	it, err = db.Backend().NewIter(&pebble.IterOptions{
-		LowerBound: []byte{byte(TokenBalanceTableID)},
-		UpperBound: []byte{byte(TokenBalanceTableID + 1)},
-	})
-	require.NoError(t, err)
-
-	var tokenBalances []*TokenBalance
-	for it.First(); it.Valid(); it.Next() {
-		rawData := it.Value()
-
-		var tokenBalanceAccountFromDB TokenBalance
-		err = db.Serializer().Deserialize(rawData, &tokenBalanceAccountFromDB)
-		require.NoError(t, err)
-		tokenBalances = append(tokenBalances, &tokenBalanceAccountFromDB)
-	}
-
-	_ = it.Close()
-
-	require.Equal(t, 2, len(tokenBalances))
-	assert.Equal(t, expectedTokenBalanceAccountUpdated, tokenBalances[0])
-	assert.Equal(t, tokenBalanceAccount2, tokenBalances[1])
+	require.ErrorContains(t, err, "duplicate record found")
+	require.Equal(t, 0, len(retTrsUpserted))
 }
 
 func TestBondTable_Update_No_Such_Entry(t *testing.T) {
