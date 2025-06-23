@@ -2,6 +2,7 @@ package bond
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -1965,4 +1966,38 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 			require.Equal(t, 0, len(tokenHistories))
 		}
 	})
+}
+
+func BenchmarkBondTable_Upsert(b *testing.B) {
+	db := setupDatabase()
+	defer tearDownDatabase(nil, db)
+
+	const (
+		TokenBalanceTableID TableID = 0xC0
+	)
+
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	var tokenBalances []*TokenBalance
+	for i := 0; i < 10000; i++ {
+		tokenBalances = append(tokenBalances, &TokenBalance{
+			ID:              uint64(i),
+			AccountAddress:  fmt.Sprintf("account_%d", i),
+			ContractAddress: fmt.Sprintf("contract_%d", i),
+			Balance:         uint64(i),
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := tokenBalanceTable.Upsert(context.Background(), tokenBalances, TableUpsertOnConflictReplace[*TokenBalance])
+		require.NoError(b, err)
+	}
 }
