@@ -1985,3 +1985,78 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		}
 	})
 }
+
+func TestBondTable_Upsert_Would_Mutate_Input_On_Update_If_Implemented(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	// Insert initial record
+	tokenBalanceAccount := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         5,
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
+	require.NoError(t, err)
+
+	// Create an update record with different balance
+	tokenBalanceUpdate := &TokenBalance{
+		ID:              1,
+		AccountID:       1,
+		ContractAddress: "0xtestContract",
+		AccountAddress:  "0xtestAccount",
+		Balance:         7,
+	}
+
+	// Store original balance for comparison
+	originalBalance := tokenBalanceUpdate.Balance
+
+	// Define onConflict function that adds balances
+	onConflictAddBalance := func(oldTb, newTb *TokenBalance) *TokenBalance {
+		newTb.Balance = oldTb.Balance + newTb.Balance
+		return newTb
+	}
+
+	// Store reference to the original input slice and element
+	inputSlice := []*TokenBalance{tokenBalanceUpdate}
+	originalInputElement := inputSlice[0]
+
+	// Perform upsert
+	err = tokenBalanceTable.Upsert(context.Background(), inputSlice, onConflictAddBalance)
+	require.NoError(t, err)
+
+	// These assertions would pass IF the implementation were changed to mutate inputs:
+
+	// Verify that the input element was mutated with the result of onConflict
+	expectedMutatedBalance := uint64(12) // original 5 + update 7
+	assert.Equal(t, expectedMutatedBalance, originalInputElement.Balance,
+		"Expected input element to be mutated with merged balance")
+	assert.NotEqual(t, originalBalance, originalInputElement.Balance,
+		"Input element balance should have changed from original")
+
+	// Verify that the same element reference is still in the slice
+	assert.Same(t, originalInputElement, inputSlice[0],
+		"Input slice should still contain the same element reference")
+
+	// Verify the mutation matches what was actually stored in the database
+	storedRecord, err := tokenBalanceTable.GetPoint(context.Background(), &TokenBalance{ID: 1})
+	require.NoError(t, err)
+	assert.Equal(t, originalInputElement.Balance, storedRecord.Balance,
+		"Mutated input element should match stored record")
+}

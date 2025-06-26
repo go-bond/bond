@@ -87,6 +87,8 @@ type TableUpdater[T any] interface {
 }
 
 type TableUpserter[T any] interface {
+	// Upsert returns an error if there are any duplicate records in the batch.
+	// It is mutating the input slice if onConflict function is mutating the input value.
 	Upsert(ctx context.Context, trs []T, onConflict func(old, new T) T, optBatch ...Batch) error
 }
 
