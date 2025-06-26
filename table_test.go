@@ -1092,6 +1092,117 @@ func TestBondTable_Upsert_OnConflict_Two_Updates_Same_Row(t *testing.T) {
 	require.Equal(t, 0, len(retTrsUpserted))
 }
 
+func TestBondTable_Upsert_Order_Preserved(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalance]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+			return builder.AddUint64Field(tb.ID).Bytes()
+		},
+	})
+
+	// Pre-insert some records to test both insert and update scenarios
+	existingRecord1 := &TokenBalance{
+		ID:              3,
+		AccountID:       3,
+		ContractAddress: "0xtestContract3",
+		AccountAddress:  "0xtestAccount3",
+		Balance:         30,
+	}
+
+	existingRecord2 := &TokenBalance{
+		ID:              7,
+		AccountID:       7,
+		ContractAddress: "0xtestContract7",
+		AccountAddress:  "0xtestAccount7",
+		Balance:         70,
+	}
+
+	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{existingRecord1, existingRecord2})
+	require.NoError(t, err)
+
+	// Create records to upsert in a specific order (mix of new inserts and updates)
+	upsertRecords := []*TokenBalance{
+		{
+			ID:              5,
+			AccountID:       5,
+			ContractAddress: "0xtestContract5",
+			AccountAddress:  "0xtestAccount5",
+			Balance:         50,
+		},
+		{
+			ID:              3, // Update existing record
+			AccountID:       3,
+			ContractAddress: "0xtestContract3Updated",
+			AccountAddress:  "0xtestAccount3Updated",
+			Balance:         300,
+		},
+		{
+			ID:              1,
+			AccountID:       1,
+			ContractAddress: "0xtestContract1",
+			AccountAddress:  "0xtestAccount1",
+			Balance:         10,
+		},
+		{
+			ID:              7, // Update existing record
+			AccountID:       7,
+			ContractAddress: "0xtestContract7Updated",
+			AccountAddress:  "0xtestAccount7Updated",
+			Balance:         700,
+		},
+		{
+			ID:              2,
+			AccountID:       2,
+			ContractAddress: "0xtestContract2",
+			AccountAddress:  "0xtestAccount2",
+			Balance:         20,
+		},
+	}
+
+	// Perform upsert
+	retRecords, err := tokenBalanceTable.Upsert(
+		context.Background(),
+		upsertRecords,
+		TableUpsertOnConflictReplace[*TokenBalance],
+	)
+	require.NoError(t, err)
+	require.Equal(t, len(upsertRecords), len(retRecords))
+
+	// Verify that returned records are in the same order as input
+	// by checking primary keys match in the same order
+	for i, inputRecord := range upsertRecords {
+		assert.Equal(t, inputRecord.ID, retRecords[i].ID,
+			"Record at index %d has mismatched ID. Expected: %d, Got: %d",
+			i, inputRecord.ID, retRecords[i].ID)
+
+		// Also verify the content matches what we expected
+		assert.Equal(t, inputRecord.AccountID, retRecords[i].AccountID)
+		assert.Equal(t, inputRecord.ContractAddress, retRecords[i].ContractAddress)
+		assert.Equal(t, inputRecord.AccountAddress, retRecords[i].AccountAddress)
+		assert.Equal(t, inputRecord.Balance, retRecords[i].Balance)
+	}
+
+	// Additional verification: check the exact order of IDs
+	expectedIDs := []uint64{5, 3, 1, 7, 2}
+	actualIDs := make([]uint64, len(retRecords))
+	for i, record := range retRecords {
+		actualIDs[i] = record.ID
+	}
+
+	assert.Equal(t, expectedIDs, actualIDs,
+		"Primary key order not preserved. Expected: %v, Got: %v",
+		expectedIDs, actualIDs)
+}
+
 func TestBondTable_Update_No_Such_Entry(t *testing.T) {
 	db := setupDatabase()
 	defer tearDownDatabase(t, db)
