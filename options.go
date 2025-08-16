@@ -240,17 +240,19 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	maxOpenFileLimit := getMaxOpenFileLimit(slog.Default())
 
 	opts := &pebble.Options{
-		CacheSize:                   512 << 20, // 512 MB
-		FS:                          vfs.Default,
-		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       2,
-		L0StopWritesThreshold:       1000,
-		LBaseMaxBytes:               128 << 20, // 128 MB
+		CacheSize:                 512 << 20, // 512 MB
+		FS:                        vfs.Default,
+		Comparer:                  DefaultKeyComparer(),
+		L0CompactionFileThreshold: 500, // default in pebble
+		L0CompactionThreshold:     4,
+		L0StopWritesThreshold:     1000,
+		LBaseMaxBytes:             512 << 20, // 512 MB
+		// FlushSplitBytes:             64 << 20,  // 64 MB // TODO ...??
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      [7]pebble.LevelOptions{},
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
-		BytesPerSync:                4024 << 10, // 4024 KB
+		BytesPerSync:                4096 << 10, // 4096 KB
 	}
 
 	opts.EnsureDefaults()
@@ -271,13 +273,16 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// NOTE: we're writing small values, so value blocks dont help us
 	opts.Experimental.EnableValueBlocks = func() bool { return false }
+	// opts.Experimental.EnableValueBlocks = func() bool { return true }
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
-	// 		MinimumSize:           1024,
+	// 		MinimumSize:           32,
 	// 		MaxBlobReferenceDepth: 10,
+	// 		RewriteMinimumAge:     10 * time.Second,
+	// 		TargetGarbageRatio:    0.20,
 	// 	}
 	// }
 
@@ -324,46 +329,20 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
 	}
 
-	// for i := range opts.Levels {
-	// 	l := &opts.Levels[i]
-	// 	l.EnsureL0Defaults()
-	// 	if i > 0 {
-	// 		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-	// 	}
+	opts.TargetFileSizes[0] = 4 << 20   // 4 MB
+	opts.TargetFileSizes[1] = 16 << 20  // 16 MB
+	opts.TargetFileSizes[2] = 32 << 20  // 32 MB
+	opts.TargetFileSizes[3] = 64 << 20  // 64 MB
+	opts.TargetFileSizes[4] = 128 << 20 // 128 MB
+	opts.TargetFileSizes[5] = 256 << 20 // 256 MB
+	opts.TargetFileSizes[6] = 512 << 20 // 512 MB
 
-	// 	l.BlockSize = 32 << 10       // 32 KB
-	// 	l.IndexBlockSize = 256 << 10 // 256 KB
-
-	// 	// compression
-	// 	if i <= 1 {
-	// 		l.Compression = func() *sstable.CompressionProfile {
-	// 			return sstable.NoCompression
-	// 		}
-	// 	} else {
-	// 		l.Compression = func() *sstable.CompressionProfile {
-	// 			return sstable.ZstdCompression
-	// 		}
-	// 	}
-
-	// 	// l.Compression = func() pebble.Compression {
-	// 	// 	return pebble.ZstdCompression
-	// 	// }
-
-	// 	l.FilterPolicy = bloom.FilterPolicy(10)
-	// 	l.FilterType = pebble.TableFilter
-	// 	// TODOXXX: review ..
-	// 	// if i > 0 {
-	// 	// 	// L0 is 2MB, and grows from there
-	// 	// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
-	// 	// }
+	// opts.AllocatorSizeClasses = []int{
+	// 	16384,
+	// 	20480, 24576, 28672, 32768,
+	// 	40960, 49152, 57344, 65536,
+	// 	81920, 98304, 114688, 131072,
 	// }
-
-	opts.AllocatorSizeClasses = []int{
-		16384,
-		20480, 24576, 28672, 32768,
-		40960, 49152, 57344, 65536,
-		81920, 98304, 114688, 131072,
-	}
 
 	return opts
 }
