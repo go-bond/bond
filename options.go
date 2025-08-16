@@ -195,9 +195,9 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
-	// opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
-	// 	return pebble.NoMultiLevel{}
-	// }
+	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
+		return pebble.NoMultiLevel{}
+	}
 
 	for i := range opts.Levels {
 		l := &opts.Levels[i]
@@ -271,8 +271,8 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// opts.Experimental.EnableColumnarBlocks = func() bool { return true }
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// opts.Experimental.EnableValueBlocks = func() bool { return true }
+	opts.Experimental.EnableValueBlocks = func() bool { return false }
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
@@ -284,9 +284,9 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.ReadSamplingMultiplier = -1
 
 	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
-	// opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
-	// 	return pebble.NoMultiLevel{}
-	// }
+	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
+		return pebble.NoMultiLevel{}
+	}
 
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
@@ -296,17 +296,22 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	// 	WriteStallEnd:   db.onWriteStallEnd,
 	// }
 
-	for i := range opts.Levels {
+	opts.Levels[0] = pebble.LevelOptions{
+		BlockSize:      32 << 10,  // 32 KB
+		IndexBlockSize: 256 << 10, // 256 KB
+		FilterPolicy:   bloom.FilterPolicy(10),
+		FilterType:     pebble.TableFilter,
+		Compression: func() *sstable.CompressionProfile {
+			return sstable.NoCompression
+		},
+	}
+	opts.Levels[0].EnsureL0Defaults()
+	for i := 1; i < len(opts.Levels); i++ {
 		l := &opts.Levels[i]
-		l.EnsureL0Defaults()
-		if i > 0 {
-			l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-		}
-
 		l.BlockSize = 32 << 10       // 32 KB
 		l.IndexBlockSize = 256 << 10 // 256 KB
-
-		// compression
+		l.FilterPolicy = bloom.FilterPolicy(10)
+		l.FilterType = pebble.TableFilter
 		if i <= 1 {
 			l.Compression = func() *sstable.CompressionProfile {
 				return sstable.NoCompression
@@ -316,18 +321,48 @@ func HighPerformancePebbleOptions() *pebble.Options {
 				return sstable.ZstdCompression
 			}
 		}
+		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
+	}
 
-		// l.Compression = func() pebble.Compression {
-		// 	return pebble.ZstdCompression
-		// }
+	// for i := range opts.Levels {
+	// 	l := &opts.Levels[i]
+	// 	l.EnsureL0Defaults()
+	// 	if i > 0 {
+	// 		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
+	// 	}
 
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		// TODOXXX: review ..
-		// if i > 0 {
-		// 	// L0 is 2MB, and grows from there
-		// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
-		// }
+	// 	l.BlockSize = 32 << 10       // 32 KB
+	// 	l.IndexBlockSize = 256 << 10 // 256 KB
+
+	// 	// compression
+	// 	if i <= 1 {
+	// 		l.Compression = func() *sstable.CompressionProfile {
+	// 			return sstable.NoCompression
+	// 		}
+	// 	} else {
+	// 		l.Compression = func() *sstable.CompressionProfile {
+	// 			return sstable.ZstdCompression
+	// 		}
+	// 	}
+
+	// 	// l.Compression = func() pebble.Compression {
+	// 	// 	return pebble.ZstdCompression
+	// 	// }
+
+	// 	l.FilterPolicy = bloom.FilterPolicy(10)
+	// 	l.FilterType = pebble.TableFilter
+	// 	// TODOXXX: review ..
+	// 	// if i > 0 {
+	// 	// 	// L0 is 2MB, and grows from there
+	// 	// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
+	// 	// }
+	// }
+
+	opts.AllocatorSizeClasses = []int{
+		16384,
+		20480, 24576, 28672, 32768,
+		40960, 49152, 57344, 65536,
+		81920, 98304, 114688, 131072,
 	}
 
 	return opts
