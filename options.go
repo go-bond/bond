@@ -65,7 +65,8 @@ func LowPerformancePebbleOptions() *pebble.Options {
 		CacheSize:                   32 << 20, // 32 MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       2,
+		L0CompactionFileThreshold:   500, // default in pebble
+		L0CompactionThreshold:       4,
 		L0StopWritesThreshold:       500,
 		LBaseMaxBytes:               16 << 20, // 16 MB
 		MaxOpenFiles:                maxOpenFileLimit,
@@ -74,8 +75,6 @@ func LowPerformancePebbleOptions() *pebble.Options {
 		MemTableStopWritesThreshold: 2,
 		BytesPerSync:                512 << 10, // 512 KB
 	}
-
-	opts.EnsureDefaults()
 
 	opts.FormatMajorVersion = PebbleDBFormat
 
@@ -96,7 +95,9 @@ func LowPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// NOTE: we're writing small values, so value blocks dont help us
+	opts.Experimental.EnableValueBlocks = func() bool { return false }
+	// opts.Experimental.EnableValueBlocks = func() bool { return true }
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
@@ -107,17 +108,29 @@ func LowPerformancePebbleOptions() *pebble.Options {
 
 	opts.Experimental.ReadSamplingMultiplier = -1
 
-	for i := range opts.Levels {
-		l := &opts.Levels[i]
-		l.EnsureL0Defaults()
-		if i > 0 {
-			l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-		}
+	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
+	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
+		return pebble.NoMultiLevel{}
+	}
 
+	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
+
+	opts.Levels[0] = pebble.LevelOptions{
+		BlockSize:      32 << 10,  // 32 KB
+		IndexBlockSize: 256 << 10, // 256 KB
+		FilterPolicy:   bloom.FilterPolicy(10),
+		FilterType:     pebble.TableFilter,
+		Compression: func() *sstable.CompressionProfile {
+			return sstable.NoCompression
+		},
+	}
+	opts.Levels[0].EnsureL0Defaults()
+	for i := 1; i < len(opts.Levels); i++ {
+		l := &opts.Levels[i]
 		l.BlockSize = 32 << 10       // 32 KB
 		l.IndexBlockSize = 256 << 10 // 256 KB
-
-		// compression
+		l.FilterPolicy = bloom.FilterPolicy(10)
+		l.FilterType = pebble.TableFilter
 		if i <= 1 {
 			l.Compression = func() *sstable.CompressionProfile {
 				return sstable.NoCompression
@@ -127,19 +140,13 @@ func LowPerformancePebbleOptions() *pebble.Options {
 				return sstable.ZstdCompression
 			}
 		}
-
-		// l.Compression = func() pebble.Compression {
-		// 	return pebble.ZstdCompression
-		// }
-
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		// TODOXXX: review ..
-		// if i > 0 {
-		// 	// L0 is 2MB, and grows from there
-		// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
-		// }
+		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
 	}
+
+	opts.TargetFileSizes[0] = 2 << 20 // 2 MB
+	// opts.TargetFileSizes[0] = 4 << 20   // 4 MB
+
+	opts.EnsureDefaults()
 
 	return opts
 }
@@ -151,17 +158,16 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 		CacheSize:                   128 << 20, // 128 MB
 		FS:                          vfs.Default,
 		Comparer:                    DefaultKeyComparer(),
-		L0CompactionThreshold:       2,
+		L0CompactionFileThreshold:   500, // default in pebble
+		L0CompactionThreshold:       4,
 		L0StopWritesThreshold:       1000,
 		LBaseMaxBytes:               64 << 20, // 64 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      [7]pebble.LevelOptions{},
 		MemTableSize:                64 << 20, // 64 MB
 		MemTableStopWritesThreshold: 4,
-		BytesPerSync:                1024 << 10, // 1024 KB
+		BytesPerSync:                2048 << 10, // 2048 KB
 	}
-
-	opts.EnsureDefaults()
 
 	opts.FormatMajorVersion = PebbleDBFormat
 
@@ -182,8 +188,9 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// opts.Experimental.EnableColumnarBlocks = func() bool { return true }
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	// NOTE: we're writing small values, so value blocks dont help us
+	opts.Experimental.EnableValueBlocks = func() bool { return false }
+	// opts.Experimental.EnableValueBlocks = func() bool { return true }
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
@@ -199,17 +206,24 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 		return pebble.NoMultiLevel{}
 	}
 
-	for i := range opts.Levels {
-		l := &opts.Levels[i]
-		l.EnsureL0Defaults()
-		if i > 0 {
-			l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-		}
+	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
 
+	opts.Levels[0] = pebble.LevelOptions{
+		BlockSize:      32 << 10,  // 32 KB
+		IndexBlockSize: 256 << 10, // 256 KB
+		FilterPolicy:   bloom.FilterPolicy(10),
+		FilterType:     pebble.TableFilter,
+		Compression: func() *sstable.CompressionProfile {
+			return sstable.NoCompression
+		},
+	}
+	opts.Levels[0].EnsureL0Defaults()
+	for i := 1; i < len(opts.Levels); i++ {
+		l := &opts.Levels[i]
 		l.BlockSize = 32 << 10       // 32 KB
 		l.IndexBlockSize = 256 << 10 // 256 KB
-
-		// compression
+		l.FilterPolicy = bloom.FilterPolicy(10)
+		l.FilterType = pebble.TableFilter
 		if i <= 1 {
 			l.Compression = func() *sstable.CompressionProfile {
 				return sstable.NoCompression
@@ -219,19 +233,13 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 				return sstable.ZstdCompression
 			}
 		}
-
-		// l.Compression = func() pebble.Compression {
-		// 	return pebble.ZstdCompression
-		// }
-
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		// TODOXXX: review ..
-		// if i > 0 {
-		// 	// L0 is 2MB, and grows from there
-		// 	l.TargetFileSize = opts.Levels[i-1].TargetFileSize * 2
-		// }
+		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
 	}
+
+	opts.TargetFileSizes[0] = 2 << 20 // 2 MB
+	// opts.TargetFileSizes[0] = 4 << 20   // 4 MB
+
+	opts.EnsureDefaults()
 
 	return opts
 }
