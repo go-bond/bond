@@ -240,22 +240,19 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	maxOpenFileLimit := getMaxOpenFileLimit(slog.Default())
 
 	opts := &pebble.Options{
-		CacheSize:                 512 << 20, // 512 MB
-		FS:                        vfs.Default,
-		Comparer:                  DefaultKeyComparer(),
-		L0CompactionFileThreshold: 500, // default in pebble
-		L0CompactionThreshold:     4,
-		L0StopWritesThreshold:     1000,
-		LBaseMaxBytes:             512 << 20, // 512 MB
-		// FlushSplitBytes:             64 << 20,  // 64 MB // TODO ...??
+		CacheSize:                   512 << 20, // 512 MB
+		FS:                          vfs.Default,
+		Comparer:                    DefaultKeyComparer(),
+		L0CompactionFileThreshold:   500, // default in pebble
+		L0CompactionThreshold:       4,
+		L0StopWritesThreshold:       1000,
+		LBaseMaxBytes:               512 << 20, // 512 MB
 		MaxOpenFiles:                maxOpenFileLimit,
 		Levels:                      [7]pebble.LevelOptions{},
 		MemTableSize:                128 << 20, // 128 MB
 		MemTableStopWritesThreshold: 4,
 		BytesPerSync:                4096 << 10, // 4096 KB
 	}
-
-	opts.EnsureDefaults()
 
 	opts.FormatMajorVersion = PebbleDBFormat
 
@@ -293,6 +290,8 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		return pebble.NoMultiLevel{}
 	}
 
+	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
+
 	// TODO, collect these stats
 	// opts.EventListener = &pebble.EventListener{
 	// 	CompactionBegin: db.onCompactionBegin,
@@ -329,22 +328,19 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
 	}
 
-	opts.TargetFileSizes[0] = 4 << 20   // 4 MB
-	opts.TargetFileSizes[1] = 16 << 20  // 16 MB
-	opts.TargetFileSizes[2] = 32 << 20  // 32 MB
-	opts.TargetFileSizes[3] = 64 << 20  // 64 MB
-	opts.TargetFileSizes[4] = 128 << 20 // 128 MB
-	opts.TargetFileSizes[5] = 256 << 20 // 256 MB
-	opts.TargetFileSizes[6] = 512 << 20 // 512 MB
+	opts.TargetFileSizes[0] = 2 << 20 // 2 MB
+	// opts.TargetFileSizes[0] = 4 << 20   // 4 MB
 
-	// opts.AllocatorSizeClasses = []int{
-	// 	16384,
-	// 	20480, 24576, 28672, 32768,
-	// 	40960, 49152, 57344, 65536,
-	// 	81920, 98304, 114688, 131072,
-	// }
+	opts.EnsureDefaults()
 
 	return opts
+}
+
+func spanPolicyFunc(startKey []byte) (policy pebble.SpanPolicy, endKey []byte, err error) {
+	policy.PreferFastCompression = true
+	policy.DisableValueSeparationBySuffix = true
+	policy.ValueStoragePolicy = pebble.ValueStorageLowReadLatency
+	return
 }
 
 func ToPerformanceProfile(performanceProfile string) PerformanceProfile {
