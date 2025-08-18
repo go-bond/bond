@@ -109,6 +109,18 @@ func (b *BloomFilter) MayContain(_ context.Context, key []byte) bool {
 	return contains
 }
 
+func (b *BloomFilter) Stats() bond.FilterStats {
+	return bond.FilterStats{
+		HitCount:       atomic.LoadUint64(&b.stats.HitCount),
+		MissCount:      atomic.LoadUint64(&b.stats.MissCount),
+		FalsePositives: atomic.LoadUint64(&b.stats.FalsePositives),
+	}
+}
+
+func (b *BloomFilter) RecordFalsePositive() {
+	atomic.AddUint64(&b.stats.FalsePositives, 1)
+}
+
 func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
