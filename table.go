@@ -118,7 +118,7 @@ type TableOptions[T any] struct {
 	TableName           string
 	TablePrimaryKeyFunc TablePrimaryKeyFunc[T]
 	Serializer          Serializer[any]
-	Filter              Filter
+	Filter              FilterWithStats
 
 	ScanPrefetchSize int
 }
@@ -832,7 +832,13 @@ func (t *_table[T]) exist(key []byte, batch Batch, iter Iterator) bool {
 		defer iter.Close()
 	}
 
-	return iter.SeekPrefixGE(key) && bytes.Equal(iter.Key(), key)
+	exists := iter.SeekPrefixGE(key) && bytes.Equal(iter.Key(), key)
+	if !exists {
+		if t.filter != nil {
+			t.filter.RecordFalsePositive()
+		}
+	}
+	return exists
 }
 
 func (t *_table[T]) GetPoint(ctx context.Context, in T, optBatch ...Batch) (T, error) {

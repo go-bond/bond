@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/go-bond/bond"
@@ -35,6 +36,8 @@ type BloomFilter struct {
 	keyPrefix    []byte
 	numOfBuckets int
 	buckets      []*_bucket
+
+	stats bond.FilterStats
 
 	mu sync.RWMutex
 }
@@ -96,6 +99,13 @@ func (b *BloomFilter) MayContain(_ context.Context, key []byte) bool {
 	bucket.mu.RLock()
 	contains := bucket.filter.Test(key)
 	bucket.mu.RUnlock()
+
+	if !contains {
+		atomic.AddUint64(&b.stats.MissCount, 1)
+	} else {
+		atomic.AddUint64(&b.stats.HitCount, 1)
+	}
+
 	return contains
 }
 
