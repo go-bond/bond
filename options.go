@@ -101,8 +101,10 @@ func LowPerformancePebbleOptions() *pebble.Options {
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
-	// 		MinimumSize:           1024,
+	// 		MinimumSize:           64,
 	// 		MaxBlobReferenceDepth: 10,
+	// 		RewriteMinimumAge:     60 * time.Second,
+	// 		TargetGarbageRatio:    0.20,
 	// 	}
 	// }
 
@@ -194,8 +196,10 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
-	// 		MinimumSize:           1024,
+	// 		MinimumSize:           64,
 	// 		MaxBlobReferenceDepth: 10,
+	// 		RewriteMinimumAge:     60 * time.Second,
+	// 		TargetGarbageRatio:    0.20,
 	// 	}
 	// }
 
@@ -278,15 +282,14 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	// NOTE: we're writing small values, so value blocks dont help us
 	opts.Experimental.EnableValueBlocks = func() bool { return false }
 	// opts.Experimental.EnableValueBlocks = func() bool { return true }
 	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
 	// 	return pebble.ValueSeparationPolicy{
 	// 		Enabled:               true,
-	// 		MinimumSize:           32,
+	// 		MinimumSize:           64,
 	// 		MaxBlobReferenceDepth: 10,
-	// 		RewriteMinimumAge:     10 * time.Second,
+	// 		RewriteMinimumAge:     60 * time.Second,
 	// 		TargetGarbageRatio:    0.20,
 	// 	}
 	// }
