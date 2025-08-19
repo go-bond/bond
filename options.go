@@ -261,7 +261,7 @@ func HighPerformancePebbleOptions() *pebble.Options {
 		Levels:                      [7]pebble.LevelOptions{},
 		MemTableSize:                256 << 20, // 256 MB
 		MemTableStopWritesThreshold: 8,
-		BytesPerSync:                8192 << 10, // 8192 KB
+		BytesPerSync:                4096 << 10, // 4096 KB
 	}
 
 	opts.FormatMajorVersion = PebbleDBFormat
