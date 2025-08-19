@@ -95,17 +95,17 @@ func LowPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	opts.Experimental.EnableValueBlocks = func() bool { return false }
-	// opts.Experimental.EnableValueBlocks = func() bool { return true }
-	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-	// 	return pebble.ValueSeparationPolicy{
-	// 		Enabled:               true,
-	// 		MinimumSize:           64,
-	// 		MaxBlobReferenceDepth: 10,
-	// 		RewriteMinimumAge:     60 * time.Second,
-	// 		TargetGarbageRatio:    0.20,
-	// 	}
-	// }
+	// opts.Experimental.EnableValueBlocks = func() bool { return false }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+		return pebble.ValueSeparationPolicy{
+			Enabled:               true,
+			MinimumSize:           64,
+			MaxBlobReferenceDepth: 10,
+			RewriteMinimumAge:     60 * time.Second,
+			TargetGarbageRatio:    0.20,
+		}
+	}
 
 	opts.Experimental.ReadSamplingMultiplier = -1
 
@@ -189,17 +189,17 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	opts.Experimental.EnableValueBlocks = func() bool { return false }
-	// opts.Experimental.EnableValueBlocks = func() bool { return true }
-	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-	// 	return pebble.ValueSeparationPolicy{
-	// 		Enabled:               true,
-	// 		MinimumSize:           64,
-	// 		MaxBlobReferenceDepth: 10,
-	// 		RewriteMinimumAge:     60 * time.Second,
-	// 		TargetGarbageRatio:    0.20,
-	// 	}
-	// }
+	// opts.Experimental.EnableValueBlocks = func() bool { return false }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+		return pebble.ValueSeparationPolicy{
+			Enabled:               true,
+			MinimumSize:           64,
+			MaxBlobReferenceDepth: 10,
+			RewriteMinimumAge:     60 * time.Second,
+			TargetGarbageRatio:    0.20,
+		}
+	}
 
 	opts.Experimental.ReadSamplingMultiplier = -1
 
@@ -280,17 +280,17 @@ func HighPerformancePebbleOptions() *pebble.Options {
 	opts.Experimental.L0CompactionConcurrency = 4
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
 
-	opts.Experimental.EnableValueBlocks = func() bool { return false }
-	// opts.Experimental.EnableValueBlocks = func() bool { return true }
-	// opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-	// 	return pebble.ValueSeparationPolicy{
-	// 		Enabled:               true,
-	// 		MinimumSize:           64,
-	// 		MaxBlobReferenceDepth: 10,
-	// 		RewriteMinimumAge:     60 * time.Second,
-	// 		TargetGarbageRatio:    0.20,
-	// 	}
-	// }
+	// opts.Experimental.EnableValueBlocks = func() bool { return false }
+	opts.Experimental.EnableValueBlocks = func() bool { return true }
+	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+		return pebble.ValueSeparationPolicy{
+			Enabled:               true,
+			MinimumSize:           64,
+			MaxBlobReferenceDepth: 10,
+			RewriteMinimumAge:     60 * time.Second,
+			TargetGarbageRatio:    0.20,
+		}
+	}
 
 	opts.Experimental.ReadSamplingMultiplier = -1
 
