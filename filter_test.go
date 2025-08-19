@@ -22,6 +22,15 @@ func (m *MockFilter) MayContain(ctx context.Context, key []byte) bool {
 	return args.Get(0).(bool)
 }
 
+func (m *MockFilter) Stats() FilterStats {
+	args := m.Called()
+	return args.Get(0).(FilterStats)
+}
+
+func (m *MockFilter) RecordFalsePositive() {
+	m.Called()
+}
+
 func (m *MockFilter) Load(ctx context.Context, store FilterStorer) error {
 	//TODO implement me
 	panic("implement me")
