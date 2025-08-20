@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
-	github.com/cockroachdb/pebble v0.0.0-20250818212905-2c0ffb00ad52
+	github.com/cockroachdb/pebble v0.0.0-20250819215006-8875a687b141
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/structs v1.1.0
 	github.com/fxamacker/cbor/v2 v2.9.0
@@ -15,7 +15,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6
-	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6
+	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b
 	golang.org/x/sync v0.16.0
 	google.golang.org/protobuf v1.36.7
 )
