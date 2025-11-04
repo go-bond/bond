@@ -84,7 +84,6 @@ func LowPerformancePebbleOptions() *pebble.Options {
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
-	opts.TargetByteDeletionRate = 64 << 20 // 64 MB
 
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 512 << 20 // 512 MB
@@ -103,7 +102,6 @@ func LowPerformancePebbleOptions() *pebble.Options {
 			MinimumSize:           64,
 			MaxBlobReferenceDepth: 10,
 			RewriteMinimumAge:     60 * time.Second,
-			TargetGarbageRatio:    0.20,
 		}
 	}
 
@@ -178,7 +176,6 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
-	opts.TargetByteDeletionRate = 128 << 20 // 128 MB
 
 	opts.Experimental.L0CompactionConcurrency = 2
 	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
@@ -197,7 +194,6 @@ func MediumPerformancePebbleOptions() *pebble.Options {
 			MinimumSize:           64,
 			MaxBlobReferenceDepth: 10,
 			RewriteMinimumAge:     60 * time.Second,
-			TargetGarbageRatio:    0.20,
 		}
 	}
 
@@ -272,7 +268,6 @@ func HighPerformancePebbleOptions() *pebble.Options {
 
 	opts.FlushDelayDeleteRange = 10 * time.Second
 	opts.FlushDelayRangeKey = 10 * time.Second
-	opts.TargetByteDeletionRate = 256 << 20 // 256 MB
 
 	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
 	opts.MaxConcurrentDownloads = func() int { return 2 }
@@ -288,7 +283,6 @@ func HighPerformancePebbleOptions() *pebble.Options {
 			MinimumSize:           64,
 			MaxBlobReferenceDepth: 10,
 			RewriteMinimumAge:     60 * time.Second,
-			TargetGarbageRatio:    0.20,
 		}
 	}
 
