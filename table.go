@@ -1004,44 +1004,75 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			}
 		}
 
-		seekSucceeded := iter.SeekGE(keys[i])
-		keysMatch := seekSucceeded && bytes.Equal(iter.Key(), keys[i])
-
-		if len(keys[i]) <= _KeyPrefixSplitIndexOffset || !seekSucceeded || !keysMatch {
-			// Check for iterator error first
-			if iterErr := iter.Error(); iterErr != nil {
-				slog.Info("bond: get: iterator error detected",
-					"table", t.name,
-					"key", fmt.Sprintf("%x", keys[i]),
-					"iterator_error", iterErr,
-					"seekSucceeded", seekSucceeded)
-				return nil, fmt.Errorf("iterator error: %w", iterErr)
-			}
-
+		// Check for invalid key length first
+		if len(keys[i]) <= _KeyPrefixSplitIndexOffset {
 			if errorOnNotExist {
-				slog.Info("bond: get: key not found, returning ErrNotFound",
+				slog.Info("bond: get: invalid key length, returning ErrNotFound",
 					"table", t.name,
 					"key", fmt.Sprintf("%x", keys[i]),
-					"key_length", len(keys[i]),
-					"seekSucceeded", seekSucceeded,
-					"keysMatch", keysMatch,
-					"errorOnNotExist", errorOnNotExist)
+					"key_length", len(keys[i]))
 				return nil, ErrNotFound
 			} else {
-				slog.Info("bond: get: key not found, setting empty value",
-					"table", t.name,
-					"key", fmt.Sprintf("%x", keys[i]),
-					"seekSucceeded", seekSucceeded,
-					"keysMatch", keysMatch)
 				values[i] = values[i][:0]
 				continue
 			}
 		}
 
+		// Attempt to seek to the key
+		seekSucceeded := iter.SeekGE(keys[i])
+
+		// check for iterator error if seek failed
+		if !seekSucceeded {
+			if iterErr := iter.Error(); iterErr != nil {
+				slog.Info("bond: get: iterator error detected during SeekGE",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"iterator_error", iterErr)
+				return nil, fmt.Errorf("iterator error during seek: %w", iterErr)
+			}
+
+			// No error, key genuinely doesn't exist
+			if errorOnNotExist {
+				slog.Info("bond: get: key not found (seek failed), returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"errorOnNotExist", errorOnNotExist)
+				return nil, ErrNotFound
+			} else {
+				slog.Info("bond: get: key not found (seek failed), setting empty value",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]))
+				values[i] = values[i][:0]
+				continue
+			}
+		}
+
+		// Seek succeeded, now safely check if keys match
+		keysMatch := bytes.Equal(iter.Key(), keys[i])
+
+		if !keysMatch {
+			// Key exists but doesn't match - the sought key doesn't exist
+			if errorOnNotExist {
+				slog.Info("bond: get: key not found (key mismatch), returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"found_key", fmt.Sprintf("%x", iter.Key()),
+					"errorOnNotExist", errorOnNotExist)
+				return nil, ErrNotFound
+			} else {
+				slog.Info("bond: get: key not found (key mismatch), setting empty value",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"found_key", fmt.Sprintf("%x", iter.Key()))
+				values[i] = values[i][:0]
+				continue
+			}
+		}
+
+		// Key found and matches, get the value
 		iterValue := iter.Value()
 		value := values[i][:0]
 		value = append(value, iterValue...)
-
 		values[i] = value
 	}
 
