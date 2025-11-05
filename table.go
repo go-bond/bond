@@ -1275,6 +1275,11 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 				"error", err)
 			return t.valueNil, err
 		}
+		slog.Info("bond: scanForEachSecondaryIndex: prefetchAndGetValue fetched values",
+			"table", t.name,
+			"index", idx.IndexName,
+			"num_keys", len(keys),
+		)
 
 		return getPrefetchedValue()
 	}
