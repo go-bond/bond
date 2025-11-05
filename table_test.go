@@ -1709,13 +1709,58 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		},
 	})
 
+	TokenHistoryByAccountIndexWithFilter := NewIndex(IndexOptions[*TokenHistory]{
+		IndexID:   PrimaryIndexID + 2,
+		IndexName: "token_history_by_account_idx",
+		IndexKeyFunc: func(builder KeyBuilder, selector *TokenHistory) []byte {
+			if selector.QueryFromOrToAddress != "" {
+				return builder.AddStringField(selector.QueryFromOrToAddress).Bytes()
+			}
+			if selector.FromAddress != "" {
+				return builder.AddStringField(selector.FromAddress).Bytes()
+			}
+			if selector.ToAddress != "" {
+				return builder.AddStringField(selector.ToAddress).Bytes()
+			}
+			return builder.Bytes()
+		},
+		IndexMultiKeyFunc: func(builder KeyBuilder, record *TokenHistory) [][]byte {
+			var indexKeys [][]byte
+
+			// Generate key part for FromAddress
+			if record.FromAddress != "" {
+				// Use a *new* builder for each distinct key part
+				fromKeyPart := NewKeyBuilder(nil).AddStringField(record.FromAddress).Bytes()
+				indexKeys = append(indexKeys, fromKeyPart)
+			}
+
+			// Generate key part for ToAddress and avoid adding duplicate key parts if FromAddress == ToAddress
+			if record.ToAddress != "" && record.ToAddress != record.FromAddress {
+				// Use a *new* builder
+				toKeyPart := NewKeyBuilder(nil).AddStringField(record.ToAddress).Bytes()
+				indexKeys = append(indexKeys, toKeyPart)
+			}
+			return indexKeys
+		},
+		IndexOrderFunc: func(o IndexOrder, th *TokenHistory) IndexOrder {
+			return o.
+				OrderUint64(th.BlockNumber, IndexOrderTypeDESC).
+				OrderUint64(uint64(th.TxnIndex), IndexOrderTypeASC).
+				OrderUint64(uint64(th.TxnLogIndex), IndexOrderTypeASC)
+		},
+		IndexFilterFunc: func(th *TokenHistory) bool {
+			return th.FromAddress == "0xfff3"
+		},
+	})
+
 	_ = tokenHistoryTable.AddIndex([]*Index[*TokenHistory]{
 		TokenHistoryByAccountIndex,
+		TokenHistoryByAccountIndexWithFilter,
 	})
 
 	secondaryIndexes := tokenHistoryTable.SecondaryIndexes()
 	require.NotNil(t, secondaryIndexes)
-	require.Equal(t, 1, len(secondaryIndexes))
+	require.Equal(t, 2, len(secondaryIndexes))
 
 	// add some records
 	tokenHistory1 := &TokenHistory{
@@ -1827,6 +1872,43 @@ func TestBondTable_Case_TokenHistory_IndexMultiKeyFunc(t *testing.T) {
 		assert.Equal(t, tokenHistories[1].ContractAddress, tokenHistory3.ContractAddress)
 		assert.Equal(t, tokenHistories[1].TokenIDs, tokenHistory3.TokenIDs)
 		assert.Equal(t, tokenHistories[1].Amounts, tokenHistory3.Amounts)
+	})
+
+	t.Run("ScanIndexWithFilter", func(t *testing.T) {
+		var tokenHistories []*TokenHistory
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector := NewSelectorRange(
+			&TokenHistory{FromAddress: "0xfff3", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xfff3", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndexWithFilter, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(tokenHistories))
+
+		assert.Equal(t, tokenHistories[0].BlockNumber, tokenHistory3.BlockNumber)
+		assert.Equal(t, tokenHistories[0].TxnIndex, tokenHistory3.TxnIndex)
+		assert.Equal(t, tokenHistories[0].TxnLogIndex, tokenHistory3.TxnLogIndex)
+		assert.Equal(t, tokenHistories[0].TxnHash, tokenHistory3.TxnHash)
+		assert.Equal(t, tokenHistories[0].FromAddress, tokenHistory3.FromAddress)
+		assert.Equal(t, tokenHistories[0].ToAddress, tokenHistory3.ToAddress)
+		assert.Equal(t, tokenHistories[0].ContractAddress, tokenHistory3.ContractAddress)
+		assert.Equal(t, tokenHistories[0].TokenIDs, tokenHistory3.TokenIDs)
+		assert.Equal(t, tokenHistories[0].Amounts, tokenHistory3.Amounts)
+
+		// reset the tokenHistories
+		tokenHistories = make([]*TokenHistory, 0)
+
+		// we pass the selector range, to consider the IndexOrderFunc too, and notice the range
+		// of DESC for block number.
+		selector = NewSelectorRange(
+			&TokenHistory{FromAddress: "0xabc2", BlockNumber: math.MaxUint64, TxnIndex: 0, TxnLogIndex: 0},
+			&TokenHistory{FromAddress: "0xabc2", BlockNumber: 0, TxnIndex: math.MaxUint, TxnLogIndex: math.MaxUint},
+		)
+		err = tokenHistoryTable.ScanIndex(context.Background(), TokenHistoryByAccountIndexWithFilter, selector, &tokenHistories, false)
+		require.NoError(t, err)
+		require.Equal(t, 0, len(tokenHistories))
 	})
 
 	t.Run("GetPoint", func(t *testing.T) {

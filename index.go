@@ -302,6 +302,10 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
+	if !idx.IndexFilterFunction(tr) {
+		return nil
+	}
+
 	if idx.IndexMultiKeyFunction != nil {
 		multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
 		for _, part := range multiKey {
@@ -312,11 +316,8 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		}
 		return nil
 	} else {
-		if idx.IndexFilterFunction(tr) {
-			return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
-		}
+		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
-	return nil
 }
 
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
