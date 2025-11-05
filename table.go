@@ -1000,8 +1000,12 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			"table", t.name,
 			"key", fmt.Sprintf("%x", keys[i]),
 			"iter.error", iter.Error(),
+			"t.filter", t.filter != nil,
+			"mayContain", t.filter != nil && t.filter.MayContain(context.Background(), keys[i]),
 		)
 		if t.filter != nil && !t.filter.MayContain(context.Background(), keys[i]) {
+			// TODO: for some reason we are seeing false negatives here, need to
+			// investigate further.
 			if errorOnNotExist {
 				slog.Info("bond: get: filter reports key not found, returning ErrNotFound",
 					"table", t.name,
