@@ -987,7 +987,20 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 	}, batch)
 	defer iter.Close()
 
+	if iter.Error() != nil {
+		slog.Info("bond: get: iterator creation error",
+			"table", t.name,
+			"error", iter.Error(),
+		)
+		return nil, fmt.Errorf("iterator creation error: %w", iter.Error())
+	}
+
 	for i := 0; i < len(keys); i++ {
+		slog.Info("bond: get: processing key",
+			"table", t.name,
+			"key", fmt.Sprintf("%x", keys[i]),
+			"iter.error", iter.Error(),
+		)
 		if t.filter != nil && !t.filter.MayContain(context.Background(), keys[i]) {
 			if errorOnNotExist {
 				slog.Info("bond: get: filter reports key not found, returning ErrNotFound",
