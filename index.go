@@ -302,6 +302,10 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		buff = buffs[0]
 	}
 
+	if !idx.IndexFilterFunction(tr) {
+		return nil
+	}
+
 	if idx.IndexMultiKeyFunction != nil {
 		multiKey := idx.IndexMultiKeyFunction(NewKeyBuilder(nil), tr)
 		for _, part := range multiKey {
@@ -312,11 +316,8 @@ func (idx *Index[T]) OnInsert(table Table[T], tr T, batch Batch, buffs ...[]byte
 		}
 		return nil
 	} else {
-		if idx.IndexFilterFunction(tr) {
-			return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
-		}
+		return batch.Set(encodeIndexKey(table, tr, idx, buff), _indexKeyValue, Sync)
 	}
-	return nil
 }
 
 func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs ...[]byte) error {
@@ -347,11 +348,11 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 			}
 		}
 
-		for i := len(setKeys); i < len(deleteKeys); i++ {
+		for i := len(deleteKeys); i < len(setKeys); i++ {
 			deleteKeys = append(deleteKeys, nil)
 		}
 
-		for i := len(deleteKeys); i < len(setKeys); i++ {
+		for i := len(setKeys); i < len(deleteKeys); i++ {
 			setKeys = append(setKeys, nil)
 		}
 
@@ -366,6 +367,10 @@ func (idx *Index[T]) OnUpdate(table Table[T], oldTr T, tr T, batch Batch, buffs 
 		} else {
 			setKeys = append(setKeys, nil)
 		}
+	}
+
+	if len(deleteKeys) != len(setKeys) {
+		return fmt.Errorf("internal error: keys length mismatch: %d != %d", len(deleteKeys), len(setKeys))
 	}
 
 	for i := 0; i < len(deleteKeys); i++ {
