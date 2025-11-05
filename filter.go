@@ -3,6 +3,7 @@ package bond
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 )
 
@@ -81,12 +82,19 @@ func (f *FilterInitializable) RecordFalsePositive() {
 }
 
 func (f *FilterInitializable) Initialize(ctx context.Context, filterStorer FilterStorer, scanners []TableScanner[any]) error {
+	slog.Info("bond: FilterInitializable.Initialize: starting filter initialization",
+		"num_scanners", len(scanners))
+
 	err := FilterInitialize(ctx, f.filter, filterStorer, scanners)
 	if err != nil {
+		slog.Info("bond: FilterInitializable.Initialize: initialization failed",
+			"error", err)
 		return err
 	}
 
 	atomic.StoreUint64(&f.isInitialized, 1)
+	slog.Info("bond: FilterInitializable.Initialize: filter successfully initialized",
+		"isInitialized", true)
 	return nil
 }
 
@@ -107,22 +115,79 @@ func (f *FilterInitializable) Clear(ctx context.Context, store FilterStorer) err
 }
 
 func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterStorer, scanners []TableScanner[any]) error {
+	slog.Info("bond: FilterInitialize: attempting to load existing filter")
+
 	err := filter.Load(ctx, filterStorer)
 	if err != nil {
+		slog.Info("bond: FilterInitialize: failed to load filter, will rebuild",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err))
+
+		slog.Info("bond: FilterInitialize: clearing existing filter data")
 		err = filter.Clear(ctx, filterStorer)
 		if err != nil {
+			slog.Info("bond: FilterInitialize: failed to clear filter",
+				"error", err)
 			return fmt.Errorf("filter initialization failed: %w", err)
 		}
+		slog.Info("bond: FilterInitialize: filter cleared successfully")
 
-		for _, scanner := range scanners {
+		slog.Info("bond: FilterInitialize: rebuilding filter from scratch",
+			"num_scanners", len(scanners))
+
+		totalKeysAdded := 0
+		for scannerIdx, scanner := range scanners {
+			slog.Info("bond: FilterInitialize: scanning table",
+				"scanner_index", scannerIdx,
+				"total_scanners", len(scanners))
+
+			keysAddedInThisScanner := 0
 			err = scanner.ScanForEach(ctx, func(keyBytes KeyBytes, lazy Lazy[any]) (bool, error) {
 				filter.Add(ctx, keyBytes)
+				keysAddedInThisScanner++
+				totalKeysAdded++
+
+				if totalKeysAdded%1e6 == 0 {
+					slog.Info("bond: FilterInitialize: scan progress",
+						"scanner_index", scannerIdx,
+						"keys_added_total", totalKeysAdded,
+						"keys_in_current_scanner", keysAddedInThisScanner)
+				}
+
 				return true, nil
 			}, false)
+
 			if err != nil {
+				slog.Info("bond: FilterInitialize: scanner failed",
+					"scanner_index", scannerIdx,
+					"keys_added_in_scanner", keysAddedInThisScanner,
+					"total_keys_added", totalKeysAdded,
+					"error", err)
 				return fmt.Errorf("filter initialization failed: %w", err)
 			}
+
+			slog.Info("bond: FilterInitialize: scanner completed",
+				"scanner_index", scannerIdx,
+				"keys_added_in_scanner", keysAddedInThisScanner,
+				"total_keys_added", totalKeysAdded)
 		}
+
+		slog.Info("bond: FilterInitialize: all scanners completed",
+			"total_keys_added", totalKeysAdded)
+
+		slog.Info("bond: FilterInitialize: saving rebuilt filter")
+		err = filter.Save(ctx, filterStorer)
+		if err != nil {
+			slog.Info("bond: FilterInitialize: failed to save rebuilt filter",
+				"error", err,
+				"total_keys_added", totalKeysAdded)
+			return fmt.Errorf("filter initialization failed to save: %w", err)
+		}
+		slog.Info("bond: FilterInitialize: rebuilt filter saved successfully",
+			"total_keys_added", totalKeysAdded)
+	} else {
+		slog.Info("bond: FilterInitialize: filter loaded successfully from storage")
 	}
+
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 
@@ -108,6 +109,7 @@ func (q Query[T]) Reverse() Query[T] {
 // and start iterating from that point.
 func (q Query[T]) Offset(offset uint64) Query[T] {
 	q.offset = offset
+	slog.Info("bond: using Offser", "offset", offset)
 	return q
 }
 
@@ -117,6 +119,7 @@ func (q Query[T]) Offset(offset uint64) Query[T] {
 // mindful of your memory constrains.
 func (q Query[T]) Limit(limit uint64) Query[T] {
 	q.limit = limit
+	slog.Info("bond: using Limit", "limit", limit)
 	return q
 }
 

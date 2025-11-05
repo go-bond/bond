@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"sync"
@@ -845,9 +846,14 @@ func (t *_table[T]) GetPoint(ctx context.Context, in T, optBatch ...Batch) (T, e
 	var tr T
 	trs, err := t.Get(ctx, NewSelectorPoint(in), optBatch...)
 	if err != nil {
+		slog.Info("bond: GetPoint: error from Get",
+			"table", t.name,
+			"error", err)
 		return tr, err
 	}
 	if len(trs) == 0 {
+		slog.Info("bond: GetPoint: no results found, returning ErrNotFound",
+			"table", t.name)
 		return tr, ErrNotFound
 	}
 	return trs[0], nil
@@ -873,11 +879,18 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 
 		bCtx := ContextWithBatch(context.Background(), batch)
 		if t.filter != nil && !t.filter.MayContain(bCtx, key) {
+			slog.Info("bond: Get (SelectorTypePoint): filter reports key not found, returning ErrNotFound",
+				"table", t.name,
+				"key", fmt.Sprintf("%x", key))
 			return nil, ErrNotFound
 		}
 
 		record, closer, err := t.db.Get(key, batch)
 		if err != nil {
+			slog.Info("bond: Get (SelectorTypePoint): db.Get returned error, returning ErrNotFound",
+				"table", t.name,
+				"key", fmt.Sprintf("%x", key),
+				"original_error", err)
 			return nil, ErrNotFound
 		}
 		defer closer.Close()
@@ -885,6 +898,9 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 		var rtr T
 		err = t.serializer.Deserialize(record, &rtr)
 		if err != nil {
+			slog.Info("bond: Get (SelectorTypePoint): deserialization failed",
+				"table", t.name,
+				"error", err)
 			return nil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
 
@@ -905,6 +921,9 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 
 			values, err := t.get(keys, batch, valueArray, false)
 			if err != nil {
+				slog.Info("bond: Get (SelectorTypePoints): t.get returned error",
+					"table", t.name,
+					"error", err)
 				return err
 			}
 
@@ -917,6 +936,9 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 				var tr T
 				err = t.serializer.Deserialize(value, &tr)
 				if err != nil {
+					slog.Info("bond: Get (SelectorTypePoints): deserialization failed",
+						"table", t.name,
+						"error", err)
 					return err
 				}
 
@@ -936,6 +958,9 @@ func (t *_table[T]) Get(ctx context.Context, sel Selector[T], optBatch ...Batch)
 
 		err := t.ScanIndex(ctx, t.primaryIndex, sel, &trs, false, optBatch...)
 		if err != nil {
+			slog.Info("bond: Get (SelectorTypeRange/Ranges): ScanIndex returned error",
+				"table", t.name,
+				"error", err)
 			return nil, err
 		}
 
@@ -962,9 +987,47 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 	}, batch)
 	defer iter.Close()
 
+	if iter.Error() != nil {
+		slog.Info("bond: get: iterator creation error",
+			"table", t.name,
+			"error", iter.Error(),
+		)
+		return nil, fmt.Errorf("iterator creation error: %w", iter.Error())
+	}
+
 	for i := 0; i < len(keys); i++ {
+		slog.Info("bond: get: processing key",
+			"table", t.name,
+			"key", fmt.Sprintf("%x", keys[i]),
+			"iter.error", iter.Error(),
+			"t.filter", t.filter != nil,
+			"mayContain", t.filter != nil && t.filter.MayContain(context.Background(), keys[i]),
+		)
 		if t.filter != nil && !t.filter.MayContain(context.Background(), keys[i]) {
+			// TODO: for some reason we are seeing false negatives here, need to
+			// investigate further.
 			if errorOnNotExist {
+				slog.Info("bond: get: filter reports key not found, returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"errorOnNotExist", errorOnNotExist)
+				return nil, ErrNotFound
+			} else {
+				slog.Info("bond: get: filter reports key not found, setting empty value",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]))
+				values[i] = values[i][:0]
+				continue
+			}
+		}
+
+		// Check for invalid key length first
+		if len(keys[i]) <= _KeyPrefixSplitIndexOffset {
+			if errorOnNotExist {
+				slog.Info("bond: get: invalid key length, returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"key_length", len(keys[i]))
 				return nil, ErrNotFound
 			} else {
 				values[i] = values[i][:0]
@@ -972,19 +1035,61 @@ func (t *_table[T]) get(keys [][]byte, batch Batch, values [][]byte, errorOnNotE
 			}
 		}
 
-		if len(keys[i]) <= _KeyPrefixSplitIndexOffset || !iter.SeekGE(keys[i]) || !bytes.Equal(iter.Key(), keys[i]) {
+		// Attempt to seek to the key
+		seekSucceeded := iter.SeekGE(keys[i])
+
+		// check for iterator error if seek failed
+		if !seekSucceeded {
+			if iterErr := iter.Error(); iterErr != nil {
+				slog.Info("bond: get: iterator error detected during SeekGE",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"iterator_error", iterErr)
+				return nil, fmt.Errorf("iterator error during seek: %w", iterErr)
+			}
+
+			// No error, key genuinely doesn't exist
 			if errorOnNotExist {
+				slog.Info("bond: get: key not found (seek failed), returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"errorOnNotExist", errorOnNotExist)
 				return nil, ErrNotFound
 			} else {
+				slog.Info("bond: get: key not found (seek failed), setting empty value",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]))
 				values[i] = values[i][:0]
 				continue
 			}
 		}
 
+		// Seek succeeded, now safely check if keys match
+		keysMatch := bytes.Equal(iter.Key(), keys[i])
+
+		if !keysMatch {
+			// Key exists but doesn't match - the sought key doesn't exist
+			if errorOnNotExist {
+				slog.Info("bond: get: key not found (key mismatch), returning ErrNotFound",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"found_key", fmt.Sprintf("%x", iter.Key()),
+					"errorOnNotExist", errorOnNotExist)
+				return nil, ErrNotFound
+			} else {
+				slog.Info("bond: get: key not found (key mismatch), setting empty value",
+					"table", t.name,
+					"key", fmt.Sprintf("%x", keys[i]),
+					"found_key", fmt.Sprintf("%x", iter.Key()))
+				values[i] = values[i][:0]
+				continue
+			}
+		}
+
+		// Key found and matches, get the value
 		iterValue := iter.Value()
 		value := values[i][:0]
 		value = append(value, iterValue...)
-
 		values[i] = value
 	}
 
@@ -1128,6 +1233,10 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		var rtr T
 		err := t.serializer.Deserialize(prefetchedValues[prefetchedValuesIndex], &rtr)
 		if err != nil {
+			slog.Info("bond: scanForEachSecondaryIndex: getPrefetchedValue deserialization failed",
+				"table", t.name,
+				"index", idx.IndexName,
+				"error", err)
 			return t.valueNil, fmt.Errorf("get failed to deserialize: %w", err)
 		}
 
@@ -1159,8 +1268,18 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		var err error
 		prefetchedValues, err = t.get(keys, batch, valuesBuffer, true)
 		if err != nil {
+			slog.Info("bond: scanForEachSecondaryIndex: prefetchAndGetValue t.get failed",
+				"table", t.name,
+				"index", idx.IndexName,
+				"num_keys", len(keys),
+				"error", err)
 			return t.valueNil, err
 		}
+		slog.Info("bond: scanForEachSecondaryIndex: prefetchAndGetValue fetched values",
+			"table", t.name,
+			"index", idx.IndexName,
+			"num_keys", len(keys),
+		)
 
 		return getPrefetchedValue()
 	}
@@ -1175,6 +1294,12 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 
 		cont, err := f(it.Key(), Lazy[T]{GetFunc: prefetchAndGetValue})
 		if !cont || err != nil {
+			if err != nil {
+				slog.Info("bond: scanForEachSecondaryIndex: callback function returned error",
+					"table", t.name,
+					"index", idx.IndexName,
+					"error", err)
+			}
 			_ = it.Close()
 			return err
 		}
@@ -1183,6 +1308,12 @@ func (t *_table[T]) scanForEachSecondaryIndex(ctx context.Context, idx *Index[T]
 		for prefetchedValuesIndex < len(prefetchedValues) {
 			cont, err = f(indexKeys[prefetchedValuesIndex], Lazy[T]{GetFunc: getPrefetchedValue})
 			if !cont || err != nil {
+				if err != nil {
+					slog.Info("bond: scanForEachSecondaryIndex: callback function returned error on prefetched value",
+						"table", t.name,
+						"index", idx.IndexName,
+						"error", err)
+				}
 				_ = it.Close()
 				return err
 			}
