@@ -33,6 +33,16 @@ func (f *FilterFSStorer) Get(key []byte, batch ...bond.Batch) (data []byte, clos
 func (f *FilterFSStorer) Set(key []byte, value []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
 	filePath := f.prepareFilePath(f.path, string(key))
 
+	// check if directoru exists
+	if _, err := os.Stat(path.Dir(filePath)); err != nil {
+		if os.IsNotExist(err) {
+			err := os.MkdirAll(path.Dir(filePath), 0770)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	err := os.WriteFile(filePath, value, 0660)
 	if err != nil {
 		return err

@@ -123,6 +123,7 @@ func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterSto
 				return fmt.Errorf("filter initialization failed: %w", err)
 			}
 		}
+		return err
 	}
 	return nil
 }

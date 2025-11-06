@@ -6,6 +6,7 @@
 
 tests/demo
 tests/tmp
+tests/test_bloom_filter
 
 bond-cli
 
