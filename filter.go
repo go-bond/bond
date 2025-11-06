@@ -109,7 +109,7 @@ func (f *FilterInitializable) Clear(ctx context.Context, store FilterStorer) err
 func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterStorer, scanners []TableScanner[any]) error {
 	err := filter.Load(ctx, filterStorer)
 	if err != nil {
-		/*err = filter.Clear(ctx, filterStorer)
+		err = filter.Clear(ctx, filterStorer)
 		if err != nil {
 			return fmt.Errorf("filter initialization failed: %w", err)
 		}
@@ -122,7 +122,7 @@ func FilterInitialize(ctx context.Context, filter Filter, filterStorer FilterSto
 			if err != nil {
 				return fmt.Errorf("filter initialization failed: %w", err)
 			}
-		}*/
+		}
 		return err
 	}
 	return nil
