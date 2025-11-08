@@ -84,10 +84,12 @@ func (b *BloomFilter) Add(_ context.Context, key []byte) {
 	// TestOrAdd is thread-safe, but we lock to protect hasChanges update
 	// Lock the specific bucket
 	bucket.mu.Lock()
-	added := bucket.filter.TestOrAdd(key)
-	if added {
+
+	wasPresent := bucket.filter.TestOrAdd(key)
+	if !wasPresent {
 		bucket.hasChanges = true
 	}
+
 	bucket.mu.Unlock()
 }
 

@@ -204,6 +204,212 @@ func TestBloomFilter(t *testing.T) {
 	}
 }
 
+func TestBloomFilter_IncrementalSave(t *testing.T) {
+	const (
+		bloomNumItems  = 1000
+		bloomFp        = 0.01
+		bloomBucketNum = 10
+	)
+
+	// Test saving incremental changes to the Bloom filter and verify that all
+	// keys are present after multiple saves
+	t.Run("Save incremental changes", func(t *testing.T) {
+		initialKeys := [][]byte{
+			[]byte("key1"),
+			[]byte("key2"),
+			[]byte("key3"),
+		}
+
+		newKeys := [][]byte{
+			[]byte("key4"),
+			[]byte("key5"),
+			[]byte("key6"),
+		}
+
+		store := newStorer()
+
+		// First save with initial keys
+		t.Run("Add keys and save", func(t *testing.T) {
+			bf := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+
+			for _, key := range initialKeys {
+				bf.Add(context.Background(), key)
+			}
+
+			err := bf.Save(context.Background(), store)
+			require.NoError(t, err)
+		})
+
+		// Load, add new keys, and save again
+		t.Run("Load, add new keys, save again, and verify", func(t *testing.T) {
+			// Load the filter from the store
+			bf2 := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+
+			err := bf2.Load(context.Background(), store)
+			require.NoError(t, err)
+
+			// Add NEW keys to a loaded filter
+			for _, key := range newKeys {
+				bf2.Add(context.Background(), key)
+			}
+
+			// All keys (initial + new) should be present before saving
+			for _, key := range initialKeys {
+				assert.True(t, bf2.MayContain(context.Background(), key))
+			}
+			for _, key := range newKeys {
+				assert.True(t, bf2.MayContain(context.Background(), key))
+			}
+
+			// Second save - should save the changes
+			err = bf2.Save(context.Background(), store)
+			require.NoError(t, err)
+		})
+
+		// Finally, load into a fresh filter and verify all keys are present
+		t.Run("Load into fresh filter and verify all keys", func(t *testing.T) {
+			// Load the filter from the store
+			bf3 := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+			err := bf3.Load(context.Background(), store)
+			require.NoError(t, err)
+
+			// Check initial keys
+			for _, key := range initialKeys {
+				assert.True(
+					t,
+					bf3.MayContain(context.Background(), key),
+					"Initial key %s should be present",
+					key,
+				)
+			}
+
+			// Check new keys
+			for _, key := range newKeys {
+				assert.True(
+					t,
+					bf3.MayContain(context.Background(), key),
+					"Key %s added after load should be present",
+					key,
+				)
+			}
+		})
+	})
+
+	// Test that false negative are not introduced after incremental saves
+	t.Run("False negative rate after incremental saves", func(t *testing.T) {
+		store := newStorer()
+
+		initialKeys := [][]byte{
+			[]byte("key1"),
+			[]byte("key2"),
+			[]byte("key3"),
+		}
+
+		newKey := []byte("key4")
+
+		t.Run("Add initial keys and save", func(t *testing.T) {
+			bf := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+
+			for _, key := range initialKeys {
+				bf.Add(context.Background(), key)
+			}
+
+			err := bf.Save(context.Background(), store)
+			require.NoError(t, err)
+		})
+
+		t.Run("Load and verify initial keys", func(t *testing.T) {
+			bf2 := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+
+			err := bf2.Load(context.Background(), store)
+			require.NoError(t, err)
+
+			for _, key := range initialKeys {
+				assert.True(
+					t,
+					bf2.MayContain(context.Background(), key),
+					"Initial key %s should be present after load",
+					key,
+				)
+			}
+
+			// Add a new key and save again
+			bf2.Add(context.Background(), newKey)
+
+			// Verify all initial keys and the new key are present before saving
+			allKeys := append(initialKeys, newKey)
+			for _, key := range allKeys {
+				assert.True(
+					t,
+					bf2.MayContain(context.Background(), key),
+					"Key %s should be present before saving after adding new key",
+					key,
+				)
+			}
+
+			// Save the updated filter
+			err = bf2.Save(context.Background(), store)
+		})
+
+		t.Run("Load into fresh filter and verify the new key", func(t *testing.T) {
+			bf3 := NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
+
+			err := bf3.Load(context.Background(), store)
+			require.NoError(t, err)
+
+			// Verify the new key
+			assert.True(
+				t,
+				bf3.MayContain(context.Background(), newKey),
+				"New key should be present after loading into fresh filter",
+			)
+		})
+	})
+
+	// Test that adding a duplicate key does not set hasChanges to true
+	t.Run("Save optimization", func(t *testing.T) {
+		store := newStorer()
+
+		bf := NewBloomFilter(
+			bloomNumItems,
+			bloomFp,
+			1, // Single bucket to make it deterministic
+		)
+
+		key := []byte("duplicate_key")
+
+		// Add key once
+		bf.Add(context.Background(), key)
+
+		// Save
+		err := bf.Save(context.Background(), store)
+		require.NoError(t, err)
+
+		// Manually check hasChanges flag after save
+		bucket := bf.buckets[0]
+		bucket.mu.Lock()
+		assert.False(t, bucket.hasChanges, "After save, hasChanges should be false")
+		bucket.mu.Unlock()
+
+		// Add the SAME key again
+		bf.Add(context.Background(), key)
+
+		// Now hasChanges should remain false
+		bucket.mu.Lock()
+		hasChangesAfterDuplicate := bucket.hasChanges
+		bucket.mu.Unlock()
+
+		assert.False(t,
+			hasChangesAfterDuplicate,
+			"hasChanges should remain false for duplicate key (optimization)",
+		)
+
+		// This means no unnecessary save will happen
+		err = bf.Save(context.Background(), store)
+		require.NoError(t, err)
+	})
+}
+
 func KeyGenerate(n int, keySize int) (ret [][]byte) {
 	for i := 0; i < n; i++ {
 		ret = append(ret, []byte(RandomString(keySize)))
@@ -219,4 +425,10 @@ func RandomString(n int) string {
 		s[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(s)
+}
+
+func newStorer() bond.FilterStorer {
+	return &filterStorer{
+		data: make(map[string][]byte),
+	}
 }
