@@ -267,3 +267,16 @@ func HashBytes(key []byte, buckets int32, h jump.KeyHasher) int32 {
 	}
 	return jump.Hash(h.Sum64(), buckets)
 }
+
+// CountBucketsWithPendingChanges returns the number of buckets that have pending changes to be saved.
+func CountBucketsWithPendingChanges(bloomFilter *BloomFilter) int {
+	count := 0
+	for _, bucket := range bloomFilter.buckets {
+		bucket.mu.RLock()
+		if bucket.hasChanges {
+			count++
+		}
+		bucket.mu.RUnlock()
+	}
+	return count
+}
