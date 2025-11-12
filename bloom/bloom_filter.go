@@ -84,10 +84,12 @@ func (b *BloomFilter) Add(_ context.Context, key []byte) {
 	// TestOrAdd is thread-safe, but we lock to protect hasChanges update
 	// Lock the specific bucket
 	bucket.mu.Lock()
-	added := bucket.filter.TestOrAdd(key)
-	if added {
+
+	wasPresent := bucket.filter.TestOrAdd(key)
+	if !wasPresent {
 		bucket.hasChanges = true
 	}
+
 	bucket.mu.Unlock()
 }
 
@@ -264,4 +266,17 @@ func HashBytes(key []byte, buckets int32, h jump.KeyHasher) int32 {
 		panic(err)
 	}
 	return jump.Hash(h.Sum64(), buckets)
+}
+
+// CountBucketsWithPendingChanges returns the number of buckets that have pending changes to be saved.
+func CountBucketsWithPendingChanges(bloomFilter *BloomFilter) int {
+	count := 0
+	for _, bucket := range bloomFilter.buckets {
+		bucket.mu.RLock()
+		if bucket.hasChanges {
+			count++
+		}
+		bucket.mu.RUnlock()
+	}
+	return count
 }
