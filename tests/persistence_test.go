@@ -180,6 +180,130 @@ func TestFilterInitializable_IncrementalSave(t *testing.T) {
 		})
 	})
 
+	// Test the lazy initialization scenario where keys are added before bloom filter is initialized or during initialization.
+	t.Run("Add keys, initialize from store, and verify all keys, save, and load from store", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Create a real bond.DB instance
+		dbPath := t.TempDir() + "/test_add_init_from_store_check.db"
+		db, err := bond.Open(dbPath, &bond.Options{})
+		require.NoError(t, err)
+		defer func() {
+			_ = db.Close()
+		}()
+
+		// Use a shared store across all subtests in this group
+		store := newStorer()
+
+		// Keys that will be "scanned" from table (simulating existing data)
+		scannedKeys := []bond.KeyBytes{
+			bond.KeyBytes("scanned_key1"),
+			bond.KeyBytes("scanned_key2"),
+			bond.KeyBytes("scanned_key3"),
+		}
+
+		// Keys that will be added incrementally after initialization
+		newKeys := []bond.KeyBytes{
+			bond.KeyBytes("new_key1"),
+			bond.KeyBytes("new_key2"),
+			bond.KeyBytes("new_key3"),
+		}
+
+		bf := bond.NewFilterInitializable(
+			bloom.NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum),
+		)
+
+		// Check keys before initialization
+		t.Run("Check keys before initialization", func(t *testing.T) {
+			for _, key := range newKeys {
+				// Since the filter is not initialized, all keys should be maybe present
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Key %s should not be present before initialization", key)
+			}
+
+			for _, key := range scannedKeys {
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Scanned key %s should be present before initialization", key)
+			}
+		})
+
+		// Add keys before initialziation to check if they are added correctly after initialization
+		t.Run("Add keys before initialziation", func(t *testing.T) {
+			for _, key := range newKeys {
+				// Add the key to the filter
+				bf.Add(ctx, []byte(key))
+			}
+		})
+
+		// Initialize from store
+		t.Run("Initialize from store", func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockScanner := bondmock.NewMockTableScanner[any](ctrl)
+
+			mockScanner.EXPECT().
+				ScanForEach(gomock.Any(), gomock.Any(), false).
+				DoAndReturn(func(ctx context.Context, f func(bond.KeyBytes, bond.Lazy[any]) (bool, error), reverse bool, optBatch ...bond.Batch) error {
+					for _, key := range scannedKeys {
+						_, err := f(key, bond.Lazy[any]{})
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}).
+				Times(1)
+
+			err := bf.Initialize(ctx, store, []bond.TableScanner[any]{mockScanner})
+			require.NoError(t, err)
+			require.True(t, bf.IsInitialized(), "Filter should be initialized")
+		})
+
+		// Check keys after initialization
+		t.Run("Check keys after initialization", func(t *testing.T) {
+			for _, key := range newKeys {
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Key %s should be present after initialization", key)
+			}
+
+			for _, key := range scannedKeys {
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Scanned key %s should be present after initialization", key)
+			}
+		})
+
+		// Check not present key that should not be present after initializarion
+		t.Run("Check key that is not present after initializarion", func(t *testing.T) {
+			notPresentKey := "not_present_key"
+			assert.False(t, bf.MayContain(ctx, []byte(notPresentKey)), "Key %s should not be present after initialization", notPresentKey)
+		})
+
+		// Save the filter
+		t.Run("Save the filter", func(t *testing.T) {
+			err := bf.Save(ctx, store)
+			require.NoError(t, err)
+		})
+
+		bf = bond.NewFilterInitializable(
+			bloom.NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum),
+		)
+
+		// Initialize from store
+		t.Run("Initialize from store", func(t *testing.T) {
+			err := bf.Initialize(ctx, store, []bond.TableScanner[any]{})
+			require.NoError(t, err)
+			require.True(t, bf.IsInitialized(), "Filter should be initialized")
+		})
+
+		// Check keys after initialization
+		t.Run("Check keys after initialization", func(t *testing.T) {
+			for _, key := range newKeys {
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Key %s should be present after initialization", key)
+			}
+
+			for _, key := range scannedKeys {
+				assert.True(t, bf.MayContain(ctx, []byte(key)), "Scanned key %s should be present after initialization", key)
+			}
+		})
+	})
+
 	// Test that false negatives are not introduced after incremental saves
 	t.Run("No false negatives after incremental saves with Initialize", func(t *testing.T) {
 		ctx := context.Background()
