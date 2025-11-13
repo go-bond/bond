@@ -22,8 +22,8 @@ var _buffPool = utils.NewPreAllocatedSyncPool[[]byte](func() any {
 
 type _bucket struct {
 	num            int
-	hasChanges     bool
-	hasBeenWritten bool
+	hasChanges     bool // true if bucket has unsaved changes since last write
+	hasBeenWritten bool // true if bucket has been written to storage at least once
 
 	filter *bloom.BloomFilter
 
@@ -85,8 +85,8 @@ func (b *BloomFilter) Add(_ context.Context, key []byte) {
 	// Lock the specific bucket
 	bucket.mu.Lock()
 
-	wasPresent := bucket.filter.TestOrAdd(key)
-	if !wasPresent {
+	maybeWasPresent := bucket.filter.TestOrAdd(key)
+	if !maybeWasPresent {
 		bucket.hasChanges = true
 	}
 
@@ -123,55 +123,36 @@ func (b *BloomFilter) RecordFalsePositive() {
 	atomic.AddUint64(&b.stats.FalsePositives, 1)
 }
 
-func (b *BloomFilter) Load(_ context.Context, store bond.FilterStorer) error {
+func (b *BloomFilter) Load(ctx context.Context, store bond.FilterStorer) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	var keyBuff [1024]byte
 
 	bucketNum, bucketNumCloser, err := store.Get(buildBucketNumKey(keyBuff[:0], b.keyPrefix))
-	if err != nil || (err == nil && binary.BigEndian.Uint64(bucketNum) != uint64(b.numOfBuckets)) {
-		if err == nil {
-			_ = bucketNumCloser.Close()
+	if err != nil {
+		if err == bond.ErrNotFound {
+			return fmt.Errorf("bloom filter not found in store")
 		}
-		return fmt.Errorf("configuration changed")
+		return fmt.Errorf("failed to get bucket count: %w", err)
+	}
+	defer bucketNumCloser.Close()
+
+	if binary.BigEndian.Uint64(bucketNum) != uint64(b.numOfBuckets) {
+		return fmt.Errorf("configuration changed: expected %d buckets, found %d",
+			b.numOfBuckets, binary.BigEndian.Uint64(bucketNum))
 	}
 
-	for _, bucket := range b.buckets {
-		data, closer, err := store.Get(buildKey(keyBuff[:0], b.keyPrefix, bucket.num))
-		if err != nil {
-			return err
+	for i := range b.buckets {
+		if err := b.loadBucket(ctx, store, keyBuff, b.buckets[i]); err != nil {
+			return fmt.Errorf("failed to load bucket %d: %w", i, err)
 		}
-
-		filter := bloom.New(0, 0)
-		zr, err := zstd.NewReader(bytes.NewBuffer(data))
-		if err != nil {
-			return err
-		}
-
-		_, err = filter.ReadFrom(zr)
-		if err != nil {
-			return err
-		}
-
-		zr.Close()
-		_ = closer.Close()
-
-		// Lock the specific bucket before modifying it
-		bucket.mu.Lock()
-		err = bucket.filter.Merge(filter)
-		if err != nil {
-			bucket.mu.Unlock()
-			return fmt.Errorf("configuration changed (incompatible filter parameters): %w", err)
-		}
-		bucket.hasBeenWritten = true
-		bucket.mu.Unlock()
 	}
 
 	return nil
 }
 
-func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
+func (b *BloomFilter) Save(ctx context.Context, store bond.FilterStorer) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -182,58 +163,23 @@ func (b *BloomFilter) Save(_ context.Context, store bond.FilterStorer) error {
 	binary.BigEndian.PutUint64(dataBuff[:8], uint64(b.numOfBuckets))
 	err := store.Set(buildBucketNumKey(keyBuff[:0], b.keyPrefix), dataBuff[:8], bond.Sync)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to save bucket count: %w", err)
 	}
 
-	for _, bucket := range b.buckets {
-		// Lock the bucket early to check flags and potentially write
-		bucket.mu.Lock()
-		if !bucket.hasChanges && bucket.hasBeenWritten {
-			bucket.mu.Unlock() // Unlock if we skip
-			continue
+	for i := range b.buckets {
+		if err := b.saveBucket(ctx, store, keyBuff, b.buckets[i]); err != nil {
+			return fmt.Errorf("failed to save bucket %d: %w", i, err)
 		}
-
-		// Use a temporary buffer from the pool for writing
-		writeBuff := _buffPool.Get()
-		buff := bytes.NewBuffer(writeBuff[:0]) // Use the pooled buffer
-
-		zw, err := zstd.NewWriter(buff)
-		if err != nil {
-			return err
-		}
-
-		_, err = bucket.filter.WriteTo(zw)
-		if err != nil {
-			return err
-		}
-
-		err = zw.Close()
-		if err != nil {
-			return err
-		}
-
-		// Put the buffer back BEFORE potential error return from store.Set
-		_buffPool.Put(writeBuff[:0])
-
-		err = store.Set(
-			buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
-			buff.Bytes(), // Use the compressed data from the buffer
-			bond.Sync,
-		)
-		if err != nil {
-			bucket.mu.Unlock()
-			return err
-		}
-
-		bucket.hasChanges = false
-		bucket.hasBeenWritten = true
-		bucket.mu.Unlock()
 	}
 
 	return nil
 }
 
 func (b *BloomFilter) Clear(_ context.Context, store bond.FilterStorer) error {
+	if b.keyPrefix == nil || len(b.keyPrefix) == 0 {
+		return fmt.Errorf("cannot clear bloom filter with empty key prefix")
+	}
+
 	end := make([]byte, len(b.keyPrefix))
 	copy(end, b.keyPrefix)
 	end[len(end)-1]++
@@ -279,4 +225,85 @@ func CountBucketsWithPendingChanges(bloomFilter *BloomFilter) int {
 		bucket.mu.RUnlock()
 	}
 	return count
+}
+
+func (b *BloomFilter) saveBucket(ctx context.Context, store bond.FilterStorer, keyBuff [1024]byte, bucket *_bucket) error {
+	// Lock the bucket early to check flags and potentially write
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+
+	// Skip only if clean and already persisted at least once
+	if !bucket.hasChanges && bucket.hasBeenWritten {
+		return nil
+	}
+
+	// Use a temporary buffer from the pool for writing
+	writeBuff := _buffPool.Get()
+	defer _buffPool.Put(writeBuff[:0])
+
+	buff := bytes.NewBuffer(writeBuff[:0]) // Use the pooled buffer
+
+	zw, err := zstd.NewWriter(buff)
+	if err != nil {
+		return fmt.Errorf("failed to create zstd writer: %w", err)
+	}
+
+	_, err = bucket.filter.WriteTo(zw)
+	if err != nil {
+		_ = zw.Close()
+		return fmt.Errorf("failed to write bloom filter data: %w", err)
+	}
+
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("failed to close zstd writer: %w", err)
+	}
+
+	err = store.Set(
+		buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
+		buff.Bytes(),
+		bond.Sync,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save bucket data: %w", err)
+	}
+
+	bucket.hasChanges = false
+	bucket.hasBeenWritten = true
+
+	return nil
+}
+
+func (b *BloomFilter) loadBucket(ctx context.Context, store bond.FilterStorer, keyBuff [1024]byte, bucket *_bucket) error {
+	data, closer, err := store.Get(buildKey(keyBuff[:0], b.keyPrefix, bucket.num))
+	if err != nil {
+		return fmt.Errorf("failed to get bucket data: %w", err)
+	}
+	defer closer.Close()
+
+	filter := bloom.New(0, 0)
+	zr, err := zstd.NewReader(bytes.NewBuffer(data))
+	if err != nil {
+		return fmt.Errorf("failed to create zstd reader: %w", err)
+	}
+	defer zr.Close()
+
+	_, err = filter.ReadFrom(zr)
+	if err != nil {
+		return fmt.Errorf("failed to read bloom filter data: %w", err)
+	}
+
+	bucket.mu.Lock()
+
+	err = bucket.filter.Merge(filter)
+	if err != nil {
+		bucket.mu.Unlock()
+
+		return fmt.Errorf("configuration changed (incompatible filter parameters): %w", err)
+	}
+	bucket.hasChanges = false
+	bucket.hasBeenWritten = true
+
+	bucket.mu.Unlock()
+
+	return nil
 }
