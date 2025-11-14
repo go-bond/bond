@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -145,14 +146,13 @@ func TestFilter_PersistToBucket(t *testing.T) {
 
 			lastAddedIndex++
 		}
+
 		require.GreaterOrEqual(t, pendingChanges, 1, "At least 1 bucket should have pending changes")
 
 		// Ensure all added keys are in the filter
 		for keyStr := range addedKeySet {
 			require.True(t, bloomFilter.MayContain(ctx, []byte(keyStr)), "Key %s should be in filter", keyStr)
 		}
-
-		t.Logf("Pending changes before save: %d buckets", pendingChanges)
 
 		err = bloomFilter.Save(ctx, store)
 		require.NoError(t, err)
@@ -176,13 +176,20 @@ func TestFilter_PersistToBucket(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, bloomFilter.IsInitialized())
 
+		store.resetTouchedBuckets()
+
+		touchedCount := store.getTouchedBucketCount()
+		assert.Equal(t, 0, touchedCount, "No buckets should be touched after initializing empty filter")
+
 		// Ensure all previously added keys persist after load
 		for keyStr := range addedKeySet {
 			require.True(t, bloomFilter.MayContain(ctx, []byte(keyStr)), "Key %s should be in filter after load", keyStr)
 		}
 
 		// Add items until one bucket is touched
-		pendingChanges := 0
+		pendingChanges := bloom.CountBucketsWithPendingChanges(bf)
+		assert.Equal(t, 0, pendingChanges, "No buckets should have pending changes at start")
+
 		for pendingChanges < 1 {
 			testKey := genTestKey(lastAddedIndex)
 			bloomFilter.Add(ctx, testKey)
@@ -194,6 +201,8 @@ func TestFilter_PersistToBucket(t *testing.T) {
 
 			lastAddedIndex++
 		}
+
+		t.Logf("Last added index: %d", lastAddedIndex)
 		require.GreaterOrEqual(t, pendingChanges, 1, "At least 1 bucket should have pending changes after adding items")
 
 		// Ensure all added keys are in the filter
@@ -206,11 +215,11 @@ func TestFilter_PersistToBucket(t *testing.T) {
 		err = bloomFilter.Save(ctx, store)
 		require.NoError(t, err)
 
-		touchedCount := store.getTouchedBucketCount()
+		touchedCount = store.getTouchedBucketCount()
 		assert.GreaterOrEqual(t, touchedCount, pendingChanges, "Save after adding items should touch at least %d buckets, but touched %d", pendingChanges, touchedCount)
 	})
 
-	t.Run("Add items to touch multiple buckets", func(t *testing.T) {
+	t.Run("Add items to touch ALL buckets", func(t *testing.T) {
 		require.NotEmpty(t, addedKeySet, "There should be previously added keys to verify after load")
 
 		ctx := context.Background()
@@ -222,13 +231,20 @@ func TestFilter_PersistToBucket(t *testing.T) {
 		err := bloomFilter.Initialize(ctx, store, []bond.TableScanner[any]{})
 		require.NoError(t, err)
 
+		store.resetTouchedBuckets()
+
+		touchedCount := store.getTouchedBucketCount()
+		assert.Equal(t, 0, touchedCount, "No buckets should be touched after initializing empty filter")
+
 		// Ensure all previously added keys persist after load
 		for keyStr := range addedKeySet {
 			assert.True(t, bloomFilter.MayContain(ctx, []byte(keyStr)), "Key %s should be in filter after load", keyStr)
 		}
 
 		// Add items until all buckets are touched
-		pendingChanges := 0
+		pendingChanges := bloom.CountBucketsWithPendingChanges(bf)
+		assert.Equal(t, 0, pendingChanges, "No buckets should have pending changes at start")
+
 		for pendingChanges < bloomBucketNum {
 			testKey := genTestKey(lastAddedIndex)
 			bloomFilter.Add(ctx, testKey)
@@ -249,12 +265,15 @@ func TestFilter_PersistToBucket(t *testing.T) {
 		err = bloomFilter.Save(ctx, store)
 		require.NoError(t, err)
 
-		touchedCount := store.getTouchedBucketCount()
+		touchedCount = store.getTouchedBucketCount()
+		t.Logf("touchedCount after save: %d", touchedCount)
 		assert.Equal(t, bloomBucketNum, touchedCount, "Save after adding items should touch all %d buckets", bloomBucketNum)
 	})
 
 	t.Run("Ensure all added keys persist after multiple loads", func(t *testing.T) {
 		require.NotEmpty(t, addedKeySet, "There should be previously added keys to verify after load")
+
+		t.Logf("Verifying total of %d added keys", len(addedKeySet))
 
 		ctx := context.Background()
 		bf := bloom.NewBloomFilter(bloomNumItems, bloomFp, bloomBucketNum)
@@ -265,7 +284,12 @@ func TestFilter_PersistToBucket(t *testing.T) {
 		require.NoError(t, err)
 
 		// Ensure all previously added keys persist after load
+		sortedKeys := make([]string, 0, len(addedKeySet))
 		for keyStr := range addedKeySet {
+			sortedKeys = append(sortedKeys, keyStr)
+		}
+		sort.Strings(sortedKeys)
+		for _, keyStr := range sortedKeys {
 			require.True(t, bloomFilter.MayContain(ctx, []byte(keyStr)), "Key %s should be in filter after load", keyStr)
 		}
 
