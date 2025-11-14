@@ -85,6 +85,8 @@ func (b *BloomFilter) Add(_ context.Context, key []byte) {
 	// Lock the specific bucket
 	bucket.mu.Lock()
 
+	// Add the key to the bloom filter.
+	// NOTE: TestOrAdd returns the value of filter.Test(key) before adding.
 	maybeWasPresent := bucket.filter.TestOrAdd(key)
 	if !maybeWasPresent {
 		bucket.hasChanges = true
