@@ -241,7 +241,7 @@ func (b *BloomFilter) saveBucket(ctx context.Context, store bond.FilterStorer, k
 
 	// Use a temporary buffer from the pool for writing
 	writeBuff := _buffPool.Get()
-	defer _buffPool.Put(writeBuff[:0])
+	defer _buffPool.Put(writeBuff[:0]) // Is is important to return after use
 
 	buff := bytes.NewBuffer(writeBuff[:0]) // Use the pooled buffer
 
@@ -256,10 +256,13 @@ func (b *BloomFilter) saveBucket(ctx context.Context, store bond.FilterStorer, k
 		return fmt.Errorf("failed to write bloom filter data: %w", err)
 	}
 
+	// Close must be called to flush all data to the buffer before writing to
+	// storage
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("failed to close zstd writer: %w", err)
 	}
 
+	// Write to storage
 	err = store.Set(
 		buildKey(keyBuff[:0], b.keyPrefix, bucket.num),
 		buff.Bytes(),
