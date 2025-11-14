@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"sort"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -921,6 +921,12 @@ func TestIndex_Callbacks(t *testing.T) {
 		},
 	})
 
+	// Simple mock batch for callback testing
+	type callTracker struct {
+		setCalled    bool
+		deleteCalled bool
+	}
+
 	var (
 		idx1 = NewIndex[*TokenBalance](IndexOptions[*TokenBalance]{
 			IndexID:   1,
@@ -1094,43 +1100,77 @@ func TestIndex_Callbacks(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockBatch := MockBatch{}
+			tracker := &callTracker{}
+
+			mockBatch := &mockBatchForIndexTest{
+				onSet:    func() { tracker.setCalled = true },
+				onDelete: func() { tracker.deleteCalled = true },
+			}
 
 			switch tc.op {
 			case "insert":
-				if tc.setCallExpected {
-					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				}
-
-				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, &mockBatch)
+				err := tc.index.OnInsert(tokenBalanceTable, tc.newRow, mockBatch)
 				require.NoError(t, err)
 
-				mockBatch.AssertExpectations(t)
+				assert.Equal(t, tc.setCallExpected, tracker.setCalled,
+					"Set call expectation mismatch for %s", tc.name)
 			case "update":
-				if tc.setCallExpected {
-					mockBatch.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				}
-				if tc.deleteCallExpected {
-					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				}
-
-				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, &mockBatch)
+				err := tc.index.OnUpdate(tokenBalanceTable, tc.existingRow, tc.newRow, mockBatch)
 				require.NoError(t, err)
 
-				mockBatch.AssertExpectations(t)
+				assert.Equal(t, tc.setCallExpected, tracker.setCalled,
+					"Set call expectation mismatch for %s", tc.name)
+				assert.Equal(t, tc.deleteCallExpected, tracker.deleteCalled,
+					"Delete call expectation mismatch for %s", tc.name)
 			case "delete":
-				if tc.deleteCallExpected {
-					mockBatch.On("Delete", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-				}
-
-				err := tc.index.OnDelete(tokenBalanceTable, tc.existingRow, &mockBatch)
+				err := tc.index.OnDelete(tokenBalanceTable, tc.existingRow, mockBatch)
 				require.NoError(t, err)
 
-				mockBatch.AssertExpectations(t)
+				assert.Equal(t, tc.deleteCallExpected, tracker.deleteCalled,
+					"Delete call expectation mismatch for %s", tc.name)
 			}
 		})
 	}
 }
+
+// mockBatchForIndexTest is a simple mock that tracks if Set/Delete were called
+type mockBatchForIndexTest struct {
+	onSet    func()
+	onDelete func()
+}
+
+func (m *mockBatchForIndexTest) ID() uint64      { return 0 }
+func (m *mockBatchForIndexTest) Type() BatchType { return BatchTypeReadWrite }
+func (m *mockBatchForIndexTest) Len() int        { return 0 }
+func (m *mockBatchForIndexTest) Count() uint32   { return 0 }
+func (m *mockBatchForIndexTest) Empty() bool     { return true }
+func (m *mockBatchForIndexTest) Reset()          {}
+func (m *mockBatchForIndexTest) Get(key []byte, batch ...Batch) (data []byte, closer io.Closer, err error) {
+	return nil, nil, nil
+}
+func (m *mockBatchForIndexTest) Set(key []byte, value []byte, opt WriteOptions, batch ...Batch) error {
+	if m.onSet != nil {
+		m.onSet()
+	}
+	return nil
+}
+func (m *mockBatchForIndexTest) Delete(key []byte, opt WriteOptions, batch ...Batch) error {
+	if m.onDelete != nil {
+		m.onDelete()
+	}
+	return nil
+}
+func (m *mockBatchForIndexTest) DeleteRange(start []byte, end []byte, opt WriteOptions, batch ...Batch) error {
+	return nil
+}
+func (m *mockBatchForIndexTest) Iter(opt *IterOptions, batch ...Batch) Iterator { return nil }
+func (m *mockBatchForIndexTest) Apply(b Batch, opt WriteOptions) error          { return nil }
+func (m *mockBatchForIndexTest) Commit(opt WriteOptions) error                  { return nil }
+func (m *mockBatchForIndexTest) Close() error                                   { return nil }
+func (m *mockBatchForIndexTest) OnCommit(f func(b Batch) error)                 {}
+func (m *mockBatchForIndexTest) OnCommitted(f func(b Batch))                    {}
+func (m *mockBatchForIndexTest) OnError(f func(b Batch, err error))             {}
+func (m *mockBatchForIndexTest) OnClose(f func(b Batch))                        {}
 
 func TestBond_NewIndex_Ordered(t *testing.T) {
 	const (
