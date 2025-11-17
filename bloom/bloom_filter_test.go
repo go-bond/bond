@@ -2,11 +2,13 @@ package bloom
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-bond/bond"
@@ -16,10 +18,14 @@ import (
 )
 
 type filterStorer struct {
+	mu   sync.RWMutex
 	data map[string][]byte
 }
 
 func (f *filterStorer) Get(key []byte, batch ...bond.Batch) (data []byte, closer io.Closer, err error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	keyData, ok := f.data[cleanKey(key)]
 	if !ok {
 		return nil, nil, bond.ErrNotFound
@@ -28,6 +34,9 @@ func (f *filterStorer) Get(key []byte, batch ...bond.Batch) (data []byte, closer
 }
 
 func (f *filterStorer) Set(key []byte, value []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	valueCopy := make([]byte, len(value))
 	copy(valueCopy, value)
 	f.data[cleanKey(key)] = valueCopy
@@ -35,6 +44,9 @@ func (f *filterStorer) Set(key []byte, value []byte, opt bond.WriteOptions, batc
 }
 
 func (f *filterStorer) DeleteRange(start []byte, end []byte, opt bond.WriteOptions, batch ...bond.Batch) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	for key, _ := range f.data {
 		if strings.HasPrefix(key, cleanKey(start)) {
 			delete(f.data, key)
@@ -407,6 +419,262 @@ func TestBloomFilter_IncrementalSave(t *testing.T) {
 		// This means no unnecessary save will happen
 		err = bf.Save(context.Background(), store)
 		require.NoError(t, err)
+	})
+}
+
+func TestBloomFilter_ConcurrentAccess(t *testing.T) {
+	t.Run("Concurrent Add operations", func(t *testing.T) {
+		bf := NewBloomFilter(1000, 0.01, 10)
+
+		const numGoroutines = 100
+		const keysPerGoroutine = 100
+
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// Concurrent adds
+		for i := 0; i < numGoroutines; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				for j := 0; j < keysPerGoroutine; j++ {
+					key := []byte(fmt.Sprintf("worker_%d_key_%d", workerID, j))
+					bf.Add(context.Background(), key)
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify all keys are present
+		for i := 0; i < numGoroutines; i++ {
+			for j := 0; j < keysPerGoroutine; j++ {
+				key := []byte(fmt.Sprintf("worker_%d_key_%d", i, j))
+				assert.True(t, bf.MayContain(context.Background(), key),
+					"Key should be present after concurrent add")
+			}
+		}
+	})
+
+	t.Run("Concurrent Add and MayContain operations", func(t *testing.T) {
+		bf := NewBloomFilter(1000, 0.01, 10)
+
+		const numWriters = 50
+		const numReaders = 50
+		const keysPerWriter = 100
+
+		// Pre-populate some keys
+		prePopulatedKeys := make([][]byte, 100)
+		for i := range prePopulatedKeys {
+			key := []byte(fmt.Sprintf("prepopulated_key_%d", i))
+			prePopulatedKeys[i] = key
+			bf.Add(context.Background(), key)
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(numWriters + numReaders)
+
+		// Writers
+		for i := 0; i < numWriters; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				for j := 0; j < keysPerWriter; j++ {
+					key := []byte(fmt.Sprintf("writer_%d_key_%d", workerID, j))
+					bf.Add(context.Background(), key)
+				}
+			}(i)
+		}
+
+		// Readers
+		for i := 0; i < numReaders; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				for j := 0; j < keysPerWriter; j++ {
+					// Check pre-populated keys
+					key := prePopulatedKeys[j%len(prePopulatedKeys)]
+					bf.MayContain(context.Background(), key)
+
+					// Check random keys (may or may not exist)
+					randomKey := []byte(fmt.Sprintf("random_key_%d_%d", workerID, j))
+					bf.MayContain(context.Background(), randomKey)
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify pre-populated keys are still present
+		for _, key := range prePopulatedKeys {
+			assert.True(t, bf.MayContain(context.Background(), key),
+				"Pre-populated key should still be present")
+		}
+
+		// Verify writer keys are present
+		for i := 0; i < numWriters; i++ {
+			for j := 0; j < keysPerWriter; j++ {
+				key := []byte(fmt.Sprintf("writer_%d_key_%d", i, j))
+				assert.True(t, bf.MayContain(context.Background(), key),
+					"Writer key should be present")
+			}
+		}
+
+		// Verify stats were updated
+		stats := bf.Stats()
+		assert.Greater(t, stats.HitCount+stats.MissCount, uint64(0),
+			"Stats should have been updated")
+	})
+
+	t.Run("Concurrent Save and Load operations", func(t *testing.T) {
+		const numSavers = 10
+		const numLoaders = 10
+
+		var wg sync.WaitGroup
+		wg.Add(numSavers + numLoaders)
+
+		// Create separate stores for each operation to avoid conflicts
+		stores := make([]bond.FilterStorer, numSavers)
+		for i := range stores {
+			stores[i] = newStorer()
+		}
+
+		// Concurrent saves
+		for i := 0; i < numSavers; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				bf := NewBloomFilter(100, 0.01, 10)
+
+				// Add some keys
+				for j := 0; j < 50; j++ {
+					key := []byte(fmt.Sprintf("save_worker_%d_key_%d", workerID, j))
+					bf.Add(context.Background(), key)
+				}
+
+				// Save
+				err := bf.Save(context.Background(), stores[workerID])
+				assert.NoError(t, err, "Save should succeed")
+			}(i)
+		}
+
+		// Concurrent loads (after a brief delay to allow some saves)
+		for i := 0; i < numLoaders; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+
+				// Use the store from the corresponding saver
+				storeIndex := workerID % numSavers
+
+				bf := NewBloomFilter(100, 0.01, 10)
+
+				// Try to load - may succeed or fail depending on timing
+				_ = bf.Load(context.Background(), stores[storeIndex])
+			}(i)
+		}
+
+		wg.Wait()
+	})
+
+	t.Run("Concurrent operations on same bucket", func(t *testing.T) {
+		// Use 1 bucket to force contention
+		bf := NewBloomFilter(1000, 0.01, 1)
+
+		const numGoroutines = 100
+		const opsPerGoroutine = 100
+
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// Mix of Add and MayContain on the same bucket
+		for i := 0; i < numGoroutines; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				for j := 0; j < opsPerGoroutine; j++ {
+					key := []byte(fmt.Sprintf("bucket_test_%d_%d", workerID, j))
+
+					if j%2 == 0 {
+						bf.Add(context.Background(), key)
+					} else {
+						bf.MayContain(context.Background(), key)
+					}
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify keys added by even iterations
+		for i := 0; i < numGoroutines; i++ {
+			for j := 0; j < opsPerGoroutine; j += 2 {
+				key := []byte(fmt.Sprintf("bucket_test_%d_%d", i, j))
+				assert.True(t, bf.MayContain(context.Background(), key),
+					"Key added in even iteration should be present")
+			}
+		}
+	})
+
+	t.Run("Concurrent Add with duplicate keys", func(t *testing.T) {
+		bf := NewBloomFilter(100, 0.01, 5)
+
+		const numGoroutines = 50
+		const duplicateKey = "shared_duplicate_key"
+
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// All goroutines add the same key
+		for i := 0; i < numGoroutines; i++ {
+			go func() {
+				defer wg.Done()
+				bf.Add(context.Background(), []byte(duplicateKey))
+			}()
+		}
+
+		wg.Wait()
+
+		// Key should be present
+		assert.True(t, bf.MayContain(context.Background(), []byte(duplicateKey)),
+			"Duplicate key should be present")
+
+		// Check that only one bucket should have changes (the one that hashes to this key)
+		changedBuckets := CountBucketsWithPendingChanges(bf)
+		assert.LessOrEqual(t, changedBuckets, 1,
+			"Only the bucket containing the key should have changes")
+	})
+
+	t.Run("Race detector test - concurrent stats access", func(t *testing.T) {
+		bf := NewBloomFilter(100, 0.01, 10)
+
+		const numGoroutines = 50
+		const opsPerGoroutine = 100
+
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		for i := 0; i < numGoroutines; i++ {
+			go func(workerID int) {
+				defer wg.Done()
+				for j := 0; j < opsPerGoroutine; j++ {
+					key := []byte(fmt.Sprintf("stats_test_%d_%d", workerID, j))
+
+					// Mix operations
+					switch j % 4 {
+					case 0:
+						bf.Add(context.Background(), key)
+					case 1:
+						bf.MayContain(context.Background(), key)
+					case 2:
+						bf.RecordFalsePositive()
+					case 3:
+						_ = bf.Stats()
+					}
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Verify that stats can be retrieved
+		stats := bf.Stats()
+		assert.Greater(t, stats.HitCount+stats.MissCount, uint64(0),
+			"Should have some hits or misses")
 	})
 }
 
