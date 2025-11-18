@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/bloom"
-	bondmock "github.com/go-bond/bond/tests/mock/bond"
+	bondmock "github.com/go-bond/bond/internal/testing/mocks/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"

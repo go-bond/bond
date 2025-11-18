@@ -1,74 +1,59 @@
-package bond
+package bond_tests
 
 import (
+	"context"
 	"fmt"
 	"sync"
-
-	"context"
 	"testing"
 
+	"github.com/go-bond/bond"
+	bondmock "github.com/go-bond/bond/internal/testing/mocks/bond"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-type MockFilter struct {
-	mock.Mock
+func setupDatabaseForFilter(t *testing.T) bond.DB {
+	dbPath := t.TempDir() + "/test.db"
+	db, err := bond.Open(dbPath, &bond.Options{})
+	require.NoError(t, err)
+	return db
 }
 
-func (m *MockFilter) Add(ctx context.Context, key []byte) {
-	m.Called(ctx, key)
-}
-
-func (m *MockFilter) MayContain(ctx context.Context, key []byte) bool {
-	args := m.Called(ctx, key)
-	return args.Get(0).(bool)
-}
-
-func (m *MockFilter) Stats() FilterStats {
-	args := m.Called()
-	return args.Get(0).(FilterStats)
-}
-
-func (m *MockFilter) RecordFalsePositive() {
-	m.Called()
-}
-
-func (m *MockFilter) Load(ctx context.Context, store FilterStorer) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (m *MockFilter) Save(ctx context.Context, store FilterStorer) error {
-	args := m.Called(ctx, store)
-	if err := args.Get(0); err != nil {
-		return err.(error)
+func tearDownDatabaseForFilter(t *testing.T, db bond.DB) {
+	if db != nil {
+		err := db.Close()
+		require.NoError(t, err)
 	}
-	return nil
 }
 
-func (m *MockFilter) Clear(ctx context.Context, store FilterStorer) error {
-	//TODO implement me
-	panic("implement me")
+type TokenBalance struct {
+	ID              uint64 `json:"id"`
+	AccountID       uint32 `json:"accountId"`
+	ContractAddress string `json:"contractAddress"`
+	AccountAddress  string `json:"accountAddress"`
+	TokenID         uint32 `json:"tokenId"`
+	Balance         uint64 `json:"balance"`
 }
 
 func TestFilter_Insert(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -82,37 +67,36 @@ func TestFilter_Insert(t *testing.T) {
 		Balance:         5,
 	}
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.Error(t, err)
-
-	mFilter.AssertExpectations(t)
 }
 
 func TestFilter_Insert_Batch(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -126,44 +110,43 @@ func TestFilter_Insert_Batch(t *testing.T) {
 		Balance:         5,
 	}
 
-	batch := db.Batch(BatchTypeReadWrite)
+	batch := db.Batch(bond.BatchTypeReadWrite)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount}, batch)
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount}, batch)
 	require.Error(t, err)
 
-	err = batch.Commit(Sync)
+	err = batch.Commit(bond.Sync)
 	require.NoError(t, err)
 
 	_ = batch.Close()
-
-	mFilter.AssertExpectations(t)
 }
 
 func TestFilter_Exist(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -177,38 +160,37 @@ func TestFilter_Exist(t *testing.T) {
 		Balance:         5,
 	}
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Twice()
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(2)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 	require.False(t, tokenBalanceTable.Exist(tokenBalanceAccount))
 
 	err := tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 	require.True(t, tokenBalanceTable.Exist(tokenBalanceAccount))
-
-	mFilter.AssertExpectations(t)
 }
 
 func TestFilter_Upsert(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -230,43 +212,42 @@ func TestFilter_Upsert(t *testing.T) {
 		Balance:         7,
 	}
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
-	err := tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccount}, TableUpsertOnConflictReplace[*TokenBalance])
+	err := tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccount}, bond.TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
-	err = tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated}, TableUpsertOnConflictReplace[*TokenBalance])
+	err = tokenBalanceTable.Upsert(context.Background(), []*TokenBalance{tokenBalanceAccountUpdated}, bond.TableUpsertOnConflictReplace[*TokenBalance])
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 	dbTr, err := tokenBalanceTable.GetPoint(context.Background(), tokenBalanceAccountUpdated)
 	require.NoError(t, err)
 	assert.Equal(t, tokenBalanceAccountUpdated, dbTr)
-
-	mFilter.AssertExpectations(t)
 }
 
 func TestFilter_Get(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -280,43 +261,42 @@ func TestFilter_Get(t *testing.T) {
 		Balance:         5,
 	}
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
 
-	_, err := tokenBalanceTable.Get(context.Background(), NewSelectorPoint(tokenBalanceAccount))
+	_, err := tokenBalanceTable.Get(context.Background(), bond.NewSelectorPoint(tokenBalanceAccount))
 	require.Error(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 	err = tokenBalanceTable.Insert(context.Background(), []*TokenBalance{tokenBalanceAccount})
 	require.NoError(t, err)
 
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 	dbTr, err := tokenBalanceTable.GetPoint(context.Background(), tokenBalanceAccount)
 	require.NoError(t, err)
 	assert.Equal(t, tokenBalanceAccount, dbTr)
-
-	mFilter.AssertExpectations(t)
 }
 
 func TestFilterInitializable_AddWhenInitialized(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -343,85 +323,76 @@ func TestFilterInitializable_AddWhenInitialized(t *testing.T) {
 
 	// Test 1: Add first record (filter not initialized yet - should call MayContain and Add)
 	t.Run("Add first record before filter initialization", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-		mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+		mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 		err := tokenBalanceTable.Insert(ctx, []*TokenBalance{tokenBalance1})
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 2: Verify the record exists in filter
 	t.Run("Verify first record exists", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 		exists := tokenBalanceTable.Exist(tokenBalance1)
 		require.True(t, exists)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 3: Add second record (filter still tracking adds)
 	t.Run("Add second record while filter is tracking", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-		mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+		mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 		err := tokenBalanceTable.Insert(ctx, []*TokenBalance{tokenBalance2})
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 4: Verify both records exist
 	t.Run("Verify both records exist in filter", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Times(2)
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(2)
 
 		exists1 := tokenBalanceTable.Exist(tokenBalance1)
 		require.True(t, exists1)
 
 		exists2 := tokenBalanceTable.Exist(tokenBalance2)
 		require.True(t, exists2)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 5: Try to insert duplicate (filter should prevent it)
 	t.Run("Try to insert duplicate record", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 		err := tokenBalanceTable.Insert(ctx, []*TokenBalance{tokenBalance1})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "already exist")
-
-		mFilter.AssertExpectations(t)
 	})
 }
 
 func TestFilterInitializable_AddWithBatch(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
 	})
 
 	ctx := context.Background()
-	batch := db.Batch(BatchTypeReadWrite)
+	batch := db.Batch(bond.BatchTypeReadWrite)
 	defer func() {
 		_ = batch.Close()
 	}()
@@ -453,16 +424,14 @@ func TestFilterInitializable_AddWithBatch(t *testing.T) {
 		}
 
 		// Each record should call MayContain and Add
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Times(3)
-		mFilter.On("Add", mock.Anything, mock.Anything).Return().Times(3)
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(3)
+		mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(3)
 
 		err := tokenBalanceTable.Insert(ctx, records, batch)
 		require.NoError(t, err)
 
-		err = batch.Commit(Sync)
+		err = batch.Commit(bond.Sync)
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 2: Verify all records exist via filter
@@ -473,34 +442,33 @@ func TestFilterInitializable_AddWithBatch(t *testing.T) {
 			{ID: 3},
 		}
 
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Times(3)
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(3)
 
 		for _, record := range records {
 			exists := tokenBalanceTable.Exist(record)
 			require.True(t, exists, "Record with ID %d should exist", record.ID)
 		}
-
-		mFilter.AssertExpectations(t)
 	})
 }
 
 func TestFilterInitializable_AddDuringUpsert(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -518,13 +486,11 @@ func TestFilterInitializable_AddDuringUpsert(t *testing.T) {
 
 	// Test 1: First upsert (insert) - should add to filter
 	t.Run("First upsert adds to filter", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-		mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+		mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
-		err := tokenBalanceTable.Upsert(ctx, []*TokenBalance{record}, TableUpsertOnConflictReplace[*TokenBalance])
+		err := tokenBalanceTable.Upsert(ctx, []*TokenBalance{record}, bond.TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 2: Second upsert (update) - should check filter but not add again
@@ -538,44 +504,41 @@ func TestFilterInitializable_AddDuringUpsert(t *testing.T) {
 		}
 
 		// Should check filter (returns true), but not call Add again
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 		// Note: Add should NOT be called for updates
 
-		err := tokenBalanceTable.Upsert(ctx, []*TokenBalance{updatedRecord}, TableUpsertOnConflictReplace[*TokenBalance])
+		err := tokenBalanceTable.Upsert(ctx, []*TokenBalance{updatedRecord}, bond.TableUpsertOnConflictReplace[*TokenBalance])
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 3: Verify record exists and has updated value
 	t.Run("Verify updated record", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(1)
 
 		retrieved, err := tokenBalanceTable.GetPoint(ctx, record)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(200), retrieved.Balance)
-
-		mFilter.AssertExpectations(t)
 	})
 }
 
 func TestFilterInitializable_StatsWhenInitialized(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -593,24 +556,22 @@ func TestFilterInitializable_StatsWhenInitialized(t *testing.T) {
 
 	// Test 1: Add record
 	t.Run("Add record to filter", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Once()
-		mFilter.On("Add", mock.Anything, mock.Anything).Return().Once()
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(1)
+		mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(1)
 
 		err := tokenBalanceTable.Insert(ctx, []*TokenBalance{record})
 		require.NoError(t, err)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 2: Check stats are tracked
 	t.Run("Verify filter stats are accessible", func(t *testing.T) {
-		expectedStats := FilterStats{
+		expectedStats := bond.FilterStats{
 			FalsePositives: 5,
 			HitCount:       100,
 			MissCount:      10,
 		}
 
-		mFilter.On("Stats").Return(expectedStats).Once()
+		mFilter.EXPECT().Stats().Return(expectedStats).Times(1)
 
 		// Access stats through the filter (assuming we can get it from the table)
 		// This tests that Stats() is properly forwarded
@@ -619,37 +580,34 @@ func TestFilterInitializable_StatsWhenInitialized(t *testing.T) {
 		assert.Equal(t, uint64(5), stats.FalsePositives)
 		assert.Equal(t, uint64(100), stats.HitCount)
 		assert.Equal(t, uint64(10), stats.MissCount)
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Test 3: Record false positive
 	t.Run("Record false positive", func(t *testing.T) {
-		mFilter.On("RecordFalsePositive").Return().Once()
+		mFilter.EXPECT().RecordFalsePositive().Times(1)
 
 		mFilter.RecordFalsePositive()
-
-		mFilter.AssertExpectations(t)
 	})
 }
 
 func TestFilterInitializable_ConcurrentAdds(t *testing.T) {
-	db := setupDatabase()
-	defer func() {
-		tearDownDatabase(t, db)
-	}()
+	db := setupDatabaseForFilter(t)
+	defer tearDownDatabaseForFilter(t, db)
 
-	mFilter := &MockFilter{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mFilter := bondmock.NewMockFilter(ctrl)
 
 	const (
-		TokenBalanceTableID = TableID(1)
+		TokenBalanceTableID = bond.TableID(1)
 	)
 
-	tokenBalanceTable := NewTable[*TokenBalance](TableOptions[*TokenBalance]{
+	tokenBalanceTable := bond.NewTable[*TokenBalance](bond.TableOptions[*TokenBalance]{
 		DB:        db,
 		TableID:   TokenBalanceTableID,
 		TableName: "token_balance",
-		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalance) []byte {
+		TablePrimaryKeyFunc: func(builder bond.KeyBuilder, tb *TokenBalance) []byte {
 			return builder.AddUint64Field(tb.ID).Bytes()
 		},
 		Filter: mFilter,
@@ -659,8 +617,8 @@ func TestFilterInitializable_ConcurrentAdds(t *testing.T) {
 	numRecords := 10
 
 	// Set up expectations for concurrent adds
-	mFilter.On("MayContain", mock.Anything, mock.Anything).Return(false).Times(numRecords)
-	mFilter.On("Add", mock.Anything, mock.Anything).Return().Times(numRecords)
+	mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(false).Times(numRecords)
+	mFilter.EXPECT().Add(gomock.Any(), gomock.Any()).Times(numRecords)
 
 	t.Run("Concurrent adds to filter", func(t *testing.T) {
 		var wg sync.WaitGroup
@@ -693,20 +651,16 @@ func TestFilterInitializable_ConcurrentAdds(t *testing.T) {
 		for err := range errChan {
 			require.NoError(t, err)
 		}
-
-		mFilter.AssertExpectations(t)
 	})
 
 	// Verify all records exist
 	t.Run("Verify all concurrent records exist", func(t *testing.T) {
-		mFilter.On("MayContain", mock.Anything, mock.Anything).Return(true).Times(numRecords)
+		mFilter.EXPECT().MayContain(gomock.Any(), gomock.Any()).Return(true).Times(numRecords)
 
 		for i := 1; i <= numRecords; i++ {
 			record := &TokenBalance{ID: uint64(i)}
 			exists := tokenBalanceTable.Exist(record)
 			require.True(t, exists, "Record with ID %d should exist", i)
 		}
-
-		mFilter.AssertExpectations(t)
 	})
 }
