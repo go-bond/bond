@@ -2142,3 +2142,87 @@ func TestBondTable_Upsert_Would_Mutate_Input_On_Update_If_Implemented(t *testing
 	assert.Equal(t, originalInputElement.Balance, storedRecord.Balance,
 		"Mutated input element should match stored record")
 }
+
+type TokenBalanceOptional struct {
+	AccountID       uint32 `json:"accountId"`
+	ContractAddress string `json:"contractAddress,omitempty"`
+	AccountAddress  string `json:"accountAddress,omitempty"`
+	TokenID         uint32 `json:"tokenId"`
+	Balance         uint64 `json:"balance,omitempty"`
+}
+
+func TestBondTable_Upsert_Issue_Optional_Fields(t *testing.T) {
+	db := setupDatabase()
+	defer tearDownDatabase(t, db)
+
+	const (
+		TokenBalanceTableID = TableID(1)
+	)
+
+	tokenBalanceTable := NewTable(TableOptions[*TokenBalanceOptional]{
+		DB:        db,
+		TableID:   TokenBalanceTableID,
+		TableName: "token_balance",
+		TablePrimaryKeyFunc: func(builder KeyBuilder, tb *TokenBalanceOptional) []byte {
+			return builder.
+				AddUint32Field(tb.AccountID).
+				AddStringField(tb.AccountAddress).
+				AddStringField(tb.ContractAddress).
+				Bytes()
+		},
+	})
+
+	// pre-existing record
+	tokenBalanceAccount := []*TokenBalanceOptional{
+		{
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         5,
+		},
+		{
+			AccountID:       2,
+			ContractAddress: "0xtestContract",
+			Balance:         10,
+		},
+	}
+
+	// Insert initial record
+	err := tokenBalanceTable.Insert(context.Background(), tokenBalanceAccount)
+	require.NoError(t, err)
+
+	updateRecord := []*TokenBalanceOptional{
+		{
+			AccountID:       1,
+			ContractAddress: "0xtestContract",
+			AccountAddress:  "0xtestAccount",
+			Balance:         10,
+		},
+		{
+			AccountID:       2,
+			ContractAddress: "0xtestContract",
+			Balance:         20,
+		},
+	}
+
+	err = tokenBalanceTable.Upsert(context.Background(), updateRecord, func(old *TokenBalanceOptional, new *TokenBalanceOptional) *TokenBalanceOptional {
+		new.AccountAddress = old.AccountAddress
+		new.ContractAddress = old.ContractAddress
+		new.Balance += old.Balance
+		return new
+	})
+	require.NoError(t, err)
+
+	var tokenBalances []*TokenBalanceOptional
+	err = tokenBalanceTable.Scan(context.Background(), &tokenBalances, false)
+	require.NoError(t, err)
+	require.Equal(t, len(tokenBalances), 2)
+
+	assert.Equal(t, "0xtestAccount", tokenBalances[0].AccountAddress)
+	assert.Equal(t, "0xtestContract", tokenBalances[0].ContractAddress)
+	assert.Equal(t, 15, int(tokenBalances[0].Balance))
+
+	assert.Equal(t, "", tokenBalances[1].AccountAddress)
+	assert.Equal(t, "0xtestContract", tokenBalances[1].ContractAddress)
+	assert.Equal(t, 30, int(tokenBalances[1].Balance))
+}
