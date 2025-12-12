@@ -673,9 +673,6 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		serialize = sw.SerializeFuncWithBuffer(valueBuffer)
 	}
 
-	// reusable object
-	var oldTr T
-
 	err := batched(trs, batchSize, func(trs []T) error {
 		// keys
 		keys := t.keysExternal(trs, keysBuffer)
@@ -694,6 +691,7 @@ func (t *_table[T]) Upsert(ctx context.Context, trs []T, onConflict func(old, ne
 		defer iter.Close()
 
 		for i := 0; i < len(keys); {
+			var oldTr T
 			tr := trs[keyOrder[i]]
 
 			// Check every 100 iterations if context is done, with micro-optimization.
