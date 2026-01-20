@@ -308,7 +308,16 @@ func (db *_db) Compact(ctx context.Context) error {
 
 func (db *_db) Close() error {
 	db.notifyOnClose()
-	return db.pebble.Close()
+
+	if err := db.pebble.Flush(); err != nil {
+		return fmt.Errorf("pebble flush: %w", err)
+	}
+
+	if err := db.pebble.Close(); err != nil {
+		return fmt.Errorf("pebble close: %w", err)
+	}
+	
+	return nil
 }
 
 func (db *_db) OnClose(f func(db DB)) {
