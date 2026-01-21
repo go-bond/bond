@@ -170,7 +170,7 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	}
 
 	if err != nil && os.IsNotExist(err) {
-		// create version file for to check invariant in the
+		// create version file to check invariant in the
 		// next open.
 		err = utils.WriteFileWithSync(
 			pebbelVersionPath,
