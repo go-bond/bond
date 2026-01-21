@@ -170,11 +170,14 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	}
 
 	if err != nil && os.IsNotExist(err) {
-		// create version for to check invariant in the
+		// create version file for to check invariant in the
 		// next open.
-		if err := os.WriteFile(pebbelVersionPath,
+		err = utils.WriteFileWithSync(
+			pebbelVersionPath,
 			[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion)),
-			os.ModePerm); err != nil {
+			os.ModePerm,
+		)
+		if err != nil {
 			return nil, err
 		}
 	} else {
@@ -316,7 +319,7 @@ func (db *_db) Close() error {
 	if err := db.pebble.Close(); err != nil {
 		return fmt.Errorf("pebble close: %w", err)
 	}
-	
+
 	return nil
 }
 

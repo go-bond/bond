@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/utils"
 )
 
 type FilterFSStorer struct {
@@ -43,7 +44,7 @@ func (f *FilterFSStorer) Set(key []byte, value []byte, opt bond.WriteOptions, ba
 		}
 	}
 
-	err := os.WriteFile(filePath, value, 0660)
+	err := utils.WriteFileWithSync(filePath, value, 0660)
 	if err != nil {
 		return err
 	}
