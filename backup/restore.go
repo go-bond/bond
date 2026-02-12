@@ -7,10 +7,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-bond/bond/utils"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 )
 
 // RestoreOptions configures a restore operation.
@@ -22,6 +24,10 @@ type RestoreOptions struct {
 	// Before is the point-in-time cutoff. Backups after this time are ignored.
 	// If zero, all backups are considered.
 	Before time.Time
+	// Concurrency is the number of parallel downloads per backup stage. Values <= 0 use DefaultConcurrency.
+	Concurrency int
+	// OnProgress is called after each file download completes. Must be goroutine-safe.
+	OnProgress ProgressFunc
 }
 
 // Restore downloads a backup set from object storage and writes it to a local directory.
@@ -55,39 +61,100 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return fmt.Errorf("create restore dir: %w", err)
 	}
 
-	// Download and apply each backup in order.
-	var lastMeta *BackupMeta
+	// Pre-read all metas to compute global totals for progress reporting.
+	type backupWithMeta struct {
+		prefix string
+		meta   *BackupMeta
+	}
+	allBackups := make([]backupWithMeta, 0, len(restoreSet))
+	var totalFiles int
+	var totalBytes int64
 	for _, backup := range restoreSet {
 		meta, err := readMeta(ctx, bucket, backup.Prefix)
 		if err != nil {
 			return fmt.Errorf("read meta for %s: %w", backup.Prefix, err)
 		}
-
+		allBackups = append(allBackups, backupWithMeta{prefix: backup.Prefix, meta: meta})
+		totalFiles += len(meta.Files)
 		for _, fi := range meta.Files {
-			objName := path.Join(backup.Prefix, fi.Name)
-			rc, err := bucket.Get(ctx, objName)
-			if err != nil {
-				return fmt.Errorf("get %s: %w", objName, err)
-			}
+			totalBytes += fi.Size
+		}
+	}
 
+	// Pre-create all needed subdirectories to avoid concurrent MkdirAll calls.
+	dirs := make(map[string]struct{})
+	for _, bm := range allBackups {
+		for _, fi := range bm.meta.Files {
 			localPath := filepath.Join(opts.RestoreDir, fi.Name)
-			if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+			dirs[filepath.Dir(localPath)] = struct{}{}
+		}
+	}
+	for d := range dirs {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return fmt.Errorf("create dir %s: %w", d, err)
+		}
+	}
+
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = DefaultConcurrency
+	}
+
+	// Atomic counters accumulate across all stages.
+	var filesDone atomic.Int64
+	var bytesDone atomic.Int64
+
+	// Download and apply each backup in order (sequential outer loop preserves
+	// incremental override semantics; inner loop is parallel).
+	var lastMeta *BackupMeta
+	for _, bm := range allBackups {
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(concurrency)
+
+		for _, fi := range bm.meta.Files {
+			prefix := bm.prefix
+			g.Go(func() error {
+				if err := gctx.Err(); err != nil {
+					return err
+				}
+				objName := path.Join(prefix, fi.Name)
+				rc, err := bucket.Get(gctx, objName)
+				if err != nil {
+					return fmt.Errorf("get %s: %w", objName, err)
+				}
+
+				data, err := io.ReadAll(rc)
 				rc.Close()
-				return fmt.Errorf("create dir for %s: %w", fi.Name, err)
-			}
+				if err != nil {
+					return fmt.Errorf("read %s: %w", objName, err)
+				}
 
-			data, err := io.ReadAll(rc)
-			rc.Close()
-			if err != nil {
-				return fmt.Errorf("read %s: %w", objName, err)
-			}
+				localPath := filepath.Join(opts.RestoreDir, fi.Name)
+				if err := os.WriteFile(localPath, data, 0644); err != nil {
+					return fmt.Errorf("write %s: %w", localPath, err)
+				}
 
-			if err := os.WriteFile(localPath, data, 0644); err != nil {
-				return fmt.Errorf("write %s: %w", localPath, err)
-			}
+				done := int(filesDone.Add(1))
+				bytes := bytesDone.Add(fi.Size)
+				if opts.OnProgress != nil {
+					opts.OnProgress(ProgressEvent{
+						File:       fi.Name,
+						FileSize:   fi.Size,
+						FilesDone:  done,
+						FilesTotal: totalFiles,
+						BytesDone:  bytes,
+						BytesTotal: totalBytes,
+					})
+				}
+				return nil
+			})
 		}
 
-		lastMeta = meta
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		lastMeta = bm.meta
 	}
 
 	// Recreate bond metadata directory with PEBBLE_FORMAT_VERSION.

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -490,4 +492,220 @@ func TestIncrementalWithoutPreviousBackup(t *testing.T) {
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no previous backup")
+}
+
+func TestBackupProgress(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 20)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	var mu sync.Mutex
+	var events []ProgressEvent
+
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		OnProgress: func(event ProgressEvent) {
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+		},
+	})
+	require.NoError(t, err)
+
+	// Should have one event per uploaded file.
+	require.Len(t, events, len(meta.Files))
+
+	// Final event should have FilesDone == FilesTotal and BytesDone == BytesTotal.
+	last := events[len(events)-1]
+	assert.Equal(t, len(meta.Files), last.FilesTotal)
+
+	// Find the event with max FilesDone (could be any due to concurrency).
+	var maxFilesDone int
+	var maxBytesDone int64
+	filesSeen := make(map[string]struct{})
+	for _, e := range events {
+		filesSeen[e.File] = struct{}{}
+		if e.FilesDone > maxFilesDone {
+			maxFilesDone = e.FilesDone
+		}
+		if e.BytesDone > maxBytesDone {
+			maxBytesDone = e.BytesDone
+		}
+	}
+	assert.Equal(t, len(meta.Files), maxFilesDone)
+	assert.Equal(t, last.BytesTotal, maxBytesDone)
+
+	// All file names should appear in events.
+	for _, fi := range meta.Files {
+		_, ok := filesSeen[fi.Name]
+		assert.True(t, ok, "missing progress event for file %s", fi.Name)
+	}
+}
+
+func TestRestoreProgress(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Phase 1: Complete backup.
+	insertTestData(t, db, 0, 10)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	// Phase 2: Incremental backup.
+	insertTestData(t, db, 10, 10)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeIncremental,
+		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	var mu sync.Mutex
+	var events []ProgressEvent
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		OnProgress: func(event ProgressEvent) {
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+		},
+	})
+	require.NoError(t, err)
+
+	require.Greater(t, len(events), 0)
+
+	// The totals should span all backups in the restore set.
+	var maxFilesDone int
+	var maxBytesDone int64
+	for _, e := range events {
+		if e.FilesDone > maxFilesDone {
+			maxFilesDone = e.FilesDone
+		}
+		if e.BytesDone > maxBytesDone {
+			maxBytesDone = e.BytesDone
+		}
+	}
+	last := events[len(events)-1]
+	assert.Equal(t, last.FilesTotal, maxFilesDone)
+	assert.Equal(t, last.BytesTotal, maxBytesDone)
+
+	// Verify restored DB is valid.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+}
+
+func TestBackupProgressCancellation(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 50)
+
+	bucket := objstore.NewInMemBucket()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var callCount atomic.Int64
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:      "backups",
+		Type:        BackupTypeComplete,
+		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency: 1, // sequential so cancellation is deterministic
+		OnProgress: func(event ProgressEvent) {
+			if callCount.Add(1) == 2 {
+				cancel()
+			}
+		},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, int(callCount.Load()), 50)
+}
+
+func TestConcurrencyOne(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 20)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:      "backups",
+		Type:        BackupTypeComplete,
+		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency: 1,
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:      "backups",
+		RestoreDir:  restoreDir,
+		Concurrency: 1,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestDefaultConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Concurrency: 0 should use DefaultConcurrency without panic.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:      "backups",
+		Type:        BackupTypeComplete,
+		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency: 0,
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:      "backups",
+		RestoreDir:  restoreDir,
+		Concurrency: 0,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
 }

@@ -6,10 +6,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-bond/bond"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 )
 
 // BackupOptions configures a backup operation.
@@ -20,6 +22,10 @@ type BackupOptions struct {
 	Type BackupType
 	// At overrides the backup timestamp. If zero, time.Now().UTC() is used.
 	At time.Time
+	// Concurrency is the number of parallel uploads. Values <= 0 use DefaultConcurrency.
+	Concurrency int
+	// OnProgress is called after each file upload completes. Must be goroutine-safe.
+	OnProgress ProgressFunc
 }
 
 // Backup takes a Pebble checkpoint and uploads it to object storage.
@@ -86,19 +92,59 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		filesToUpload = allFiles
 	}
 
-	// Upload the files.
+	// Compute total bytes for progress reporting.
+	var totalBytes int64
 	for _, fi := range filesToUpload {
-		localPath := filepath.Join(checkpointDir, fi.Name)
-		f, err := os.Open(localPath)
-		if err != nil {
-			return nil, fmt.Errorf("open file %s: %w", fi.Name, err)
-		}
-		objName := path.Join(objPrefix, fi.Name)
-		if err := bucket.Upload(ctx, objName, f); err != nil {
+		totalBytes += fi.Size
+	}
+
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = DefaultConcurrency
+	}
+
+	// Upload the files in parallel.
+	var filesDone atomic.Int64
+	var bytesDone atomic.Int64
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency)
+
+	for _, fi := range filesToUpload {
+		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+			localPath := filepath.Join(checkpointDir, fi.Name)
+			f, err := os.Open(localPath)
+			if err != nil {
+				return fmt.Errorf("open file %s: %w", fi.Name, err)
+			}
+			objName := path.Join(objPrefix, fi.Name)
+			if err := bucket.Upload(gctx, objName, f); err != nil {
+				f.Close()
+				return fmt.Errorf("upload %s: %w", fi.Name, err)
+			}
 			f.Close()
-			return nil, fmt.Errorf("upload %s: %w", fi.Name, err)
-		}
-		f.Close()
+
+			done := int(filesDone.Add(1))
+			bytes := bytesDone.Add(fi.Size)
+			if opts.OnProgress != nil {
+				opts.OnProgress(ProgressEvent{
+					File:       fi.Name,
+					FileSize:   fi.Size,
+					FilesDone:  done,
+					FilesTotal: len(filesToUpload),
+					BytesDone:  bytes,
+					BytesTotal: totalBytes,
+				})
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	// Read Pebble format version and bond data version.
