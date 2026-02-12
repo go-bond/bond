@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `backup/` sub-package provides full database backup and restore via Pebble's `Checkpoint`. It uploads checkpoints to object storage (S3, GCS, etc.) through a minimal `Bucket` abstraction, supports complete and true incremental (diff-based) backups, and restores by finding the latest complete backup and applying all subsequent incrementals in order.
+The `backup/` sub-package provides full database backup and restore via Pebble's `Checkpoint`. It uploads checkpoints to object storage (S3, GCS, Azure, etc.) through the `objstore.Bucket` abstraction from [thanos-io/objstore](https://github.com/thanos-io/objstore), supports complete and true incremental (diff-based) backups, and restores by finding the latest complete backup and applying all subsequent incrementals in order.
 
 All code lives in `bond/backup` to keep the bond core free of object storage dependencies.
 
@@ -10,21 +10,11 @@ All code lives in `bond/backup` to keep the bond core free of object storage dep
 
 ## 1. Design Decisions
 
-### 1.1 Custom Bucket interface
+### 1.1 thanos-io/objstore as storage abstraction
 
-A minimal 5-method `Bucket` interface is defined in `backup/`. Go structural typing means thanos `objstore.Bucket` (or any compatible implementation) can be used directly without importing thanos and its transitive dependencies (prometheus, YAML, etc.).
+The package uses `objstore.Bucket` from [thanos-io/objstore](https://github.com/thanos-io/objstore) directly as the storage interface. This provides production-ready implementations for S3, GCS, Azure, COS, Swift, and filesystem out of the box. The `objstore` dependency was promoted from indirect to direct.
 
-```go
-type Bucket interface {
-    Upload(ctx context.Context, name string, r io.Reader) error
-    Get(ctx context.Context, name string) (io.ReadCloser, error)
-    Iter(ctx context.Context, dir string, f func(name string) error) error
-    Exists(ctx context.Context, name string) (bool, error)
-    Delete(ctx context.Context, name string) error
-}
-```
-
-An `InMemBucket` implementation (thread-safe `map[string][]byte`) is included for testing.
+For testing, the package uses `objstore.NewInMemBucket()` — a thread-safe in-memory bucket provided by the objstore library.
 
 ### 1.2 Standalone functions
 
@@ -56,7 +46,7 @@ This way, the next incremental can read the previous backup's `checkpoint_files`
 
 ### 1.5 Bond metadata preservation
 
-Pebble Checkpoint doesn't include `bond/PEBBLE_FORMAT_VERSION`. During backup, the Pebble format version is read via `db.Backend().FormatMajorVersion()` and stored in `meta.json`. During restore, the file is recreated so `bond.Open()` succeeds. The bond data version (stored as a Pebble key) comes for free in the checkpoint.
+Pebble Checkpoint doesn't include `bond/PEBBLE_FORMAT_VERSION`. During backup, the Pebble format version is read via `db.Backend().FormatMajorVersion()` and stored in `meta.json`. During restore, the file is recreated using `utils.WriteFileWithSync` so `bond.Open()` succeeds. The bond data version (`BOND_DB_DATA_VERSION` constant) is also stored in `meta.json` and comes for free in the checkpoint as a Pebble key.
 
 ---
 
@@ -85,13 +75,15 @@ All new files in `backup/` -- no changes to existing bond files.
 
 ```
 backup/
-  backup.go            -- Bucket interface, BackupOptions, Backup()
+  backup.go            -- BackupOptions, Backup(), computeIncrementalFiles()
   restore.go           -- RestoreOptions, Restore()
-  list.go              -- ListBackups(), FindRestoreSet(), BackupInfo
-  meta.go              -- BackupMeta, FileInfo, JSON marshal/unmarshal helpers
-  naming.go            -- Datetime formatting, backup dir naming helpers
-  bucket_inmem.go      -- InMemBucket for testing
-  backup_test.go       -- Tests for backup + restore + list + integration
+  list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
+  meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
+  naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
+  backup_test.go       -- Unit tests for backup, restore, list, naming, edge cases
+
+tests/
+  backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
 ```
 
 ---
@@ -132,13 +124,49 @@ type BackupMeta struct {
 }
 ```
 
+### FileInfo
+
+```go
+type FileInfo struct {
+    Name string `json:"name"`
+    Size int64  `json:"size"`
+}
+```
+
+### BackupInfo
+
+```go
+type BackupInfo struct {
+    Datetime time.Time
+    Type     BackupType
+    Prefix   string
+}
+```
+
+### BackupType
+
+```go
+type BackupType string
+
+const (
+    BackupTypeComplete    BackupType = "complete"
+    BackupTypeIncremental BackupType = "incremental"
+)
+```
+
 ### Functions
 
 ```go
-func Backup(ctx context.Context, db bond.DB, bucket Bucket, opts BackupOptions) (*BackupMeta, error)
-func Restore(ctx context.Context, bucket Bucket, opts RestoreOptions) error
-func ListBackups(ctx context.Context, bucket Bucket, prefix string) ([]BackupInfo, error)
-func FindRestoreSet(ctx context.Context, bucket Bucket, prefix string, before time.Time) ([]BackupInfo, error)
+func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts BackupOptions) (*BackupMeta, error)
+func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) error
+func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
+func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
+```
+
+### Sentinel Errors
+
+```go
+var ErrNoBackupsFound = fmt.Errorf("no backups found")
 ```
 
 ---
@@ -147,67 +175,104 @@ func FindRestoreSet(ctx context.Context, bucket Bucket, prefix string, before ti
 
 ### 5.1 Complete backup flow
 
-1. Determine datetime (`opts.At` or `time.Now().UTC()`)
-2. `os.MkdirTemp("", "bond-backup-*")` + `defer os.RemoveAll(tempDir)`
-3. `db.Backend().Checkpoint(checkpointDir)` into a subdirectory of tempDir
-4. `filepath.WalkDir(checkpointDir, ...)` to collect all checkpoint files
-5. Upload ALL files to `{prefix}/{datetime}-complete/{relativePath}`
-6. Build `BackupMeta` where `Files == CheckpointFiles` (all files)
-7. Upload `meta.json`, return `*BackupMeta`
+1. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
+2. Default `opts.Type` to `BackupTypeComplete` if empty
+3. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
+4. `os.MkdirTemp("", "bond-backup-*")` + `defer os.RemoveAll(tempDir)`
+5. `db.Backend().Checkpoint(checkpointDir)` into a subdirectory of tempDir
+6. `filepath.WalkDir(checkpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
+7. Upload ALL files to `{prefix}/{datetime}-complete/{relativePath}`
+8. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
+9. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
+10. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-4 (take a full checkpoint locally)
-2. Find the previous backup: `ListBackups` -> take the last one -> `readMeta`
-3. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
-4. Diff: for each file in the new checkpoint, if it's not in the previous set OR has a different size, mark as "to upload"
-5. Upload only the diff files to `{prefix}/{datetime}-incremental/{relativePath}`
-6. Build `BackupMeta` where:
+1. Same steps 1-6 (take a full checkpoint locally)
+2. Call `computeIncrementalFiles()` which:
+   a. `ListBackups()` -> take the last one -> `readMeta()`
+   b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
+   c. Diff: for each file in the new checkpoint, if it's not in the previous set OR has a different size, mark as "to upload"
+3. If no previous backup exists, return error: `"no previous backup found; cannot create incremental backup"`
+4. Upload only the diff files to `{prefix}/{datetime}-incremental/{relativePath}`
+5. Build `BackupMeta` where:
    - `Files` = only the diff files (what was uploaded)
    - `CheckpointFiles` = ALL files in the new checkpoint (for the next incremental's diff)
-7. Upload `meta.json`, return `*BackupMeta`
+6. Upload `meta.json`, return `*BackupMeta`
 
 ### 5.3 Restore flow
 
-1. Validate `RestoreDir` is empty or doesn't exist
-2. `FindRestoreSet(ctx, bucket, opts.Prefix, opts.Before)` -> `[complete, incr1, incr2, ...]`
-3. If no backups found, return `ErrNoBackupsFound`
-4. Create `RestoreDir` if needed
-5. For each backup in order:
+1. Validate `RestoreDir` is specified and is empty or doesn't exist
+2. If `opts.Before` is zero, set it to `time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)` (effectively "all backups")
+3. `FindRestoreSet(ctx, bucket, opts.Prefix, before)` -> `[complete, incr1, incr2, ...]`
+4. If no backups found, return `ErrNoBackupsFound`
+5. Create `RestoreDir` via `os.MkdirAll`
+6. For each backup in order:
    a. `readMeta(ctx, bucket, backup.Prefix)` to get the `Files` list
-   b. For each file in `meta.Files`: download from bucket, write to `filepath.Join(opts.RestoreDir, file.Name)`, creating parent dirs as needed
+   b. For each file in `meta.Files`: download via `bucket.Get()`, read all bytes via `io.ReadAll`, write to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, creating parent dirs via `os.MkdirAll` as needed
    c. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
-6. Recreate bond metadata from the **last** backup's meta:
+7. Recreate bond metadata from the **last** backup's meta:
    - `os.MkdirAll(filepath.Join(restoreDir, "bond"), 0755)`
    - Write `bond/PEBBLE_FORMAT_VERSION` with the stored `PebbleFormatVersion` via `utils.WriteFileWithSync`
-7. Caller then opens with `bond.Open(restoreDir, opts)`
+8. Caller then opens with `bond.Open(restoreDir, opts)`
 
 ### 5.4 ListBackups and FindRestoreSet
 
-- `ListBackups`: iterates bucket with `Iter(ctx, prefix, ...)`, parses each entry with `parseBackupDir`, returns sorted by datetime ascending.
-- `FindRestoreSet`: calls `ListBackups`, filters by `before` time, finds the latest complete backup at or before the cutoff, returns `[complete, incr1, incr2, ...]`.
+- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), returns sorted by datetime ascending.
+- `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
+
+### 5.5 Naming helpers
+
+- `backupDirName(t, bt)` -> `"20250212120000-complete"` (datetime format + hyphen + type)
+- `backupObjectPrefix(prefix, t, bt)` -> `"backups/20250212120000-complete/"` (with trailing slash)
+- `parseBackupDir(name)` -> `(time.Time, BackupType, error)`: strips trailing `/`, takes `path.Base()`, splits on first `-`, parses datetime and validates type
 
 ---
 
 ## 6. Testing
 
-All tests use `InMemBucket` and `t.TempDir()`. Tests implemented:
+### 6.1 Unit tests (`backup/backup_test.go`)
+
+All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
+- `openTestDB(t, dir)` — opens a bond DB with `MediumPerformance` options
+- `insertTestData(t, db, start, count)` — inserts raw key-value pairs using `bond.KeyEncode`
+- `collectAllKVs(t, db)` — iterates all keys and returns `map[string]string`
 
 | Test | What it verifies |
 |------|-----------------|
-| `TestNamingHelpers` | `backupDirName`, `parseBackupDir` round-trips, edge cases |
-| `TestInMemBucket` | Upload/Get/Iter/Exists/Delete correctness |
-| `TestBackupComplete` | Insert data, backup, verify objects in bucket and meta.json content |
-| `TestRestoreComplete` | Backup, restore to new dir, `bond.Open`, compare all key-value pairs |
-| `TestBackupIncremental` | Complete + incremental, verify fewer files uploaded in incremental |
-| `TestRestoreWithIncrementals` | Complete -> insert -> incr1 -> insert -> incr2 -> restore -> verify ALL data |
-| `TestRestoreBeforeTime` | Multiple timed backups, restore to specific point, verify correct data |
-| `TestListBackups` | Multiple backups, verify sorted order and correct types |
-| `TestFindRestoreSet` | Verify correct [complete + incrementals] chain, and `ErrNoBackupsFound` |
-| `TestBackupEmptyDB` | Backup/restore empty database |
-| `TestRestoreCreatesMetadata` | Verify `bond/PEBBLE_FORMAT_VERSION` exists and is correct after restore |
-| `TestRestoreNonEmptyDir` | Error when restore dir is not empty |
-| `TestIncrementalWithoutPreviousBackup` | Error when no previous backup exists |
+| `TestNamingHelpers` | `backupDirName`, `backupObjectPrefix`, `parseBackupDir` round-trips; path prefix handling; trailing slash handling; invalid input errors |
+| `TestBackupComplete` | Insert 10 records, backup, verify meta fields (Type, Datetime, Files == CheckpointFiles, PebbleFormatVersion > 0, BondDataVersion), verify `meta.json` exists in bucket, verify uploaded objects |
+| `TestRestoreComplete` | Backup 20 records, restore to new dir, `bond.Open`, compare all key-value pairs match original |
+| `TestBackupIncremental` | Complete + insert more + incremental: verify incremental has fewer `Files` than complete, but `CheckpointFiles` >= complete's |
+| `TestRestoreWithIncrementals` | Complete -> insert -> incr1 -> insert -> incr2 -> restore -> verify ALL data from all phases |
+| `TestRestoreBeforeTime` | 3 timed backups (complete + 2 incrementals), restore with `Before=12:30` (after complete, before first incremental), verify only phase 1 data |
+| `TestListBackups` | 3 backups (complete + 2 incrementals), verify sorted order and correct types |
+| `TestFindRestoreSet` | Verify correct [complete + incrementals] chain for different cutoff times, and `ErrNoBackupsFound` when cutoff is before all backups |
+| `TestBackupEmptyDB` | Backup/restore empty database; verify checkpoint files exist (MANIFEST, CURRENT, etc.); restored DB has only bond data version key |
+| `TestRestoreCreatesMetadata` | Verify `bond/PEBBLE_FORMAT_VERSION` file exists after restore and contains correct format version |
+| `TestRestoreNonEmptyDir` | Error when restore dir is not empty; error message contains "not empty" |
+| `TestIncrementalWithoutPreviousBackup` | Error when attempting incremental with no previous backup; error message contains "no previous backup" |
+
+### 6.2 Integration tests (`tests/backup_test.go`)
+
+Integration tests in the `bond_tests` package exercise backup/restore through the Bond Table API (not raw key-value). They use two table types:
+
+- `TokenBalance` (TableID `0xC0`) — with fields: ID, AccountID, ContractAddress, AccountAddress, TokenID, Balance
+- `Token` (TableID `0xC1`) — with fields: ID, Name
+
+Helper functions:
+- `setupTokenBalanceTable(db)` / `setupTokenTable(db)` — create table definitions with primary key functions
+- `newAccountAddressIndex()` — creates a secondary index on `AccountAddress` (IndexID `1`)
+- `insertTokenBalances(t, ctx, table, start, count)` / `insertTokens(t, ctx, table, start, count)` — insert records via `table.Insert`
+
+| Test | What it verifies |
+|------|-----------------|
+| `TestBackupRestore_TableData` | Complete backup + restore with 10 TokenBalance records. Verifies via `Scan` (10 records), `GetPoint` (specific record fields), and `Query().Limit(5)` (5 results) |
+| `TestBackupRestore_SecondaryIndexes` | Table with secondary index on `AccountAddress`, 20 records (i%5 -> 4 per address). After restore, recreates index and verifies `Query().With(idx, SelectorPoint)` returns 4 records, and `ScanIndex` returns 4 records for a different address |
+| `TestBackupRestore_MultipleTables` | Two tables (TokenBalance + Token), 10 records each. After restore, verifies both tables via `Scan` and `GetPoint` |
+| `TestBackupRestore_Incremental` | Table with secondary index. Complete backup (10 records) + incremental (10 more). Restore and verify all 20 records via `Scan`, `GetPoint` for both phases, and index query spanning both phases |
+| `TestBackupRestore_PointInTime` | 3-phase backup (complete + 2 incrementals, 5 records each). Restore with `Before=12:30` (only complete). Verify 5 records via `Scan`, and `GetPoint` for phase 2 record returns `bond.ErrNotFound` |
+| `TestBackupRestore_BatchInsert` | Records inserted via `db.Batch(BatchTypeWriteOnly)` + `batch.Commit(Sync)`. Complete backup + restore. Verify via `Scan`, index query, and `GetPoint` |
 
 ---
 
@@ -223,29 +288,48 @@ All tests use `InMemBucket` and `t.TempDir()`. Tests implemented:
 
 ---
 
-## 8. Edge Cases
+## 8. Dependencies
 
-- **Empty DB**: Checkpoint is valid; restore produces a DB with only the bond data version key.
-- **Concurrent writes**: Checkpoint is a point-in-time snapshot. All committed writes prior to the checkpoint call are included.
-- **Non-empty restore dir**: Returns an error.
-- **Incremental with no previous backup**: Returns an error.
-- **Bond metadata**: Recreated during restore from `meta.json`'s `pebble_format_version` field.
-- **Orphaned SSTs after restore**: Pebble only reads files referenced by the MANIFEST, so leftover SSTs from earlier complete backups are harmless.
+The `backup/` package imports:
+- `github.com/go-bond/bond` — for `bond.DB`, `bond.BOND_DB_DATA_VERSION`
+- `github.com/go-bond/bond/utils` — for `utils.WriteFileWithSync` (in restore)
+- `github.com/thanos-io/objstore` — for `objstore.Bucket` interface (promoted from indirect to direct dependency)
+- Standard library: `context`, `encoding/json`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `time`
+
+Test-only imports:
+- `github.com/stretchr/testify/assert` and `require`
 
 ---
 
-## 9. Usage Example
+## 9. Edge Cases
+
+- **Empty DB**: Checkpoint is valid; restore produces a DB with only the bond data version key.
+- **Concurrent writes**: Checkpoint is a point-in-time snapshot. All committed writes prior to the checkpoint call are included.
+- **Non-empty restore dir**: Returns an error (`"restore directory %q is not empty"`).
+- **Empty RestoreDir option**: Returns an error (`"RestoreDir must be specified"`).
+- **Incremental with no previous backup**: Returns an error (`"no previous backup found; cannot create incremental backup"`).
+- **Bond metadata**: Recreated during restore from `meta.json`'s `pebble_format_version` field using `utils.WriteFileWithSync`.
+- **Orphaned SSTs after restore**: Pebble only reads files referenced by the MANIFEST, so leftover SSTs from earlier complete backups are harmless.
+- **Prefix normalization**: `ListBackups` auto-appends `/` to prefix if missing.
+- **Backup type default**: If `opts.Type` is empty, defaults to `BackupTypeComplete`.
+- **Timestamp default**: If `opts.At` is zero, defaults to `time.Now().UTC()`.
+- **Before cutoff zero**: If `opts.Before` is zero in `RestoreOptions`, all backups are considered (internally set to year 9999).
+
+---
+
+## 10. Usage Example
 
 ```go
 import (
     "context"
     "github.com/go-bond/bond"
     "github.com/go-bond/bond/backup"
+    "github.com/thanos-io/objstore"
 )
 
 // Complete backup
 db, _ := bond.Open("mydb", bond.DefaultOptions())
-bucket := // ... your Bucket implementation (S3, GCS, InMemBucket, etc.)
+bucket := // ... your objstore.Bucket implementation (S3, GCS, InMemBucket, etc.)
 
 meta, err := backup.Backup(ctx, db, bucket, backup.BackupOptions{
     Prefix: "backups",
@@ -258,10 +342,23 @@ meta, err = backup.Backup(ctx, db, bucket, backup.BackupOptions{
     Type:   backup.BackupTypeIncremental,
 })
 
-// Restore
+// List all backups
+backups, err := backup.ListBackups(ctx, bucket, "backups")
+
+// Find restore set for a point in time
+restoreSet, err := backup.FindRestoreSet(ctx, bucket, "backups", time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC))
+
+// Restore (latest)
 err = backup.Restore(ctx, bucket, backup.RestoreOptions{
     Prefix:     "backups",
     RestoreDir: "/path/to/restored",
 })
 restoredDB, _ := bond.Open("/path/to/restored", bond.DefaultOptions())
+
+// Restore to a specific point in time
+err = backup.Restore(ctx, bucket, backup.RestoreOptions{
+    Prefix:     "backups",
+    RestoreDir: "/path/to/restored-pit",
+    Before:     time.Date(2025, 2, 12, 12, 30, 0, 0, time.UTC),
+})
 ```
