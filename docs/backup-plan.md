@@ -24,6 +24,7 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `Restore(ctx, bucket, opts) error`
 - `ListBackups(ctx, bucket, prefix) ([]BackupInfo, error)`
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
+- `RemoveOrphaned(ctx, bucket, prefix) (int, error)`
 
 ### 1.3 True incremental backups (diff-based)
 
@@ -65,6 +66,9 @@ All keys live under a configurable **prefix** (e.g. `backups/`).
 - **Metadata**
   `{prefix}/{datetime}-{type}/meta.json`
 
+- **Lock file**
+  `{prefix}/.lock`
+
 **Datetime format**: `20060102150405` (fixed-length, lexicographically sortable, UTC).
 
 ---
@@ -80,6 +84,7 @@ backup/
   list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
   meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
   naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
+  progress.go          -- DefaultConcurrency, ProgressEvent, ProgressFunc
   orphan.go            -- isOrphaned(), deleteBackupDir(), removeOrphanedDirs(), RemoveOrphaned()
   lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
   backup_test.go       -- Unit tests for backup, restore, list, naming, orphans, locking, edge cases
@@ -109,9 +114,11 @@ type BackupOptions struct {
 
 ```go
 type RestoreOptions struct {
-    Prefix     string    // Object storage prefix where backups are stored
-    RestoreDir string    // Local directory to restore into (must be empty or non-existent)
-    Before     time.Time // Point-in-time cutoff; zero = all backups
+    Prefix      string        // Object storage prefix where backups are stored
+    RestoreDir  string        // Local directory to restore into (must be empty or non-existent)
+    Before      time.Time     // Point-in-time cutoff; zero = all backups
+    Concurrency int           // Parallel downloads per stage; <= 0 uses DefaultConcurrency
+    OnProgress  ProgressFunc  // Called after each file download; must be goroutine-safe
 }
 ```
 
@@ -172,6 +179,7 @@ func RemoveOrphaned(ctx context.Context, bucket objstore.Bucket, prefix string) 
 ### Constants
 
 ```go
+const DefaultConcurrency = 4
 const DefaultLockTTL = 1 * time.Hour
 ```
 
@@ -188,26 +196,29 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 ### 5.1 Complete backup flow
 
-1. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
-2. Default `opts.Type` to `BackupTypeComplete` if empty
-3. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
-4. `os.MkdirTemp("", "bond-backup-*")` + `defer os.RemoveAll(tempDir)`
-5. `db.Backend().Checkpoint(checkpointDir)` into a subdirectory of tempDir
-6. `filepath.WalkDir(checkpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
-7. Upload ALL files to `{prefix}/{datetime}-complete/{relativePath}`
-8. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
-9. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
-10. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
+1. Default `opts.Type` to `BackupTypeComplete` if empty
+2. Acquire lock via `acquireLock(ctx, bucket, opts.Prefix, ttl)`; fail fast with `ErrBackupInProgress` if held
+3. Start lock refresh goroutine via `startLockRefresh()`; defer `stopRefresh()` and `releaseLock()`
+4. Remove orphaned backup dirs via `removeOrphanedDirs(ctx, bucket, opts.Prefix)`
+5. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
+6. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
+7. `os.MkdirTemp("", "bond-backup-*")` + `defer os.RemoveAll(tempDir)`
+8. `db.Backend().Checkpoint(checkpointDir)` into a subdirectory of tempDir
+9. `filepath.WalkDir(checkpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
+10. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
+11. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
+12. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
+13. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-6 (take a full checkpoint locally)
+1. Same steps 1-9 as complete (lock, orphan cleanup, checkpoint)
 2. Call `computeIncrementalFiles()` which:
    a. `ListBackups()` -> take the last one -> `readMeta()`
    b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
    c. Diff: for each file in the new checkpoint, if it's not in the previous set OR has a different size, mark as "to upload"
 3. If no previous backup exists, return error: `"no previous backup found; cannot create incremental backup"`
-4. Upload only the diff files to `{prefix}/{datetime}-incremental/{relativePath}`
+4. Upload only the diff files in parallel to `{prefix}/{datetime}-incremental/{relativePath}`
 5. Build `BackupMeta` where:
    - `Files` = only the diff files (what was uploaded)
    - `CheckpointFiles` = ALL files in the new checkpoint (for the next incremental's diff)
@@ -220,18 +231,21 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 3. `FindRestoreSet(ctx, bucket, opts.Prefix, before)` -> `[complete, incr1, incr2, ...]`
 4. If no backups found, return `ErrNoBackupsFound`
 5. Create `RestoreDir` via `os.MkdirAll`
-6. For each backup in order:
-   a. `readMeta(ctx, bucket, backup.Prefix)` to get the `Files` list
-   b. For each file in `meta.Files`: download via `bucket.Get()`, read all bytes via `io.ReadAll`, write to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, creating parent dirs via `os.MkdirAll` as needed
-   c. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
-7. Recreate bond metadata from the **last** backup's meta:
+6. Pre-read all metas to compute global totals for progress reporting (`totalFiles`, `totalBytes`)
+7. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
+8. For each backup in order (sequential outer loop preserves incremental override semantics):
+   a. Download files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`)
+   b. For each file in `meta.Files`: download via `bucket.Get()`, read all bytes via `io.ReadAll`, write to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`
+   c. Call `opts.OnProgress` after each file with cumulative counters across all stages
+   d. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
+9. Recreate bond metadata from the **last** backup's meta:
    - `os.MkdirAll(filepath.Join(restoreDir, "bond"), 0755)`
    - Write `bond/PEBBLE_FORMAT_VERSION` with the stored `PebbleFormatVersion` via `utils.WriteFileWithSync`
-8. Caller then opens with `bond.Open(restoreDir, opts)`
+10. Caller then opens with `bond.Open(restoreDir, opts)`
 
 ### 5.4 ListBackups and FindRestoreSet
 
-- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), returns sorted by datetime ascending.
+- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips orphaned dirs via `isOrphaned()`, returns sorted by datetime ascending.
 - `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
 
 ### 5.5 Naming helpers
@@ -287,6 +301,20 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestRestoreCreatesMetadata` | Verify `bond/PEBBLE_FORMAT_VERSION` file exists after restore and contains correct format version |
 | `TestRestoreNonEmptyDir` | Error when restore dir is not empty; error message contains "not empty" |
 | `TestIncrementalWithoutPreviousBackup` | Error when attempting incremental with no previous backup; error message contains "no previous backup" |
+| `TestBackupProgress` | Verify one `ProgressEvent` per uploaded file, all file names appear, max `FilesDone` == total, max `BytesDone` == total |
+| `TestRestoreProgress` | Verify progress events span all backups in restore set, max counters match totals |
+| `TestBackupProgressCancellation` | Cancel context in progress callback after 2 files; verify `context.Canceled` error and fewer than total files processed |
+| `TestConcurrencyOne` | Backup + restore with `Concurrency: 1`; verify data integrity |
+| `TestDefaultConcurrency` | Backup + restore with `Concurrency: 0` (uses `DefaultConcurrency`); verify data integrity |
+| `TestListBackups_SkipsOrphaned` | Valid backup + orphaned dir → `ListBackups` returns only valid |
+| `TestRemoveOrphaned` | Two orphaned dirs + one valid → `RemoveOrphaned` removes 2, valid remains |
+| `TestRemoveOrphaned_NoOrphans` | No orphans → returns 0, no error |
+| `TestBackup_CleansOrphanedBeforeIncremental` | Valid complete + orphaned incremental as "latest" → new incremental succeeds, orphan removed |
+| `TestRestore_SkipsOrphaned` | Valid complete + orphaned incremental → restore succeeds, data correct, orphan still exists (not cleaned) |
+| `TestBackup_LockPreventsConcurrent` | Acquire lock manually, attempt `Backup` → returns `ErrBackupInProgress` |
+| `TestBackup_StaleLockIsOverridden` | Upload a lock with old timestamp, `Backup` with short TTL → succeeds (stale lock overridden) |
+| `TestBackup_LockReleasedOnError` | Backup that errors (canceled ctx after lock) → lock is released via defer |
+| `TestBackup_LockReleasedOnSuccess` | Successful backup → lock object no longer exists afterward |
 
 ### 6.2 Integration tests (`tests/backup_test.go`)
 
@@ -329,7 +357,8 @@ The `backup/` package imports:
 - `github.com/go-bond/bond` — for `bond.DB`, `bond.BOND_DB_DATA_VERSION`
 - `github.com/go-bond/bond/utils` — for `utils.WriteFileWithSync` (in restore)
 - `github.com/thanos-io/objstore` — for `objstore.Bucket` interface (promoted from indirect to direct dependency)
-- Standard library: `context`, `encoding/json`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `time`
+- `golang.org/x/sync/errgroup` — for parallel uploads/downloads with concurrency limits
+- Standard library: `bytes`, `context`, `encoding/json`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
 
 Test-only imports:
 - `github.com/stretchr/testify/assert` and `require`
