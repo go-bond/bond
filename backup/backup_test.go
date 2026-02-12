@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -708,4 +709,285 @@ func TestDefaultConcurrency(t *testing.T) {
 
 	restoredKVs := collectAllKVs(t, db2)
 	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+// createOrphanedDir uploads files into a backup-like directory but without meta.json.
+func createOrphanedDir(t *testing.T, bucket *objstore.InMemBucket, prefix string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, bucket.Upload(ctx, prefix+"000001.sst", bytes.NewReader([]byte("fake-sst"))))
+	require.NoError(t, bucket.Upload(ctx, prefix+"MANIFEST-000001", bytes.NewReader([]byte("fake-manifest"))))
+}
+
+func TestListBackups_SkipsOrphaned(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Create a valid backup.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	// Create an orphaned directory (no meta.json).
+	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	assert.Equal(t, BackupTypeComplete, backups[0].Type)
+}
+
+func TestRemoveOrphaned(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Create a valid backup.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	// Create two orphaned directories.
+	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+	createOrphanedDir(t, bucket, "backups/20250212140000-complete/")
+
+	removed, err := RemoveOrphaned(ctx, bucket, "backups")
+	require.NoError(t, err)
+	assert.Equal(t, 2, removed)
+
+	// Valid backup should still be there.
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	assert.Equal(t, BackupTypeComplete, backups[0].Type)
+
+	// Orphan files should be gone.
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestRemoveOrphaned_NoOrphans(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	removed, err := RemoveOrphaned(ctx, bucket, "backups")
+	require.NoError(t, err)
+	assert.Equal(t, 0, removed)
+}
+
+func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 10)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup at T=12:00.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	// Create an orphaned incremental that would be "latest" by datetime.
+	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+
+	// Insert more data, take a new incremental at T=14:00.
+	insertTestData(t, db, 10, 10)
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeIncremental,
+		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+
+	// Orphan should be cleaned up.
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	// Should have exactly 2 valid backups.
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	assert.Len(t, backups, 2)
+}
+
+func TestRestore_SkipsOrphaned(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup at T=12:00.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Create an orphaned incremental.
+	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+
+	// Restore should succeed, using only the valid complete backup.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+
+	// Orphan should still exist (restore does not clean up).
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+func TestBackup_LockPreventsConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Manually acquire a lock.
+	err := acquireLock(ctx, bucket, "backups", DefaultLockTTL)
+	require.NoError(t, err)
+
+	// Attempt a backup — should fail with ErrBackupInProgress.
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	assert.ErrorIs(t, err, ErrBackupInProgress)
+}
+
+func TestBackup_StaleLockIsOverridden(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Upload a lock with an old timestamp.
+	oldPayload := []byte(`{"created_at":"2020-01-01T00:00:00Z"}`)
+	require.NoError(t, bucket.Upload(ctx, "backups/.lock", bytes.NewReader(oldPayload)))
+
+	// Backup with a short TTL should succeed (stale lock overridden).
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:  "backups",
+		Type:    BackupTypeComplete,
+		At:      time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		LockTTL: 1 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+}
+
+func TestBackup_LockReleasedOnError(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel the context after first file — upload of remaining files should fail.
+	var called atomic.Int64
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:      "backups",
+		Type:        BackupTypeComplete,
+		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency: 1,
+		OnProgress: func(event ProgressEvent) {
+			if called.Add(1) == 1 {
+				cancel()
+			}
+		},
+	})
+	require.Error(t, err)
+
+	// Lock should be released via defer.
+	exists, err := bucket.Exists(context.Background(), "backups/.lock")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestBackup_LockReleasedOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix: "backups",
+		Type:   BackupTypeComplete,
+		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	// Lock should not exist after successful backup.
+	exists, err := bucket.Exists(ctx, "backups/.lock")
+	require.NoError(t, err)
+	assert.False(t, exists)
 }

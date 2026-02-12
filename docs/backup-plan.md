@@ -80,7 +80,9 @@ backup/
   list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
   meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
   naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
-  backup_test.go       -- Unit tests for backup, restore, list, naming, edge cases
+  orphan.go            -- isOrphaned(), deleteBackupDir(), removeOrphanedDirs(), RemoveOrphaned()
+  lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
+  backup_test.go       -- Unit tests for backup, restore, list, naming, orphans, locking, edge cases
 
 tests/
   backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
@@ -94,9 +96,12 @@ tests/
 
 ```go
 type BackupOptions struct {
-    Prefix string      // Object storage prefix (e.g. "backups")
-    Type   BackupType  // BackupTypeComplete or BackupTypeIncremental
-    At     time.Time   // Override backup timestamp; zero = time.Now().UTC()
+    Prefix      string        // Object storage prefix (e.g. "backups")
+    Type        BackupType    // BackupTypeComplete or BackupTypeIncremental
+    At          time.Time     // Override backup timestamp; zero = time.Now().UTC()
+    Concurrency int           // Parallel uploads; <= 0 uses DefaultConcurrency
+    OnProgress  ProgressFunc  // Called after each file upload; must be goroutine-safe
+    LockTTL     time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
 }
 ```
 
@@ -161,12 +166,20 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) error
 func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
+func RemoveOrphaned(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
+```
+
+### Constants
+
+```go
+const DefaultLockTTL = 1 * time.Hour
 ```
 
 ### Sentinel Errors
 
 ```go
 var ErrNoBackupsFound = fmt.Errorf("no backups found")
+var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 ```
 
 ---
@@ -226,6 +239,28 @@ var ErrNoBackupsFound = fmt.Errorf("no backups found")
 - `backupDirName(t, bt)` -> `"20250212120000-complete"` (datetime format + hyphen + type)
 - `backupObjectPrefix(prefix, t, bt)` -> `"backups/20250212120000-complete/"` (with trailing slash)
 - `parseBackupDir(name)` -> `(time.Time, BackupType, error)`: strips trailing `/`, takes `path.Base()`, splits on first `-`, parses datetime and validates type
+
+### 5.6 Orphan handling
+
+An orphaned backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
+
+- **Detection**: `isOrphaned(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
+- **Cleanup**: `deleteBackupDir(ctx, bucket, dirPrefix)` discovers all objects via `bucket.Iter()` with `WithRecursiveIter()`, then deletes each. Guards against concurrent deletion with `bucket.IsObjNotFoundErr()`.
+- **`removeOrphanedDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies orphans, deletes them. Returns count removed.
+- **`RemoveOrphaned(ctx, bucket, prefix)`**: Public API that delegates to `removeOrphanedDirs`.
+- **`ListBackups()`**: Skips orphaned dirs automatically via `isOrphaned()` check in the `Iter` callback. This means `FindRestoreSet()` and `Restore()` benefit from orphan skipping with no additional changes.
+- **`Backup()`**: Calls `removeOrphanedDirs()` at the start (after acquiring the lock) to clean up orphans before proceeding.
+- **`Restore()`**: Does **not** clean up orphans. It simply skips them via `ListBackups()`.
+
+### 5.7 Backup locking
+
+A lock prevents concurrent `Backup()` calls from running against the same prefix. The lock is a JSON file at `{prefix}/.lock` containing `{"created_at":"<RFC3339>"}`.
+
+- **`acquireLock(ctx, bucket, prefix, ttl)`**: Checks if lock exists. If it does and its age < TTL, returns `ErrBackupInProgress`. If age >= TTL (stale) or lock doesn't exist, uploads a new lock.
+- **`releaseLock(ctx, bucket, prefix)`**: Deletes the lock. Ignores not-found errors.
+- **`startLockRefresh(ctx, bucket, prefix, ttl)`**: Starts a background goroutine that re-uploads the lock every `ttl/2` to prevent long-running backups from having their lock considered stale. Returns a `stop` function.
+- **`Backup()` integration**: Acquires lock, starts refresh, defers both `stopRefresh()` and `releaseLock()`, then proceeds with orphan cleanup and backup. The lock is always released on both success and error.
+- **`Restore()`**: Does **not** acquire a lock. Restore is read-only with respect to the backup set.
 
 ---
 
@@ -314,6 +349,10 @@ Test-only imports:
 - **Backup type default**: If `opts.Type` is empty, defaults to `BackupTypeComplete`.
 - **Timestamp default**: If `opts.At` is zero, defaults to `time.Now().UTC()`.
 - **Before cutoff zero**: If `opts.Before` is zero in `RestoreOptions`, all backups are considered (internally set to year 9999).
+- **Orphaned backup directories**: Directories matching the backup pattern but missing `meta.json` are skipped by `ListBackups()` and cleaned up at the start of `Backup()`. `Restore()` simply skips them.
+- **Concurrent backups**: A lock file (`{prefix}/.lock`) prevents concurrent `Backup()` calls. Returns `ErrBackupInProgress` if another backup holds an active lock. Stale locks (older than TTL) are overridden.
+- **Stale lock recovery**: If a backup process crashes without releasing its lock, the lock will expire after `LockTTL` (default 1 hour), allowing subsequent backups to proceed.
+- **Lock refresh**: Long-running backups refresh the lock every `TTL/2` to prevent the lock from becoming stale while the backup is still in progress.
 
 ---
 

@@ -26,12 +26,33 @@ type BackupOptions struct {
 	Concurrency int
 	// OnProgress is called after each file upload completes. Must be goroutine-safe.
 	OnProgress ProgressFunc
+	// LockTTL is the maximum age of a backup lock before it's considered stale.
+	// If zero, DefaultLockTTL (1 hour) is used.
+	LockTTL time.Duration
 }
 
 // Backup takes a Pebble checkpoint and uploads it to object storage.
 func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts BackupOptions) (*BackupMeta, error) {
 	if opts.Type == "" {
 		opts.Type = BackupTypeComplete
+	}
+
+	ttl := opts.LockTTL
+	if ttl <= 0 {
+		ttl = DefaultLockTTL
+	}
+
+	if err := acquireLock(ctx, bucket, opts.Prefix, ttl); err != nil {
+		return nil, err
+	}
+	stopRefresh := startLockRefresh(ctx, bucket, opts.Prefix, ttl)
+	defer func() {
+		stopRefresh()
+		_ = releaseLock(ctx, bucket, opts.Prefix)
+	}()
+
+	if _, err := removeOrphanedDirs(ctx, bucket, opts.Prefix); err != nil {
+		return nil, fmt.Errorf("remove orphaned backups: %w", err)
 	}
 
 	dt := opts.At

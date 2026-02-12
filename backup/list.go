@@ -34,6 +34,14 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 			return nil
 		}
 
+		orphaned, err := isOrphaned(ctx, bucket, name)
+		if err != nil {
+			return err
+		}
+		if orphaned {
+			return nil
+		}
+
 		backups = append(backups, BackupInfo{
 			Datetime: dt,
 			Type:     bt,
