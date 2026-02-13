@@ -29,6 +29,10 @@ type BackupOptions struct {
 	// LockTTL is the maximum age of a backup lock before it's considered stale.
 	// If zero, DefaultLockTTL (1 hour) is used.
 	LockTTL time.Duration
+	// CheckpointDir is the directory where the Pebble checkpoint will be created.
+	// The caller is responsible for choosing a location on the same filesystem as the DB.
+	// Required.
+	CheckpointDir string
 }
 
 // Backup takes a Pebble checkpoint and uploads it to object storage.
@@ -63,31 +67,32 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 
 	objPrefix := backupObjectPrefix(opts.Prefix, dt, opts.Type)
 
-	// Create a temporary directory for the checkpoint.
-	tempDir, err := os.MkdirTemp("", "bond-backup-*")
-	if err != nil {
-		return nil, fmt.Errorf("create temp dir: %w", err)
+	if opts.CheckpointDir == "" {
+		return nil, fmt.Errorf("CheckpointDir is required")
 	}
-	defer os.RemoveAll(tempDir)
 
-	// The checkpoint destination must not exist yet; use a subdirectory.
-	checkpointDir := filepath.Join(tempDir, "checkpoint")
+	// Remove any stale checkpoint from a previous crash.
+	if err := os.RemoveAll(opts.CheckpointDir); err != nil {
+		return nil, fmt.Errorf("remove stale checkpoint: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(opts.CheckpointDir)
+	}()
 
-	// Take a Pebble checkpoint with flushed WAL.
-	if ckErr := db.Backend().Checkpoint(checkpointDir); ckErr != nil {
+	if ckErr := db.Backend().Checkpoint(opts.CheckpointDir); ckErr != nil {
 		return nil, fmt.Errorf("pebble checkpoint: %w", ckErr)
 	}
 
 	// Collect all files in the checkpoint.
 	var allFiles []FileInfo
-	err = filepath.WalkDir(checkpointDir, func(p string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(opts.CheckpointDir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		rel, err := filepath.Rel(checkpointDir, p)
+		rel, err := filepath.Rel(opts.CheckpointDir, p)
 		if err != nil {
 			return err
 		}
@@ -136,7 +141,7 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			localPath := filepath.Join(checkpointDir, fi.Name)
+			localPath := filepath.Join(opts.CheckpointDir, fi.Name)
 			f, err := os.Open(localPath)
 			if err != nil {
 				return fmt.Errorf("open file %s: %w", fi.Name, err)

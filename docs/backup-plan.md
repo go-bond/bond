@@ -25,6 +25,8 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `ListBackups(ctx, bucket, prefix) ([]BackupInfo, error)`
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
 - `RemoveOrphaned(ctx, bucket, prefix) (int, error)`
+- `HasCheckpoint(dir) (bool, error)`
+- `RemoveCheckpoint(dir) error`
 
 ### 1.3 True incremental backups (diff-based)
 
@@ -80,6 +82,7 @@ All new files in `backup/` -- no changes to existing bond files.
 ```
 backup/
   backup.go            -- BackupOptions, Backup(), computeIncrementalFiles()
+  checkpoint.go        -- HasCheckpoint(), RemoveCheckpoint()
   restore.go           -- RestoreOptions, Restore()
   list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
   meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
@@ -87,7 +90,7 @@ backup/
   progress.go          -- DefaultConcurrency, ProgressEvent, ProgressFunc
   orphan.go            -- isOrphaned(), deleteBackupDir(), removeOrphanedDirs(), RemoveOrphaned()
   lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
-  backup_test.go       -- Unit tests for backup, restore, list, naming, orphans, locking, edge cases
+  backup_test.go       -- Unit tests for backup, restore, list, naming, orphans, locking, checkpoint, edge cases
 
 tests/
   backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
@@ -101,12 +104,13 @@ tests/
 
 ```go
 type BackupOptions struct {
-    Prefix      string        // Object storage prefix (e.g. "backups")
-    Type        BackupType    // BackupTypeComplete or BackupTypeIncremental
-    At          time.Time     // Override backup timestamp; zero = time.Now().UTC()
-    Concurrency int           // Parallel uploads; <= 0 uses DefaultConcurrency
-    OnProgress  ProgressFunc  // Called after each file upload; must be goroutine-safe
-    LockTTL     time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
+    Prefix        string        // Object storage prefix (e.g. "backups")
+    Type          BackupType    // BackupTypeComplete or BackupTypeIncremental
+    At            time.Time     // Override backup timestamp; zero = time.Now().UTC()
+    Concurrency   int           // Parallel uploads; <= 0 uses DefaultConcurrency
+    OnProgress    ProgressFunc  // Called after each file upload; must be goroutine-safe
+    LockTTL       time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
+    CheckpointDir string        // Directory for Pebble checkpoint; must be on same filesystem as DB. Required.
 }
 ```
 
@@ -174,6 +178,8 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
 func RemoveOrphaned(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
+func HasCheckpoint(dir string) (bool, error)
+func RemoveCheckpoint(dir string) error
 ```
 
 ### Constants
@@ -202,17 +208,18 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 4. Remove orphaned backup dirs via `removeOrphanedDirs(ctx, bucket, opts.Prefix)`
 5. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
 6. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
-7. `os.MkdirTemp("", "bond-backup-*")` + `defer os.RemoveAll(tempDir)`
-8. `db.Backend().Checkpoint(checkpointDir)` into a subdirectory of tempDir
-9. `filepath.WalkDir(checkpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
-10. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
-11. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
-12. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
-13. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
+7. Validate `opts.CheckpointDir` is non-empty (required)
+8. Remove any stale checkpoint at `opts.CheckpointDir` via `os.RemoveAll` + `defer os.RemoveAll(opts.CheckpointDir)` for cleanup
+9. `db.Backend().Checkpoint(opts.CheckpointDir)` into the caller-provided directory
+10. `filepath.WalkDir(opts.CheckpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
+11. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
+12. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
+13. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
+14. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-9 as complete (lock, orphan cleanup, checkpoint)
+1. Same steps 1-10 as complete (lock, orphan cleanup, checkpoint dir validation, checkpoint)
 2. Call `computeIncrementalFiles()` which:
    a. `ListBackups()` -> take the last one -> `readMeta()`
    b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
@@ -315,6 +322,11 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestBackup_StaleLockIsOverridden` | Upload a lock with old timestamp, `Backup` with short TTL → succeeds (stale lock overridden) |
 | `TestBackup_LockReleasedOnError` | Backup that errors (canceled ctx after lock) → lock is released via defer |
 | `TestBackup_LockReleasedOnSuccess` | Successful backup → lock object no longer exists afterward |
+| `TestHasCheckpoint_NoCheckpoint` | Returns `false` when directory does not exist |
+| `TestHasCheckpoint_WithCheckpoint` | Returns `true` after creating a directory |
+| `TestRemoveCheckpoint` | Creates dir with files, removes it, verifies gone |
+| `TestRemoveCheckpoint_NoCheckpoint` | Idempotent — no error when directory does not exist |
+| `TestBackup_CleansStaleCheckpoint` | Stale checkpoint cleaned before backup, checkpoint cleaned after |
 
 ### 6.2 Integration tests (`tests/backup_test.go`)
 
@@ -375,6 +387,8 @@ Test-only imports:
 - **Bond metadata**: Recreated during restore from `meta.json`'s `pebble_format_version` field using `utils.WriteFileWithSync`.
 - **Orphaned SSTs after restore**: Pebble only reads files referenced by the MANIFEST, so leftover SSTs from earlier complete backups are harmless.
 - **Prefix normalization**: `ListBackups` auto-appends `/` to prefix if missing.
+- **Missing CheckpointDir**: Returns an error (`"CheckpointDir is required"`). The caller must provide a well-known path, ideally on the same filesystem as the DB to allow Pebble's hard-link optimization.
+- **Stale checkpoint**: If `CheckpointDir` already exists (e.g. from a previous crash), `Backup()` removes it before creating a new checkpoint, and always cleans up afterward via `defer`. The `HasCheckpoint()` and `RemoveCheckpoint()` utilities allow callers to detect and clean up stale checkpoints independently.
 - **Backup type default**: If `opts.Type` is empty, defaults to `BackupTypeComplete`.
 - **Timestamp default**: If `opts.At` is zero, defaults to `time.Now().UTC()`.
 - **Before cutoff zero**: If `opts.Before` is zero in `RestoreOptions`, all backups are considered (internally set to year 9999).
@@ -399,15 +413,25 @@ import (
 db, _ := bond.Open("mydb", bond.DefaultOptions())
 bucket := // ... your objstore.Bucket implementation (S3, GCS, InMemBucket, etc.)
 
+// CheckpointDir should be on the same filesystem as the DB for hard-link optimization.
+checkpointDir := "mydb-checkpoint"
+
+// Clean up any stale checkpoint from a previous crash at startup.
+if has, _ := backup.HasCheckpoint(checkpointDir); has {
+    _ = backup.RemoveCheckpoint(checkpointDir)
+}
+
 meta, err := backup.Backup(ctx, db, bucket, backup.BackupOptions{
-    Prefix: "backups",
-    Type:   backup.BackupTypeComplete,
+    Prefix:        "backups",
+    Type:          backup.BackupTypeComplete,
+    CheckpointDir: checkpointDir,
 })
 
 // Later: incremental backup
 meta, err = backup.Backup(ctx, db, bucket, backup.BackupOptions{
-    Prefix: "backups",
-    Type:   backup.BackupTypeIncremental,
+    Prefix:        "backups",
+    Type:          backup.BackupTypeIncremental,
+    CheckpointDir: checkpointDir,
 })
 
 // List all backups

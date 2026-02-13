@@ -118,9 +118,10 @@ func TestBackupRestore_TableData(t *testing.T) {
 	// Backup (complete) to in-memory bucket.
 	bucket := objstore.NewInMemBucket()
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())
@@ -170,9 +171,10 @@ func TestBackupRestore_SecondaryIndexes(t *testing.T) {
 	// Backup.
 	bucket := objstore.NewInMemBucket()
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())
@@ -227,9 +229,10 @@ func TestBackupRestore_MultipleTables(t *testing.T) {
 	// Backup.
 	bucket := objstore.NewInMemBucket()
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())
@@ -281,18 +284,20 @@ func TestBackupRestore_Incremental(t *testing.T) {
 	insertTokenBalances(t, ctx, table, 0, 10)
 	bucket := objstore.NewInMemBucket()
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 2: insert 10..19, incremental backup.
 	insertTokenBalances(t, ctx, table, 10, 10)
 	_, err = backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())
@@ -348,27 +353,30 @@ func TestBackupRestore_PointInTime(t *testing.T) {
 	// Phase 1: insert 0..4, complete backup at T=12:00.
 	insertTokenBalances(t, ctx, table, 0, 5)
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 2: insert 5..9, incremental at T=13:00.
 	insertTokenBalances(t, ctx, table, 5, 5)
 	_, err = backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 3: insert 10..14, incremental at T=14:00.
 	insertTokenBalances(t, ctx, table, 10, 5)
 	_, err = backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())
@@ -425,9 +433,10 @@ func TestBackupRestore_BatchInsert(t *testing.T) {
 	// Backup.
 	bucket := objstore.NewInMemBucket()
 	_, err := backup.Backup(ctx, srcDB, bucket, backup.BackupOptions{
-		Prefix: "backups",
-		Type:   backup.BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          backup.BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NoError(t, srcDB.Close())

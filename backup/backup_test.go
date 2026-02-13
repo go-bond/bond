@@ -104,9 +104,10 @@ func TestBackupComplete(t *testing.T) {
 	ctx := context.Background()
 
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, meta)
@@ -144,9 +145,10 @@ func TestRestoreComplete(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -179,9 +181,10 @@ func TestBackupIncremental(t *testing.T) {
 
 	// Complete backup.
 	completeMeta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -190,9 +193,10 @@ func TestBackupIncremental(t *testing.T) {
 
 	// Incremental backup.
 	incrMeta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -212,27 +216,30 @@ func TestRestoreWithIncrementals(t *testing.T) {
 	// Phase 1: Insert initial data, complete backup.
 	insertTestData(t, db, 0, 10)
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 2: Insert more data, incremental backup.
 	insertTestData(t, db, 10, 10)
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 3: Insert even more data, another incremental.
 	insertTestData(t, db, 20, 10)
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -264,9 +271,10 @@ func TestRestoreBeforeTime(t *testing.T) {
 	// Phase 1: Initial data + complete backup at T=12:00.
 	insertTestData(t, db, 0, 10)
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -275,18 +283,20 @@ func TestRestoreBeforeTime(t *testing.T) {
 	// Phase 2: More data + incremental at T=13:00.
 	insertTestData(t, db, 10, 10)
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 3: Even more data + incremental at T=14:00.
 	insertTestData(t, db, 20, 10)
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -326,9 +336,10 @@ func TestListBackups(t *testing.T) {
 
 	for i, ts := range times {
 		_, err := Backup(ctx, db, bucket, BackupOptions{
-			Prefix: "backups",
-			Type:   types[i],
-			At:     ts,
+			Prefix:        "backups",
+			Type:          types[i],
+			At:            ts,
+			CheckpointDir: filepath.Join(dir, "checkpoint"),
 		})
 		require.NoError(t, err)
 	}
@@ -355,25 +366,28 @@ func TestFindRestoreSet(t *testing.T) {
 
 	// Complete at T=12:00
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Incremental at T=13:00
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Incremental at T=14:00
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -404,9 +418,10 @@ func TestBackupEmptyDB(t *testing.T) {
 	ctx := context.Background()
 
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	assert.Greater(t, len(meta.Files), 0) // even empty DB has MANIFEST, CURRENT, etc.
@@ -438,9 +453,10 @@ func TestRestoreCreatesMetadata(t *testing.T) {
 	ctx := context.Background()
 
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -487,9 +503,10 @@ func TestIncrementalWithoutPreviousBackup(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no previous backup")
@@ -509,9 +526,10 @@ func TestBackupProgress(t *testing.T) {
 	var events []ProgressEvent
 
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 		OnProgress: func(event ProgressEvent) {
 			mu.Lock()
 			events = append(events, event)
@@ -560,18 +578,20 @@ func TestRestoreProgress(t *testing.T) {
 	// Phase 1: Complete backup.
 	insertTestData(t, db, 0, 10)
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
 	// Phase 2: Incremental backup.
 	insertTestData(t, db, 10, 10)
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -627,10 +647,11 @@ func TestBackupProgressCancellation(t *testing.T) {
 	var callCount atomic.Int64
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix:      "backups",
-		Type:        BackupTypeComplete,
-		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
-		Concurrency: 1, // sequential so cancellation is deterministic
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency:   1, // sequential so cancellation is deterministic
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 		OnProgress: func(event ProgressEvent) {
 			if callCount.Add(1) == 2 {
 				cancel()
@@ -653,10 +674,11 @@ func TestConcurrencyOne(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix:      "backups",
-		Type:        BackupTypeComplete,
-		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
-		Concurrency: 1,
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency:   1,
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -688,10 +710,11 @@ func TestDefaultConcurrency(t *testing.T) {
 
 	// Concurrency: 0 should use DefaultConcurrency without panic.
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix:      "backups",
-		Type:        BackupTypeComplete,
-		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
-		Concurrency: 0,
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency:   0,
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -731,9 +754,10 @@ func TestListBackups_SkipsOrphaned(t *testing.T) {
 
 	// Create a valid backup.
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -758,9 +782,10 @@ func TestRemoveOrphaned(t *testing.T) {
 
 	// Create a valid backup.
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -795,9 +820,10 @@ func TestRemoveOrphaned_NoOrphans(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -818,9 +844,10 @@ func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
 
 	// Complete backup at T=12:00.
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -830,9 +857,10 @@ func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
 	// Insert more data, take a new incremental at T=14:00.
 	insertTestData(t, db, 10, 10)
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeIncremental,
-		At:     time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, meta)
@@ -860,9 +888,10 @@ func TestRestore_SkipsOrphaned(t *testing.T) {
 
 	// Complete backup at T=12:00.
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -906,9 +935,10 @@ func TestBackup_LockPreventsConcurrent(t *testing.T) {
 
 	// Attempt a backup — should fail with ErrBackupInProgress.
 	_, err = Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	assert.ErrorIs(t, err, ErrBackupInProgress)
 }
@@ -929,10 +959,11 @@ func TestBackup_StaleLockIsOverridden(t *testing.T) {
 
 	// Backup with a short TTL should succeed (stale lock overridden).
 	meta, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix:  "backups",
-		Type:    BackupTypeComplete,
-		At:      time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
-		LockTTL: 1 * time.Millisecond,
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		LockTTL:       1 * time.Millisecond,
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, meta)
@@ -951,10 +982,11 @@ func TestBackup_LockReleasedOnError(t *testing.T) {
 	// Cancel the context after first file — upload of remaining files should fail.
 	var called atomic.Int64
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix:      "backups",
-		Type:        BackupTypeComplete,
-		At:          time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
-		Concurrency: 1,
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Concurrency:   1,
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 		OnProgress: func(event ProgressEvent) {
 			if called.Add(1) == 1 {
 				cancel()
@@ -980,9 +1012,10 @@ func TestBackup_LockReleasedOnSuccess(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := Backup(ctx, db, bucket, BackupOptions{
-		Prefix: "backups",
-		Type:   BackupTypeComplete,
-		At:     time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
 	})
 	require.NoError(t, err)
 
@@ -990,4 +1023,78 @@ func TestBackup_LockReleasedOnSuccess(t *testing.T) {
 	exists, err := bucket.Exists(ctx, "backups/.lock")
 	require.NoError(t, err)
 	assert.False(t, exists)
+}
+
+// --- Checkpoint utility tests ---
+
+func TestHasCheckpoint_NoCheckpoint(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nonexistent")
+
+	has, err := HasCheckpoint(dir)
+	require.NoError(t, err)
+	assert.False(t, has)
+}
+
+func TestHasCheckpoint_WithCheckpoint(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "checkpoint")
+	require.NoError(t, os.Mkdir(dir, 0755))
+
+	has, err := HasCheckpoint(dir)
+	require.NoError(t, err)
+	assert.True(t, has)
+}
+
+func TestRemoveCheckpoint(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "checkpoint")
+	require.NoError(t, os.Mkdir(dir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.sst"), []byte("data"), 0644))
+
+	err := RemoveCheckpoint(dir)
+	require.NoError(t, err)
+
+	_, err = os.Stat(dir)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestRemoveCheckpoint_NoCheckpoint(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nonexistent")
+
+	err := RemoveCheckpoint(dir)
+	require.NoError(t, err)
+}
+
+func TestBackup_CleansStaleCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	checkpointDir := filepath.Join(dir, "checkpoint")
+
+	// Simulate a stale checkpoint from a previous crash.
+	require.NoError(t, os.Mkdir(checkpointDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(checkpointDir, "stale.sst"), []byte("stale"), 0644))
+
+	has, err := HasCheckpoint(checkpointDir)
+	require.NoError(t, err)
+	assert.True(t, has)
+
+	// Backup should clean the stale checkpoint before proceeding.
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: checkpointDir,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+
+	// After backup, the checkpoint dir should be cleaned up.
+	has, err = HasCheckpoint(checkpointDir)
+	require.NoError(t, err)
+	assert.False(t, has)
 }
