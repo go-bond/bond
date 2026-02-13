@@ -34,11 +34,11 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 			return nil
 		}
 
-		orphaned, err := isOrphaned(ctx, bucket, name)
+		incomplete, err := isIncomplete(ctx, bucket, name)
 		if err != nil {
 			return err
 		}
-		if orphaned {
+		if incomplete {
 			return nil
 		}
 

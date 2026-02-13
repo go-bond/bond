@@ -24,7 +24,7 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `Restore(ctx, bucket, opts) error`
 - `ListBackups(ctx, bucket, prefix) ([]BackupInfo, error)`
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
-- `RemoveOrphaned(ctx, bucket, prefix) (int, error)`
+- `RemoveIncomplete(ctx, bucket, prefix) (int, error)`
 - `HasCheckpoint(dir) (bool, error)`
 - `RemoveCheckpoint(dir) error`
 
@@ -37,7 +37,7 @@ Backup/restore are stateless operations implemented as standalone functions:
 This works because:
 - Pebble SST files are immutable with unique numbered names (same name = same content).
 - MANIFEST, CURRENT, OPTIONS, and WAL files may change between checkpoints and are always uploaded in incrementals.
-- On restore, orphaned SST files don't cause issues since Pebble only reads files referenced by the MANIFEST.
+- On restore, leftover SST files don't cause issues since Pebble only reads files referenced by the MANIFEST.
 
 ### 1.4 meta.json tracks both uploaded files and full checkpoint state
 
@@ -88,9 +88,9 @@ backup/
   meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
   naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
   progress.go          -- DefaultConcurrency, ProgressEvent, ProgressFunc
-  orphan.go            -- isOrphaned(), deleteBackupDir(), removeOrphanedDirs(), RemoveOrphaned()
+  incomplete.go        -- isIncomplete(), deleteBackupDir(), removeIncompleteDirs(), RemoveIncomplete()
   lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
-  backup_test.go       -- Unit tests for backup, restore, list, naming, orphans, locking, checkpoint, edge cases
+  backup_test.go       -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
 
 tests/
   backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
@@ -179,7 +179,7 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) error
 func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
-func RemoveOrphaned(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
+func RemoveIncomplete(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
 func HasCheckpoint(dir string) (bool, error)
 func RemoveCheckpoint(dir string) error
 ```
@@ -208,7 +208,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 1. Default `opts.Type` to `BackupTypeComplete` if empty
 2. Acquire lock via `acquireLock(ctx, bucket, opts.Prefix, ttl)`; fail fast with `ErrBackupInProgress` if held
 3. Start lock refresh goroutine via `startLockRefresh()`; defer `stopRefresh()` and `releaseLock()`
-4. Remove orphaned backup dirs via `removeOrphanedDirs(ctx, bucket, opts.Prefix)`
+4. Remove incomplete backup dirs via `removeIncompleteDirs(ctx, bucket, opts.Prefix)`
 5. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
 6. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
 7. Validate `opts.CheckpointDir` is non-empty (required)
@@ -222,7 +222,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-10 as complete (lock, orphan cleanup, checkpoint dir validation, checkpoint)
+1. Same steps 1-10 as complete (lock, incomplete backup cleanup, checkpoint dir validation, checkpoint)
 2. Call `computeIncrementalFiles()` which:
    a. `ListBackups()` -> take the last one -> `readMeta()`
    b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
@@ -255,7 +255,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 ### 5.4 ListBackups and FindRestoreSet
 
-- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips orphaned dirs via `isOrphaned()`, returns sorted by datetime ascending.
+- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips incomplete dirs via `isIncomplete()`, returns sorted by datetime ascending.
 - `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
 
 ### 5.5 Naming helpers
@@ -264,17 +264,17 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 - `backupObjectPrefix(prefix, t, bt)` -> `"backups/20250212120000-complete/"` (with trailing slash)
 - `parseBackupDir(name)` -> `(time.Time, BackupType, error)`: strips trailing `/`, takes `path.Base()`, splits on first `-`, parses datetime and validates type
 
-### 5.6 Orphan handling
+### 5.6 Incomplete backup handling
 
-An orphaned backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
+An incomplete backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
 
-- **Detection**: `isOrphaned(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
+- **Detection**: `isIncomplete(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
 - **Cleanup**: `deleteBackupDir(ctx, bucket, dirPrefix)` discovers all objects via `bucket.Iter()` with `WithRecursiveIter()`, then deletes each. Guards against concurrent deletion with `bucket.IsObjNotFoundErr()`.
-- **`removeOrphanedDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies orphans, deletes them. Returns count removed.
-- **`RemoveOrphaned(ctx, bucket, prefix)`**: Public API that delegates to `removeOrphanedDirs`.
-- **`ListBackups()`**: Skips orphaned dirs automatically via `isOrphaned()` check in the `Iter` callback. This means `FindRestoreSet()` and `Restore()` benefit from orphan skipping with no additional changes.
-- **`Backup()`**: Calls `removeOrphanedDirs()` at the start (after acquiring the lock) to clean up orphans before proceeding.
-- **`Restore()`**: Does **not** clean up orphans. It simply skips them via `ListBackups()`.
+- **`removeIncompleteDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies incomplete backups, deletes them. Returns count removed.
+- **`RemoveIncomplete(ctx, bucket, prefix)`**: Public API that delegates to `removeIncompleteDirs`.
+- **`ListBackups()`**: Skips incomplete dirs automatically via `isIncomplete()` check in the `Iter` callback. This means `FindRestoreSet()` and `Restore()` benefit from incomplete backup skipping with no additional changes.
+- **`Backup()`**: Calls `removeIncompleteDirs()` at the start (after acquiring the lock) to clean up incomplete backups before proceeding.
+- **`Restore()`**: Does **not** clean up incomplete backups. It simply skips them via `ListBackups()`.
 
 ### 5.7 Backup locking
 
@@ -283,7 +283,7 @@ A lock prevents concurrent `Backup()` calls from running against the same prefix
 - **`acquireLock(ctx, bucket, prefix, ttl)`**: Checks if lock exists. If it does and its age < TTL, returns `ErrBackupInProgress`. If age >= TTL (stale) or lock doesn't exist, uploads a new lock.
 - **`releaseLock(ctx, bucket, prefix)`**: Deletes the lock. Ignores not-found errors.
 - **`startLockRefresh(ctx, bucket, prefix, ttl)`**: Starts a background goroutine that re-uploads the lock every `ttl/2` to prevent long-running backups from having their lock considered stale. Returns a `stop` function.
-- **`Backup()` integration**: Acquires lock, starts refresh, defers both `stopRefresh()` and `releaseLock()`, then proceeds with orphan cleanup and backup. The lock is always released on both success and error.
+- **`Backup()` integration**: Acquires lock, starts refresh, defers both `stopRefresh()` and `releaseLock()`, then proceeds with incomplete backup cleanup and backup. The lock is always released on both success and error.
 - **`Restore()`**: Does **not** acquire a lock. Restore is read-only with respect to the backup set.
 
 ---
@@ -316,11 +316,11 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestBackupProgressCancellation` | Cancel context in progress callback after 2 files; verify `context.Canceled` error and fewer than total files processed |
 | `TestConcurrencyOne` | Backup + restore with `Concurrency: 1`; verify data integrity |
 | `TestDefaultConcurrency` | Backup + restore with `Concurrency: 0` (uses `DefaultConcurrency`); verify data integrity |
-| `TestListBackups_SkipsOrphaned` | Valid backup + orphaned dir → `ListBackups` returns only valid |
-| `TestRemoveOrphaned` | Two orphaned dirs + one valid → `RemoveOrphaned` removes 2, valid remains |
-| `TestRemoveOrphaned_NoOrphans` | No orphans → returns 0, no error |
-| `TestBackup_CleansOrphanedBeforeIncremental` | Valid complete + orphaned incremental as "latest" → new incremental succeeds, orphan removed |
-| `TestRestore_SkipsOrphaned` | Valid complete + orphaned incremental → restore succeeds, data correct, orphan still exists (not cleaned) |
+| `TestListBackups_SkipsIncomplete` | Valid backup + incomplete dir → `ListBackups` returns only valid |
+| `TestRemoveIncomplete` | Two incomplete dirs + one valid → `RemoveIncomplete` removes 2, valid remains |
+| `TestRemoveIncomplete_NoIncomplete` | No incomplete backups → returns 0, no error |
+| `TestBackup_CleansIncompleteBeforeIncremental` | Valid complete + incomplete incremental as "latest" → new incremental succeeds, incomplete backup removed |
+| `TestRestore_SkipsIncomplete` | Valid complete + incomplete incremental → restore succeeds, data correct, incomplete backup still exists (not cleaned) |
 | `TestBackup_LockPreventsConcurrent` | Acquire lock manually, attempt `Backup` → returns `ErrBackupInProgress` |
 | `TestBackup_StaleLockIsOverridden` | Upload a lock with old timestamp, `Backup` with short TTL → succeeds (stale lock overridden) |
 | `TestBackup_LockReleasedOnError` | Backup that errors (canceled ctx after lock) → lock is released via defer |
@@ -389,14 +389,14 @@ Test-only imports:
 - **Empty RestoreDir option**: Returns an error (`"RestoreDir must be specified"`).
 - **Incremental with no previous backup**: Returns an error (`"no previous backup found; cannot create incremental backup"`).
 - **Bond metadata**: Recreated during restore from `meta.json`'s `pebble_format_version` field using `utils.WriteFileWithSync`.
-- **Orphaned SSTs after restore**: Pebble only reads files referenced by the MANIFEST, so leftover SSTs from earlier complete backups are harmless.
+- **Leftover SSTs after restore**: Pebble only reads files referenced by the MANIFEST, so leftover SSTs from earlier complete backups are harmless.
 - **Prefix normalization**: `ListBackups` auto-appends `/` to prefix if missing.
 - **Missing CheckpointDir**: Returns an error (`"CheckpointDir is required"`). The caller must provide a well-known path, ideally on the same filesystem as the DB to allow Pebble's hard-link optimization.
 - **Stale checkpoint**: If `CheckpointDir` already exists (e.g. from a previous crash), `Backup()` removes it before creating a new checkpoint, and always cleans up afterward via `defer`. The `HasCheckpoint()` and `RemoveCheckpoint()` utilities allow callers to detect and clean up stale checkpoints independently.
 - **Backup type default**: If `opts.Type` is empty, defaults to `BackupTypeComplete`.
 - **Timestamp default**: If `opts.At` is zero, defaults to `time.Now().UTC()`.
 - **Before cutoff zero**: If `opts.Before` is zero in `RestoreOptions`, all backups are considered (internally set to year 9999).
-- **Orphaned backup directories**: Directories matching the backup pattern but missing `meta.json` are skipped by `ListBackups()` and cleaned up at the start of `Backup()`. `Restore()` simply skips them.
+- **Incomplete backup directories**: Directories matching the backup pattern but missing `meta.json` are skipped by `ListBackups()` and cleaned up at the start of `Backup()`. `Restore()` simply skips them.
 - **Concurrent backups**: A lock file (`{prefix}/.lock`) prevents concurrent `Backup()` calls. Returns `ErrBackupInProgress` if another backup holds an active lock. Stale locks (older than TTL) are overridden.
 - **Stale lock recovery**: If a backup process crashes without releasing its lock, the lock will expire after `LockTTL` (default 1 hour), allowing subsequent backups to proceed.
 - **Lock refresh**: Long-running backups refresh the lock every `TTL/2` to prevent the lock from becoming stale while the backup is still in progress.

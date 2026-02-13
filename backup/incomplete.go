@@ -8,8 +8,8 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-// isOrphaned checks whether a backup directory is orphaned (missing meta.json).
-func isOrphaned(ctx context.Context, bucket objstore.Bucket, backupPrefix string) (bool, error) {
+// isIncomplete checks whether a backup directory is incomplete (missing meta.json).
+func isIncomplete(ctx context.Context, bucket objstore.Bucket, backupPrefix string) (bool, error) {
 	metaPath := path.Join(backupPrefix, metaFileName)
 	exists, err := bucket.Exists(ctx, metaPath)
 	if err != nil {
@@ -40,43 +40,43 @@ func deleteBackupDir(ctx context.Context, bucket objstore.Bucket, dirPrefix stri
 	return nil
 }
 
-// removeOrphanedDirs iterates all backup directories under prefix, identifies
-// orphans (directories without meta.json), and deletes them. Returns the count removed.
-func removeOrphanedDirs(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
+// removeIncompleteDirs iterates all backup directories under prefix, identifies
+// incomplete backups (directories without meta.json), and deletes them. Returns the count removed.
+func removeIncompleteDirs(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
 	if prefix != "" && prefix[len(prefix)-1] != '/' {
 		prefix += "/"
 	}
 
-	var orphanPrefixes []string
+	var incompletePrefixes []string
 	err := bucket.Iter(ctx, prefix, func(name string) error {
 		if _, _, err := parseBackupDir(name); err != nil {
 			return nil
 		}
 
-		orphaned, err := isOrphaned(ctx, bucket, name)
+		incomplete, err := isIncomplete(ctx, bucket, name)
 		if err != nil {
 			return err
 		}
-		if orphaned {
-			orphanPrefixes = append(orphanPrefixes, name)
+		if incomplete {
+			incompletePrefixes = append(incompletePrefixes, name)
 		}
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("iter bucket for orphans: %w", err)
+		return 0, fmt.Errorf("iter bucket for incomplete backups: %w", err)
 	}
 
-	for _, p := range orphanPrefixes {
+	for _, p := range incompletePrefixes {
 		if err := deleteBackupDir(ctx, bucket, p); err != nil {
 			return 0, err
 		}
 	}
 
-	return len(orphanPrefixes), nil
+	return len(incompletePrefixes), nil
 }
 
-// RemoveOrphaned removes orphaned backup directories (those without meta.json)
-// under the given prefix. Returns the number of orphaned directories removed.
-func RemoveOrphaned(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
-	return removeOrphanedDirs(ctx, bucket, prefix)
+// RemoveIncomplete removes incomplete backup directories (those without meta.json)
+// under the given prefix. Returns the number of incomplete directories removed.
+func RemoveIncomplete(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
+	return removeIncompleteDirs(ctx, bucket, prefix)
 }

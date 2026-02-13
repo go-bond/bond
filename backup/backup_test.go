@@ -734,15 +734,15 @@ func TestDefaultConcurrency(t *testing.T) {
 	assert.Equal(t, originalKVs, restoredKVs)
 }
 
-// createOrphanedDir uploads files into a backup-like directory but without meta.json.
-func createOrphanedDir(t *testing.T, bucket *objstore.InMemBucket, prefix string) {
+// createIncompleteDir uploads files into a backup-like directory but without meta.json.
+func createIncompleteDir(t *testing.T, bucket *objstore.InMemBucket, prefix string) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, bucket.Upload(ctx, prefix+"000001.sst", bytes.NewReader([]byte("fake-sst"))))
 	require.NoError(t, bucket.Upload(ctx, prefix+"MANIFEST-000001", bytes.NewReader([]byte("fake-manifest"))))
 }
 
-func TestListBackups_SkipsOrphaned(t *testing.T) {
+func TestListBackups_SkipsIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -761,8 +761,8 @@ func TestListBackups_SkipsOrphaned(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Create an orphaned directory (no meta.json).
-	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+	// Create an incomplete directory (no meta.json).
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
 
 	backups, err := ListBackups(ctx, bucket, "backups")
 	require.NoError(t, err)
@@ -770,7 +770,7 @@ func TestListBackups_SkipsOrphaned(t *testing.T) {
 	assert.Equal(t, BackupTypeComplete, backups[0].Type)
 }
 
-func TestRemoveOrphaned(t *testing.T) {
+func TestRemoveIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -789,11 +789,11 @@ func TestRemoveOrphaned(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Create two orphaned directories.
-	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
-	createOrphanedDir(t, bucket, "backups/20250212140000-complete/")
+	// Create two incomplete directories.
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
+	createIncompleteDir(t, bucket, "backups/20250212140000-complete/")
 
-	removed, err := RemoveOrphaned(ctx, bucket, "backups")
+	removed, err := RemoveIncomplete(ctx, bucket, "backups")
 	require.NoError(t, err)
 	assert.Equal(t, 2, removed)
 
@@ -803,13 +803,13 @@ func TestRemoveOrphaned(t *testing.T) {
 	require.Len(t, backups, 1)
 	assert.Equal(t, BackupTypeComplete, backups[0].Type)
 
-	// Orphan files should be gone.
+	// Incomplete backup files should be gone.
 	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
 	require.NoError(t, err)
 	assert.False(t, exists)
 }
 
-func TestRemoveOrphaned_NoOrphans(t *testing.T) {
+func TestRemoveIncomplete_NoIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -827,12 +827,12 @@ func TestRemoveOrphaned_NoOrphans(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	removed, err := RemoveOrphaned(ctx, bucket, "backups")
+	removed, err := RemoveIncomplete(ctx, bucket, "backups")
 	require.NoError(t, err)
 	assert.Equal(t, 0, removed)
 }
 
-func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
+func TestBackup_CleansIncompleteBeforeIncremental(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -851,8 +851,8 @@ func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Create an orphaned incremental that would be "latest" by datetime.
-	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+	// Create an incomplete incremental that would be "latest" by datetime.
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
 
 	// Insert more data, take a new incremental at T=14:00.
 	insertTestData(t, db, 10, 10)
@@ -865,7 +865,7 @@ func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 
-	// Orphan should be cleaned up.
+	// Incomplete backup should be cleaned up.
 	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
 	require.NoError(t, err)
 	assert.False(t, exists)
@@ -876,7 +876,7 @@ func TestBackup_CleansOrphanedBeforeIncremental(t *testing.T) {
 	assert.Len(t, backups, 2)
 }
 
-func TestRestore_SkipsOrphaned(t *testing.T) {
+func TestRestore_SkipsIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 
@@ -896,8 +896,8 @@ func TestRestore_SkipsOrphaned(t *testing.T) {
 	require.NoError(t, err)
 	db.Close()
 
-	// Create an orphaned incremental.
-	createOrphanedDir(t, bucket, "backups/20250212130000-incremental/")
+	// Create an incomplete incremental.
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
 
 	// Restore should succeed, using only the valid complete backup.
 	restoreDir := filepath.Join(dir, "restored")
@@ -913,7 +913,7 @@ func TestRestore_SkipsOrphaned(t *testing.T) {
 	restoredKVs := collectAllKVs(t, db2)
 	assert.Equal(t, originalKVs, restoredKVs)
 
-	// Orphan should still exist (restore does not clean up).
+	// Incomplete backup should still exist (restore does not clean up).
 	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
 	require.NoError(t, err)
 	assert.True(t, exists)

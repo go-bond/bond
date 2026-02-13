@@ -60,8 +60,8 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		_ = releaseLock(ctx, bucket, opts.Prefix)
 	}()
 
-	if _, err := removeOrphanedDirs(ctx, bucket, opts.Prefix); err != nil {
-		return nil, fmt.Errorf("remove orphaned backups: %w", err)
+	if _, err := removeIncompleteDirs(ctx, bucket, opts.Prefix); err != nil {
+		return nil, fmt.Errorf("remove incomplete backups: %w", err)
 	}
 
 	dt := opts.At
