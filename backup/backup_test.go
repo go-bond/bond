@@ -1063,6 +1063,134 @@ func TestRemoveCheckpoint_NoCheckpoint(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestResolvePerStreamRate(t *testing.T) {
+	// Zero rateLimit -> DefaultRateLimit / concurrency
+	rate := resolvePerStreamRate(0, 4)
+	assert.Equal(t, DefaultRateLimit/4, rate)
+
+	// Positive rateLimit -> rateLimit / concurrency
+	rate = resolvePerStreamRate(50*1024*1024, 5)
+	assert.Equal(t, float64(50*1024*1024)/5, rate)
+
+	// Negative rateLimit -> disabled (0)
+	rate = resolvePerStreamRate(-1, 4)
+	assert.Equal(t, float64(0), rate)
+
+	// Zero concurrency -> DefaultConcurrency
+	rate = resolvePerStreamRate(80*1024*1024, 0)
+	assert.Equal(t, float64(80*1024*1024)/float64(DefaultConcurrency), rate)
+
+	// Both zero -> DefaultRateLimit / DefaultConcurrency
+	rate = resolvePerStreamRate(0, 0)
+	assert.Equal(t, DefaultRateLimit/float64(DefaultConcurrency), rate)
+}
+
+func TestBackupWithRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 20)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+		RateLimit:     50 * 1024 * 1024, // 50 MB/s
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Restore and verify data integrity.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		RateLimit:  -1, // disable for speed
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestRestoreWithRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 20)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+		RateLimit:     -1, // disable for speed
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		RateLimit:  50 * 1024 * 1024, // 50 MB/s
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestBackupNoRateLimit(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 20)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+		RateLimit:     -1, // disabled
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		RateLimit:  -1, // disabled
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
 func TestBackup_CleansStaleCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))

@@ -3,12 +3,14 @@ package backup
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"sync/atomic"
 	"time"
 
+	"github.com/fujiwara/shapeio"
 	"github.com/go-bond/bond"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
@@ -33,6 +35,9 @@ type BackupOptions struct {
 	// The caller is responsible for choosing a location on the same filesystem as the DB.
 	// Required.
 	CheckpointDir string
+	// RateLimit is the aggregate upload rate limit in bytes per second.
+	// Zero uses DefaultRateLimit (100 MB/s). Negative disables rate limiting.
+	RateLimit float64
 }
 
 // Backup takes a Pebble checkpoint and uploads it to object storage.
@@ -129,6 +134,8 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		concurrency = DefaultConcurrency
 	}
 
+	perStreamRate := resolvePerStreamRate(opts.RateLimit, concurrency)
+
 	// Upload the files in parallel.
 	var filesDone atomic.Int64
 	var bytesDone atomic.Int64
@@ -146,8 +153,14 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 			if err != nil {
 				return fmt.Errorf("open file %s: %w", fi.Name, err)
 			}
+			var r io.Reader = f
+			if perStreamRate > 0 {
+				sr := shapeio.NewReaderWithContext(f, gctx)
+				sr.SetRateLimit(perStreamRate)
+				r = sr
+			}
 			objName := path.Join(objPrefix, fi.Name)
-			if err := bucket.Upload(gctx, objName, f); err != nil {
+			if err := bucket.Upload(gctx, objName, r); err != nil {
 				f.Close()
 				return fmt.Errorf("upload %s: %w", fi.Name, err)
 			}

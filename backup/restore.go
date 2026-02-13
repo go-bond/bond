@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fujiwara/shapeio"
 	"github.com/go-bond/bond/utils"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
@@ -28,6 +29,9 @@ type RestoreOptions struct {
 	Concurrency int
 	// OnProgress is called after each file download completes. Must be goroutine-safe.
 	OnProgress ProgressFunc
+	// RateLimit is the aggregate download rate limit in bytes per second.
+	// Zero uses DefaultRateLimit (100 MB/s). Negative disables rate limiting.
+	RateLimit float64
 }
 
 // Restore downloads a backup set from object storage and writes it to a local directory.
@@ -100,6 +104,8 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		concurrency = DefaultConcurrency
 	}
 
+	perStreamRate := resolvePerStreamRate(opts.RateLimit, concurrency)
+
 	// Atomic counters accumulate across all stages.
 	var filesDone atomic.Int64
 	var bytesDone atomic.Int64
@@ -123,7 +129,13 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 					return fmt.Errorf("get %s: %w", objName, err)
 				}
 
-				data, err := io.ReadAll(rc)
+				var r io.Reader = rc
+				if perStreamRate > 0 {
+					sr := shapeio.NewReaderWithContext(rc, gctx)
+					sr.SetRateLimit(perStreamRate)
+					r = sr
+				}
+				data, err := io.ReadAll(r)
 				rc.Close()
 				if err != nil {
 					return fmt.Errorf("read %s: %w", objName, err)

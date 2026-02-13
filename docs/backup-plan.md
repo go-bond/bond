@@ -111,6 +111,7 @@ type BackupOptions struct {
     OnProgress    ProgressFunc  // Called after each file upload; must be goroutine-safe
     LockTTL       time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
     CheckpointDir string        // Directory for Pebble checkpoint; must be on same filesystem as DB. Required.
+    RateLimit     float64       // Aggregate upload rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
 }
 ```
 
@@ -123,6 +124,7 @@ type RestoreOptions struct {
     Before      time.Time     // Point-in-time cutoff; zero = all backups
     Concurrency int           // Parallel downloads per stage; <= 0 uses DefaultConcurrency
     OnProgress  ProgressFunc  // Called after each file download; must be goroutine-safe
+    RateLimit   float64       // Aggregate download rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
 }
 ```
 
@@ -186,6 +188,7 @@ func RemoveCheckpoint(dir string) error
 
 ```go
 const DefaultConcurrency = 4
+const DefaultRateLimit float64 = 100 * 1024 * 1024 // 100 MB/s
 const DefaultLockTTL = 1 * time.Hour
 ```
 
@@ -368,6 +371,7 @@ Helper functions:
 The `backup/` package imports:
 - `github.com/go-bond/bond` — for `bond.DB`, `bond.BOND_DB_DATA_VERSION`
 - `github.com/go-bond/bond/utils` — for `utils.WriteFileWithSync` (in restore)
+- `github.com/fujiwara/shapeio` — for per-stream bandwidth rate limiting via token-bucket shaped `io.Reader`
 - `github.com/thanos-io/objstore` — for `objstore.Bucket` interface (promoted from indirect to direct dependency)
 - `golang.org/x/sync/errgroup` — for parallel uploads/downloads with concurrency limits
 - Standard library: `bytes`, `context`, `encoding/json`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
