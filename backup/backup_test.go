@@ -3,10 +3,13 @@ package backup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1225,4 +1228,158 @@ func TestBackup_CleansStaleCheckpoint(t *testing.T) {
 	has, err = HasCheckpoint(checkpointDir)
 	require.NoError(t, err)
 	assert.False(t, has)
+}
+
+// --- Upload retry tests ---
+
+// temporaryError is an error that implements Temporary() for retry tests.
+type temporaryError struct{ msg string }
+
+func (e *temporaryError) Error() string   { return e.msg }
+func (e *temporaryError) Temporary() bool { return true }
+
+// uploadFailingBucket wraps InMemBucket and fails the first N upload attempts per key.
+type uploadFailingBucket struct {
+	*objstore.InMemBucket
+	mu           sync.Mutex
+	attempts     map[string]int // key -> number of Upload attempts so far
+	failAttempts int           // fail first N attempts per key with retriable error
+	alwaysFail   bool          // if true, always return permanent error (no delegation)
+}
+
+// isBackupCheckpointFile returns true for keys that are checkpoint file uploads (not lock or meta.json).
+// Only those uploads use the retry path in Backup(); lock and writeMeta use the bucket directly.
+func isBackupCheckpointFile(name string) bool {
+	if strings.HasSuffix(name, "/meta.json") {
+		return false
+	}
+	return strings.Contains(name, "-complete/") || strings.Contains(name, "-incremental/")
+}
+
+func (b *uploadFailingBucket) Upload(ctx context.Context, name string, r io.Reader, _ ...objstore.ObjectUploadOption) error {
+	// Only fail checkpoint file uploads; let lock and meta uploads succeed so Backup() can proceed.
+	if !isBackupCheckpointFile(name) {
+		return b.InMemBucket.Upload(ctx, name, r)
+	}
+	b.mu.Lock()
+	n := b.attempts[name]
+	b.attempts[name]++
+	failAttempts := b.failAttempts
+	alwaysFail := b.alwaysFail
+	b.mu.Unlock()
+
+	if alwaysFail {
+		return fmt.Errorf("access denied")
+	}
+	if n < failAttempts {
+		return &temporaryError{msg: "transient upload failure"}
+	}
+	return b.InMemBucket.Upload(ctx, name, r)
+}
+
+func TestBackup_UploadRetry_SuccessAfterRetries(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	// Fail first 2 attempts per key, then succeed. Default MaxUploadRetries is 3, so we have enough.
+	bucket := &uploadFailingBucket{
+		InMemBucket:   objstore.NewInMemBucket(),
+		attempts:      make(map[string]int),
+		failAttempts:  2,
+	}
+
+	ctx := context.Background()
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+
+	// Verify backup is complete and restorable.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{Prefix: "backups", RestoreDir: restoreDir})
+	require.NoError(t, err)
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+	restored := collectAllKVs(t, db2)
+	original := collectAllKVs(t, db)
+	assert.Equal(t, original, restored)
+}
+
+func TestBackup_UploadRetry_PermanentErrorFails(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := &uploadFailingBucket{
+		InMemBucket: objstore.NewInMemBucket(),
+		attempts:    make(map[string]int),
+		alwaysFail:  true,
+	}
+
+	ctx := context.Background()
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "upload ")
+	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestBackup_UploadRetry_ContextCancelDuringBackoff(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	// Fail first attempt for every key so we enter backoff. Use long backoff so cancel happens during wait.
+	bucket := &uploadFailingBucket{
+		InMemBucket:   objstore.NewInMemBucket(),
+		attempts:      make(map[string]int),
+		failAttempts:  1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Cancel shortly after backup starts so we hit backoff then context done.
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:              "backups",
+		Type:                BackupTypeComplete,
+		At:                  time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir:       filepath.Join(dir, "checkpoint"),
+		InitialRetryBackoff: 200 * time.Millisecond, // long enough that cancel fires during backoff
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled), "expected context cancellation: %v", err)
+}
+
+func TestIsRetriableUploadError(t *testing.T) {
+	// Not retriable: nil, Canceled
+	assert.False(t, isRetriableUploadError(nil))
+	assert.False(t, isRetriableUploadError(context.Canceled))
+
+	// Retriable: DeadlineExceeded, Temporary()
+	assert.True(t, isRetriableUploadError(context.DeadlineExceeded))
+	assert.True(t, isRetriableUploadError(&temporaryError{msg: "x"}))
+
+	// Not retriable: permanent error
+	assert.False(t, isRetriableUploadError(fmt.Errorf("access denied")))
 }
