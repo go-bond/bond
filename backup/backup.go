@@ -5,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
 	"sync/atomic"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/fujiwara/shapeio"
 	"github.com/go-bond/bond"
 	"github.com/thanos-io/objstore"
@@ -119,10 +120,19 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		return nil, fmt.Errorf("walk checkpoint: %w", err)
 	}
 
+	maxRetries := opts.MaxUploadRetries
+	if maxRetries <= 0 {
+		maxRetries = DefaultMaxUploadRetries
+	}
+	initialBackoff := opts.InitialRetryBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = DefaultInitialRetryBackoff
+	}
+
 	// Determine which files to upload.
 	var filesToUpload []FileInfo
 	if opts.Type == BackupTypeIncremental {
-		filesToUpload, err = computeIncrementalFiles(ctx, bucket, opts.Prefix, allFiles)
+		filesToUpload, err = computeIncrementalFiles(ctx, bucket, opts.Prefix, allFiles, maxRetries, initialBackoff)
 		if err != nil {
 			return nil, err
 		}
@@ -142,15 +152,6 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	}
 
 	perStreamRate := resolvePerStreamRate(opts.RateLimit, concurrency)
-
-	maxRetries := opts.MaxUploadRetries
-	if maxRetries <= 0 {
-		maxRetries = DefaultMaxUploadRetries
-	}
-	initialBackoff := opts.InitialRetryBackoff
-	if initialBackoff <= 0 {
-		initialBackoff = DefaultInitialRetryBackoff
-	}
 
 	// Upload the files in parallel.
 	var filesDone atomic.Int64
@@ -196,15 +197,15 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	bondDataVer := uint32(bond.BOND_DB_DATA_VERSION)
 
 	meta := newBackupMeta(opts.Type, dt, pebbleFmtVer, bondDataVer, filesToUpload, allFiles)
-	if err := writeMeta(ctx, bucket, objPrefix, meta); err != nil {
+	if err := writeMeta(ctx, bucket, objPrefix, meta, maxRetries, initialBackoff); err != nil {
 		return nil, err
 	}
 
 	return meta, nil
 }
 
-// isRetriableUploadError reports whether the error from bucket.Upload should be retried.
-func isRetriableUploadError(err error) bool {
+// isRetriableError reports whether the error from a bucket operation should be retried.
+func isRetriableError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -224,48 +225,46 @@ func isRetriableUploadError(err error) bool {
 // uploadFileWithRetry uploads the file at localPath to objName, retrying on transient errors.
 // It opens the file (and applies perStreamRate if > 0) for each attempt.
 func uploadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName, localPath, fileName string, perStreamRate float64, maxRetries int, initialBackoff time.Duration) error {
-	backoff := initialBackoff
-	if backoff <= 0 {
-		backoff = DefaultInitialRetryBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = DefaultInitialRetryBackoff
 	}
-	for attempt := 0; ; attempt++ {
-		f, err := os.Open(localPath)
-		if err != nil {
-			return fmt.Errorf("open file %s: %w", fileName, err)
-		}
-		var r io.Reader = f
-		if perStreamRate > 0 {
-			sr := shapeio.NewReaderWithContext(f, ctx)
-			sr.SetRateLimit(perStreamRate)
-			r = sr
-		}
-		err = bucket.Upload(ctx, objName, r)
-		f.Close()
-		if err == nil {
-			return nil
-		}
-		if !isRetriableUploadError(err) || attempt >= maxRetries {
-			return fmt.Errorf("upload %s: %w", fileName, err)
-		}
-		// Jitter: 0.75 to 1.25 * backoff
-		jittered := time.Duration(float64(backoff) * (0.75 + 0.5*rand.Float64()))
-		timer := time.NewTimer(jittered)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return fmt.Errorf("upload %s: %w", fileName, ctx.Err())
-		case <-timer.C:
-		}
-		if backoff < MaxRetryBackoff {
-			backoff *= 2
-			if backoff > MaxRetryBackoff {
-				backoff = MaxRetryBackoff
+
+	policy := retrypolicy.NewBuilder[any]().
+		HandleIf(func(_ any, err error) bool {
+			return isRetriableError(err)
+		}).
+		WithMaxRetries(maxRetries).
+		WithBackoff(initialBackoff, MaxRetryBackoff).
+		WithJitterFactor(0.25).
+		ReturnLastFailure().
+		Build()
+
+	err := failsafe.With[any](policy).
+		WithContext(ctx).
+		Run(func() error {
+			f, oErr := os.Open(localPath)
+			if oErr != nil {
+				return fmt.Errorf("open file %s: %w", fileName, oErr)
 			}
+			defer f.Close()
+			var r io.Reader = f
+			if perStreamRate > 0 {
+				sr := shapeio.NewReaderWithContext(f, ctx)
+				sr.SetRateLimit(perStreamRate)
+				r = sr
+			}
+			return bucket.Upload(ctx, objName, r)
+		})
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("upload %s: %w", fileName, ctx.Err())
 		}
+		return fmt.Errorf("upload %s: %w", fileName, err)
 	}
+	return nil
 }
 
-func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, prefix string, allFiles []FileInfo) ([]FileInfo, error) {
+func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, prefix string, allFiles []FileInfo, maxRetries int, initialBackoff time.Duration) ([]FileInfo, error) {
 	backups, err := ListBackups(ctx, bucket, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("list backups for incremental: %w", err)
@@ -276,7 +275,7 @@ func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, prefix
 
 	// Read the previous backup's metadata.
 	prev := backups[len(backups)-1]
-	prevMeta, err := readMeta(ctx, bucket, prev.Prefix)
+	prevMeta, err := readMeta(ctx, bucket, prev.Prefix, maxRetries, initialBackoff)
 	if err != nil {
 		return nil, fmt.Errorf("read previous backup meta: %w", err)
 	}

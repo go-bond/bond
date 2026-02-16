@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/fujiwara/shapeio"
 	"github.com/go-bond/bond/utils"
 	"github.com/thanos-io/objstore"
@@ -32,6 +34,11 @@ type RestoreOptions struct {
 	// RateLimit is the aggregate download rate limit in bytes per second.
 	// Zero uses DefaultRateLimit (100 MB/s). Negative disables rate limiting.
 	RateLimit float64
+	// MaxDownloadRetries is the number of retries per file after the first failed download.
+	// Zero uses DefaultMaxDownloadRetries. Only transient errors are retried.
+	MaxDownloadRetries int
+	// InitialRetryBackoff is the delay before the first retry. Zero uses DefaultInitialRetryBackoff.
+	InitialRetryBackoff time.Duration
 }
 
 // Restore downloads a backup set from object storage and writes it to a local directory.
@@ -65,6 +72,15 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return fmt.Errorf("create restore dir: %w", err)
 	}
 
+	maxRetries := opts.MaxDownloadRetries
+	if maxRetries <= 0 {
+		maxRetries = DefaultMaxDownloadRetries
+	}
+	initialBackoff := opts.InitialRetryBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = DefaultInitialRetryBackoff
+	}
+
 	// Pre-read all metas to compute global totals for progress reporting.
 	type backupWithMeta struct {
 		prefix string
@@ -74,7 +90,7 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 	var totalFiles int
 	var totalBytes int64
 	for _, backup := range restoreSet {
-		meta, err := readMeta(ctx, bucket, backup.Prefix)
+		meta, err := readMeta(ctx, bucket, backup.Prefix, maxRetries, initialBackoff)
 		if err != nil {
 			return fmt.Errorf("read meta for %s: %w", backup.Prefix, err)
 		}
@@ -124,26 +140,9 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 					return err
 				}
 				objName := path.Join(prefix, fi.Name)
-				rc, err := bucket.Get(gctx, objName)
-				if err != nil {
-					return fmt.Errorf("get %s: %w", objName, err)
-				}
-
-				var r io.Reader = rc
-				if perStreamRate > 0 {
-					sr := shapeio.NewReaderWithContext(rc, gctx)
-					sr.SetRateLimit(perStreamRate)
-					r = sr
-				}
-				data, err := io.ReadAll(r)
-				rc.Close()
-				if err != nil {
-					return fmt.Errorf("read %s: %w", objName, err)
-				}
-
 				localPath := filepath.Join(opts.RestoreDir, fi.Name)
-				if err := os.WriteFile(localPath, data, 0644); err != nil {
-					return fmt.Errorf("write %s: %w", localPath, err)
+				if err := downloadFileWithRetry(gctx, bucket, objName, localPath, perStreamRate, maxRetries, initialBackoff); err != nil {
+					return err
 				}
 
 				done := int(filesDone.Add(1))
@@ -183,5 +182,51 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		}
 	}
 
+	return nil
+}
+
+// downloadFileWithRetry downloads objName from the bucket to localPath, retrying on transient errors.
+// It fetches the object (and applies perStreamRate if > 0) for each attempt.
+func downloadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName, localPath string, perStreamRate float64, maxRetries int, initialBackoff time.Duration) error {
+	if initialBackoff <= 0 {
+		initialBackoff = DefaultInitialRetryBackoff
+	}
+
+	policy := retrypolicy.NewBuilder[any]().
+		HandleIf(func(_ any, err error) bool {
+			return isRetriableError(err)
+		}).
+		WithMaxRetries(maxRetries).
+		WithBackoff(initialBackoff, MaxRetryBackoff).
+		WithJitterFactor(0.25).
+		ReturnLastFailure().
+		Build()
+
+	err := failsafe.With[any](policy).
+		WithContext(ctx).
+		Run(func() error {
+			rc, gErr := bucket.Get(ctx, objName)
+			if gErr != nil {
+				return gErr
+			}
+			var r io.Reader = rc
+			if perStreamRate > 0 {
+				sr := shapeio.NewReaderWithContext(rc, ctx)
+				sr.SetRateLimit(perStreamRate)
+				r = sr
+			}
+			data, rErr := io.ReadAll(r)
+			rc.Close()
+			if rErr != nil {
+				return rErr
+			}
+			return os.WriteFile(localPath, data, 0644)
+		})
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("download %s: %w", objName, ctx.Err())
+		}
+		return fmt.Errorf("download %s: %w", objName, err)
+	}
 	return nil
 }

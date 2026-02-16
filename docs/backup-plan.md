@@ -81,13 +81,13 @@ All new files in `backup/` -- no changes to existing bond files.
 
 ```
 backup/
-  backup.go            -- BackupOptions, Backup(), computeIncrementalFiles()
+  backup.go            -- BackupOptions, Backup(), computeIncrementalFiles(), isRetriableError(), uploadFileWithRetry()
   checkpoint.go        -- HasCheckpoint(), RemoveCheckpoint()
-  restore.go           -- RestoreOptions, Restore()
+  restore.go           -- RestoreOptions, Restore(), downloadFileWithRetry()
   list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
-  meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta()
+  meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta(), newMetaRetryPolicy()
   naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
-  progress.go          -- DefaultConcurrency, ProgressEvent, ProgressFunc
+  progress.go          -- DefaultConcurrency, DefaultRateLimit, DefaultMax{Upload,Download}Retries, DefaultInitialRetryBackoff, MaxRetryBackoff, ProgressEvent, ProgressFunc
   incomplete.go        -- isIncomplete(), deleteBackupDir(), removeIncompleteDirs(), RemoveIncomplete()
   lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
   backup_test.go       -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
@@ -112,6 +112,8 @@ type BackupOptions struct {
     LockTTL       time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
     CheckpointDir string        // Directory for Pebble checkpoint; must be on same filesystem as DB. Required.
     RateLimit     float64       // Aggregate upload rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
+    MaxUploadRetries int        // Retries per file after first failed upload; zero = DefaultMaxUploadRetries. Only transient errors retried.
+    InitialRetryBackoff time.Duration // Delay before first retry; zero = DefaultInitialRetryBackoff.
 }
 ```
 
@@ -119,12 +121,14 @@ type BackupOptions struct {
 
 ```go
 type RestoreOptions struct {
-    Prefix      string        // Object storage prefix where backups are stored
-    RestoreDir  string        // Local directory to restore into (must be empty or non-existent)
-    Before      time.Time     // Point-in-time cutoff; zero = all backups
-    Concurrency int           // Parallel downloads per stage; <= 0 uses DefaultConcurrency
-    OnProgress  ProgressFunc  // Called after each file download; must be goroutine-safe
-    RateLimit   float64       // Aggregate download rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
+    Prefix              string        // Object storage prefix where backups are stored
+    RestoreDir          string        // Local directory to restore into (must be empty or non-existent)
+    Before              time.Time     // Point-in-time cutoff; zero = all backups
+    Concurrency         int           // Parallel downloads per stage; <= 0 uses DefaultConcurrency
+    OnProgress          ProgressFunc  // Called after each file download; must be goroutine-safe
+    RateLimit           float64       // Aggregate download rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
+    MaxDownloadRetries  int           // Retries per file after first failed download; zero = DefaultMaxDownloadRetries. Only transient errors retried.
+    InitialRetryBackoff time.Duration // Delay before first retry; zero = DefaultInitialRetryBackoff.
 }
 ```
 
@@ -190,6 +194,10 @@ func RemoveCheckpoint(dir string) error
 const DefaultConcurrency = 4
 const DefaultRateLimit float64 = 100 * 1024 * 1024 // 100 MB/s
 const DefaultLockTTL = 1 * time.Hour
+const DefaultMaxUploadRetries = 3
+const DefaultMaxDownloadRetries = 3
+const DefaultInitialRetryBackoff = 1 * time.Second
+const MaxRetryBackoff = 30 * time.Second
 ```
 
 ### Sentinel Errors
@@ -215,16 +223,17 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 8. Remove any stale checkpoint at `opts.CheckpointDir` via `os.RemoveAll` + `defer os.RemoveAll(opts.CheckpointDir)` for cleanup
 9. `db.Backend().Checkpoint(opts.CheckpointDir)` into the caller-provided directory
 10. `filepath.WalkDir(opts.CheckpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
-11. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
-12. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
-13. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
-14. Upload `meta.json` via `writeMeta()`, return `*BackupMeta`
+11. Resolve retry parameters: `MaxUploadRetries` (default `DefaultMaxUploadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
+12. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
+13. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
+14. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
+15. Upload `meta.json` via `writeMeta()` with retry (see §5.10), return `*BackupMeta`
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-10 as complete (lock, incomplete backup cleanup, checkpoint dir validation, checkpoint)
+1. Same steps 1-11 as complete (lock, incomplete backup cleanup, checkpoint dir validation, checkpoint, retry resolution)
 2. Call `computeIncrementalFiles()` which:
-   a. `ListBackups()` -> take the last one -> `readMeta()`
+   a. `ListBackups()` -> take the last one -> `readMeta()` with retry (see §5.10)
    b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
    c. Diff: for each file in the new checkpoint, if it's not in the previous set OR has a different size, mark as "to upload"
 3. If no previous backup exists, return error: `"no previous backup found; cannot create incremental backup"`
@@ -232,7 +241,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 5. Build `BackupMeta` where:
    - `Files` = only the diff files (what was uploaded)
    - `CheckpointFiles` = ALL files in the new checkpoint (for the next incremental's diff)
-6. Upload `meta.json`, return `*BackupMeta`
+6. Upload `meta.json` with retry (see §5.10), return `*BackupMeta`
 
 ### 5.3 Restore flow
 
@@ -241,17 +250,18 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 3. `FindRestoreSet(ctx, bucket, opts.Prefix, before)` -> `[complete, incr1, incr2, ...]`
 4. If no backups found, return `ErrNoBackupsFound`
 5. Create `RestoreDir` via `os.MkdirAll`
-6. Pre-read all metas to compute global totals for progress reporting (`totalFiles`, `totalBytes`)
-7. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
-8. For each backup in order (sequential outer loop preserves incremental override semantics):
+6. Resolve retry parameters: `MaxDownloadRetries` (default `DefaultMaxDownloadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
+7. Pre-read all metas via `readMeta()` with retry (see §5.10) to compute global totals for progress reporting (`totalFiles`, `totalBytes`)
+8. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
+9. For each backup in order (sequential outer loop preserves incremental override semantics):
    a. Download files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`)
-   b. For each file in `meta.Files`: download via `bucket.Get()`, read all bytes via `io.ReadAll`, write to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`
+   b. For each file in `meta.Files`: call `downloadFileWithRetry()` which downloads via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, retrying transient errors with the failsafe-go retry policy (see §5.9)
    c. Call `opts.OnProgress` after each file with cumulative counters across all stages
    d. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
-9. Recreate bond metadata from the **last** backup's meta:
-   - `os.MkdirAll(filepath.Join(restoreDir, "bond"), 0755)`
-   - Write `bond/PEBBLE_FORMAT_VERSION` with the stored `PebbleFormatVersion` via `utils.WriteFileWithSync`
-10. Caller then opens with `bond.Open(restoreDir, opts)`
+10. Recreate bond metadata from the **last** backup's meta:
+    - `os.MkdirAll(filepath.Join(restoreDir, "bond"), 0755)`
+    - Write `bond/PEBBLE_FORMAT_VERSION` with the stored `PebbleFormatVersion` via `utils.WriteFileWithSync`
+11. Caller then opens with `bond.Open(restoreDir, opts)`
 
 ### 5.4 ListBackups and FindRestoreSet
 
@@ -285,6 +295,37 @@ A lock prevents concurrent `Backup()` calls from running against the same prefix
 - **`startLockRefresh(ctx, bucket, prefix, ttl)`**: Starts a background goroutine that re-uploads the lock every `ttl/2` to prevent long-running backups from having their lock considered stale. Returns a `stop` function.
 - **`Backup()` integration**: Acquires lock, starts refresh, defers both `stopRefresh()` and `releaseLock()`, then proceeds with incomplete backup cleanup and backup. The lock is always released on both success and error.
 - **`Restore()`**: Does **not** acquire a lock. Restore is read-only with respect to the backup set.
+
+### 5.8 Upload retry
+
+Per-file uploads during backup are retried on **transient** errors to improve robustness against network blips, provider 5xx, throttling, and timeouts. Retries are implemented using `failsafe-go`'s `retrypolicy.RetryPolicy`.
+
+- **Retriable errors** (shared `isRetriableError` predicate): `context.DeadlineExceeded`, and any error that implements `Temporary() bool` and returns `true` (e.g. temporary network failures). `context.Canceled` is never retried.
+- **Attempts**: One initial attempt plus up to `MaxUploadRetries` retries per file (default 3 → at most 4 attempts per file).
+- **Backoff**: Exponential via `WithBackoff(initialBackoff, MaxRetryBackoff)` (initial delay `InitialRetryBackoff`, default 1s; cap `MaxRetryBackoff`, 30s) with `WithJitterFactor(0.25)` (±25%). The policy uses `WithContext(ctx)` so context cancellation during backoff is handled by failsafe-go.
+- **ReturnLastFailure**: The policy uses `ReturnLastFailure()` so that when retries are exhausted the last raw error is returned (not wrapped in `retrypolicy.ExceededError`).
+- **Reader reuse**: Each attempt re-opens the file and re-applies rate limiting, since `bucket.Upload` consumes the reader.
+- **Options**: `BackupOptions.MaxUploadRetries` and `BackupOptions.InitialRetryBackoff`; zero values use the defaults above.
+
+### 5.9 Download retry
+
+Per-file downloads during restore use the same failsafe-go retry pattern as uploads.
+
+- **Retriable errors**: Same `isRetriableError` predicate as uploads (see §5.8).
+- **Attempts**: One initial attempt plus up to `MaxDownloadRetries` retries per file (default 3 → at most 4 attempts per file).
+- **Backoff**: Exponential via `WithBackoff(initialBackoff, MaxRetryBackoff)` (initial delay `InitialRetryBackoff`, default 1s; cap `MaxRetryBackoff`, 30s) with `WithJitterFactor(0.25)` (±25%). Context cancellation during backoff is handled by failsafe-go via `WithContext(ctx)`.
+- **ReturnLastFailure**: Same as uploads — raw last error returned on exhaustion.
+- **Scope**: Each attempt re-fetches the object via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to disk via `os.WriteFile`. The `bucket.Get` and `io.ReadAll` steps can fail with transient errors (retried); the local `os.WriteFile` is not transient and will not be retried by the predicate.
+- **Options**: `RestoreOptions.MaxDownloadRetries` and `RestoreOptions.InitialRetryBackoff`; zero values use the defaults above.
+
+### 5.10 Meta read/write retry
+
+`readMeta()` and `writeMeta()` perform small but critical bucket operations (reading/writing `meta.json`). Both use the same failsafe-go retry pattern as file uploads and downloads.
+
+- **Shared policy factory**: `newMetaRetryPolicy(maxRetries, initialBackoff)` builds a `retrypolicy.RetryPolicy` with `isRetriableError`, exponential backoff, ±25% jitter, and `ReturnLastFailure()`.
+- **`writeMeta`**: Marshals `BackupMeta` to JSON locally, then retries the `bucket.Upload` call. The JSON payload (`bytes.NewReader(data)`) is safe to replay across attempts since it is recreated from the same byte slice.
+- **`readMeta`**: Retries the `bucket.Get()` + `io.ReadAll()` pair. Each attempt fetches a fresh reader. `json.Unmarshal` runs outside the retry loop since it is a local operation.
+- **Parameter threading**: Both functions accept `maxRetries` and `initialBackoff`. In `Backup()`, these come from `MaxUploadRetries` / `InitialRetryBackoff`; in `Restore()`, from `MaxDownloadRetries` / `InitialRetryBackoff`. Retry params are resolved early in both flows (before any `readMeta` calls) so that `computeIncrementalFiles()` and the pre-read-metas loop can use them.
 
 ---
 
@@ -330,6 +371,10 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestRemoveCheckpoint` | Creates dir with files, removes it, verifies gone |
 | `TestRemoveCheckpoint_NoCheckpoint` | Idempotent — no error when directory does not exist |
 | `TestBackup_CleansStaleCheckpoint` | Stale checkpoint cleaned before backup, checkpoint cleaned after |
+| `TestBackup_UploadRetry_SuccessAfterRetries` | Bucket fails first 2 attempts per key then succeeds → backup and restore succeed |
+| `TestBackup_UploadRetry_PermanentErrorFails` | Bucket always returns non-retriable error → backup fails with that error |
+| `TestBackup_UploadRetry_ContextCancelDuringBackoff` | Context cancelled during retry backoff → error is context.Canceled |
+| `TestIsRetriableError` | Retriable: DeadlineExceeded, Temporary(); not retriable: nil, Canceled, permanent |
 
 ### 6.2 Integration tests (`tests/backup_test.go`)
 
@@ -371,10 +416,11 @@ Helper functions:
 The `backup/` package imports:
 - `github.com/go-bond/bond` — for `bond.DB`, `bond.BOND_DB_DATA_VERSION`
 - `github.com/go-bond/bond/utils` — for `utils.WriteFileWithSync` (in restore)
+- `github.com/failsafe-go/failsafe-go` — for declarative retry policies with exponential backoff, jitter, and context-aware cancellation (used in `uploadFileWithRetry` and `downloadFileWithRetry`)
 - `github.com/fujiwara/shapeio` — for per-stream bandwidth rate limiting via token-bucket shaped `io.Reader`
 - `github.com/thanos-io/objstore` — for `objstore.Bucket` interface (promoted from indirect to direct dependency)
 - `golang.org/x/sync/errgroup` — for parallel uploads/downloads with concurrency limits
-- Standard library: `bytes`, `context`, `encoding/json`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
+- Standard library: `bytes`, `context`, `encoding/json`, `errors`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
 
 Test-only imports:
 - `github.com/stretchr/testify/assert` and `require`
@@ -400,6 +446,9 @@ Test-only imports:
 - **Concurrent backups**: A lock file (`{prefix}/.lock`) prevents concurrent `Backup()` calls. Returns `ErrBackupInProgress` if another backup holds an active lock. Stale locks (older than TTL) are overridden.
 - **Stale lock recovery**: If a backup process crashes without releasing its lock, the lock will expire after `LockTTL` (default 1 hour), allowing subsequent backups to proceed.
 - **Lock refresh**: Long-running backups refresh the lock every `TTL/2` to prevent the lock from becoming stale while the backup is still in progress.
+- **Retries in Backup() / Restore()**: Both `Backup()` and `Restore()` have per-file retries on transient errors using failsafe-go retry policies (see §5.8 and §5.9). Operation-level retries (retry whole Backup or whole Restore on failure) are **not implemented**.
+- **Restore completion lock file**: A lock or marker file written after restore completes, to allow detection on reboot of "fully restored" vs "restore interrupted" — **not implemented**.
+- **Refactor to extract common and utility functions**: Moving shared and utility logic into separate files (e.g. common upload/download helpers, path utilities) — **not implemented**.
 
 ---
 

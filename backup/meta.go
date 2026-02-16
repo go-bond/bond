@@ -9,6 +9,8 @@ import (
 	"path"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go"
+	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/thanos-io/objstore"
 )
 
@@ -31,24 +33,63 @@ type FileInfo struct {
 
 const metaFileName = "meta.json"
 
-func writeMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, meta *BackupMeta) error {
+func newMetaRetryPolicy(maxRetries int, initialBackoff time.Duration) retrypolicy.RetryPolicy[any] {
+	return retrypolicy.NewBuilder[any]().
+		HandleIf(func(_ any, err error) bool {
+			return isRetriableError(err)
+		}).
+		WithMaxRetries(maxRetries).
+		WithBackoff(initialBackoff, MaxRetryBackoff).
+		WithJitterFactor(0.25).
+		ReturnLastFailure().
+		Build()
+}
+
+func writeMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, meta *BackupMeta, maxRetries int, initialBackoff time.Duration) error {
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal backup meta: %w", err)
 	}
-	return bucket.Upload(ctx, path.Join(objectPrefix, metaFileName), bytes.NewReader(data))
+
+	objName := path.Join(objectPrefix, metaFileName)
+	policy := newMetaRetryPolicy(maxRetries, initialBackoff)
+
+	err = failsafe.With[any](policy).
+		WithContext(ctx).
+		Run(func() error {
+			return bucket.Upload(ctx, objName, bytes.NewReader(data))
+		})
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("write backup meta %s: %w", objName, ctx.Err())
+		}
+		return fmt.Errorf("write backup meta %s: %w", objName, err)
+	}
+	return nil
 }
 
-func readMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error) {
-	rc, err := bucket.Get(ctx, path.Join(objectPrefix, metaFileName))
-	if err != nil {
-		return nil, fmt.Errorf("get backup meta: %w", err)
-	}
-	defer rc.Close()
+func readMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, maxRetries int, initialBackoff time.Duration) (*BackupMeta, error) {
+	objName := path.Join(objectPrefix, metaFileName)
+	policy := newMetaRetryPolicy(maxRetries, initialBackoff)
 
-	data, err := io.ReadAll(rc)
+	var data []byte
+	err := failsafe.With[any](policy).
+		WithContext(ctx).
+		Run(func() error {
+			rc, gErr := bucket.Get(ctx, objName)
+			if gErr != nil {
+				return gErr
+			}
+			var rErr error
+			data, rErr = io.ReadAll(rc)
+			rc.Close()
+			return rErr
+		})
 	if err != nil {
-		return nil, fmt.Errorf("read backup meta: %w", err)
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("read backup meta %s: %w", objName, ctx.Err())
+		}
+		return nil, fmt.Errorf("read backup meta %s: %w", objName, err)
 	}
 
 	var meta BackupMeta

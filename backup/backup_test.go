@@ -1371,15 +1371,15 @@ func TestBackup_UploadRetry_ContextCancelDuringBackoff(t *testing.T) {
 	assert.True(t, errors.Is(err, context.Canceled), "expected context cancellation: %v", err)
 }
 
-func TestIsRetriableUploadError(t *testing.T) {
+func TestIsRetriableError(t *testing.T) {
 	// Not retriable: nil, Canceled
-	assert.False(t, isRetriableUploadError(nil))
-	assert.False(t, isRetriableUploadError(context.Canceled))
+	assert.False(t, isRetriableError(nil))
+	assert.False(t, isRetriableError(context.Canceled))
 
 	// Retriable: DeadlineExceeded, Temporary()
-	assert.True(t, isRetriableUploadError(context.DeadlineExceeded))
-	assert.True(t, isRetriableUploadError(&temporaryError{msg: "x"}))
+	assert.True(t, isRetriableError(context.DeadlineExceeded))
+	assert.True(t, isRetriableError(&temporaryError{msg: "x"}))
 
 	// Not retriable: permanent error
-	assert.False(t, isRetriableUploadError(fmt.Errorf("access denied")))
+	assert.False(t, isRetriableError(fmt.Errorf("access denied")))
 }

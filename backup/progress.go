@@ -14,6 +14,10 @@ const DefaultRateLimit float64 = 100 * 1024 * 1024 // 100 MB/s
 // failed upload when MaxUploadRetries is not set (zero value).
 const DefaultMaxUploadRetries = 3
 
+// DefaultMaxDownloadRetries is the number of retries per file after the first
+// failed download when MaxDownloadRetries is not set (zero value).
+const DefaultMaxDownloadRetries = 3
+
 // DefaultInitialRetryBackoff is the delay before the first retry when
 // InitialRetryBackoff is not set (zero value).
 const DefaultInitialRetryBackoff = 1 * time.Second
