@@ -24,7 +24,7 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `Restore(ctx, bucket, opts) error`
 - `ListBackups(ctx, bucket, prefix) ([]BackupInfo, error)`
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
-- `RemoveIncomplete(ctx, bucket, prefix) (int, error)`
+- `RemoveIncompleteBackups(ctx, bucket, prefix) (int, error)`
 - `HasCheckpoint(dir) (bool, error)`
 - `RemoveCheckpoint(dir) error`
 
@@ -81,17 +81,19 @@ All new files in `backup/` -- no changes to existing bond files.
 
 ```
 backup/
-  backup.go              -- BackupOptions, Backup(), computeIncrementalFiles(), isRetriableError(), uploadFileWithRetry()
-  checkpoint.go          -- HasCheckpoint(), RemoveCheckpoint()
-  restore.go             -- RestoreOptions, Restore(), downloadFileWithRetry()
-  restore_incomplete.go  -- hasIncompleteRestore(), writeRestoreIncompleteMarker(), removeRestoreIncompleteMarker(), cleanRestoreDir()
-  list.go                -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
-  meta.go                -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta(), newMetaRetryPolicy()
-  naming.go              -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
-  progress.go            -- DefaultConcurrency, DefaultRateLimit, DefaultMax{Upload,Download}Retries, DefaultInitialRetryBackoff, MaxRetryBackoff, ProgressEvent, ProgressFunc
-  incomplete.go          -- isIncomplete(), deleteBackupDir(), removeIncompleteDirs(), RemoveIncomplete()
-  lock.go                -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
+  backup.go              -- BackupOptions, Backup(), isRetriableError(), uploadFileWithRetry(), computeIncrementalFiles()
+  backup_checkpoint.go   -- HasCheckpoint(), RemoveCheckpoint()
+  backup_incomplete.go   -- isBackupIncomplete(), deleteBackupDir(), removeIncompleteBackupDirs(), RemoveIncompleteBackups()
+  backup_list.go         -- BackupInfo, ErrNoBackupsFound, ListBackups(), FindRestoreSet()
+  backup_lock.go         -- DefaultLockTTL, ErrBackupInProgress, acquireLock(), releaseLock(), startLockRefresh()
+  backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), newBackupMeta()
+  backup_naming.go       -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
   backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
+  consts.go              -- DefaultConcurrency, DefaultRateLimit, DefaultMaxUploadRetries, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff, MaxRetryBackoff
+  progress.go            -- ProgressEvent, ProgressFunc
+  restore.go             -- RestoreOptions, Restore(), downloadFileWithRetry()
+  restore_incomplete.go  -- HasIncompleteRestore(), writeRestoreIncompleteMarker(), removeRestoreIncompleteMarker(), cleanRestoreDir()
+  stream_ratelimit.go    -- resolvePerStreamRate()
 
 tests/
   backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
@@ -184,7 +186,7 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) error
 func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
-func RemoveIncomplete(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
+func RemoveIncompleteBackups(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
 func HasCheckpoint(dir string) (bool, error)
 func RemoveCheckpoint(dir string) error
 ```
@@ -217,7 +219,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 1. Default `opts.Type` to `BackupTypeComplete` if empty
 2. Acquire lock via `acquireLock(ctx, bucket, opts.Prefix, ttl)`; fail fast with `ErrBackupInProgress` if held
 3. Start lock refresh goroutine via `startLockRefresh()`; defer `stopRefresh()` and `releaseLock()`
-4. Remove incomplete backup dirs via `removeIncompleteDirs(ctx, bucket, opts.Prefix)`
+4. Remove incomplete backup dirs via `removeIncompleteBackupDirs(ctx, bucket, opts.Prefix)`
 5. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
 6. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
 7. Validate `opts.CheckpointDir` is non-empty (required)
@@ -270,7 +272,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 ### 5.4 ListBackups and FindRestoreSet
 
-- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips incomplete dirs via `isIncomplete()`, returns sorted by datetime ascending.
+- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips incomplete dirs via `isBackupIncomplete()`, returns sorted by datetime ascending.
 - `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
 
 ### 5.5 Naming helpers
@@ -283,12 +285,12 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 An incomplete backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
 
-- **Detection**: `isIncomplete(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
+- **Detection**: `isBackupIncomplete(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
 - **Cleanup**: `deleteBackupDir(ctx, bucket, dirPrefix)` discovers all objects via `bucket.Iter()` with `WithRecursiveIter()`, then deletes each. Guards against concurrent deletion with `bucket.IsObjNotFoundErr()`.
-- **`removeIncompleteDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies incomplete backups, deletes them. Returns count removed.
-- **`RemoveIncomplete(ctx, bucket, prefix)`**: Public API that delegates to `removeIncompleteDirs`.
-- **`ListBackups()`**: Skips incomplete dirs automatically via `isIncomplete()` check in the `Iter` callback. This means `FindRestoreSet()` and `Restore()` benefit from incomplete backup skipping with no additional changes.
-- **`Backup()`**: Calls `removeIncompleteDirs()` at the start (after acquiring the lock) to clean up incomplete backups before proceeding.
+- **`removeIncompleteBackupDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies incomplete backups, deletes them. Returns count removed.
+- **`RemoveIncompleteBackups(ctx, bucket, prefix)`**: Public API that delegates to `removeIncompleteBackupDirs`.
+- **`ListBackups()`**: Skips incomplete dirs automatically via `isBackupIncomplete()` check in the `Iter` callback. This means `FindRestoreSet()` and `Restore()` benefit from incomplete backup skipping with no additional changes.
+- **`Backup()`**: Calls `removeIncompleteBackupDirs()` at the start (after acquiring the lock) to clean up incomplete backups before proceeding.
 - **`Restore()`**: Does **not** clean up incomplete backups. It simply skips them via `ListBackups()`.
 
 ### 5.7 Backup locking
@@ -338,10 +340,10 @@ A `.incomplete` marker file is placed in the local `RestoreDir` to track whether
 
 - **Marker creation**: `writeRestoreIncompleteMarker(dir)` creates an empty `.incomplete` file in `RestoreDir` immediately after the directory is created (step 8 in §5.3), before any file downloads begin.
 - **Marker removal**: `removeRestoreIncompleteMarker(dir)` removes the `.incomplete` file only after the entire restore has completed successfully (step 14 in §5.3). If the restore is interrupted (crash, context cancellation, error), the marker remains.
-- **Detection on next restore**: `hasIncompleteRestore(dir)` checks for the `.incomplete` file. If found at the start of `Restore()`, it means a previous restore was interrupted and the directory contains partial/corrupt data.
+- **Detection on next restore**: `HasIncompleteRestore(dir)` checks for the `.incomplete` file. If found at the start of `Restore()`, it means a previous restore was interrupted and the directory contains partial/corrupt data.
 - **Cleanup**: `cleanRestoreDir(dir)` removes all contents of the directory (but not the directory itself) when an incomplete marker is detected. After cleanup, the directory is empty and the restore proceeds from scratch.
 - **Non-empty dir without marker**: If `RestoreDir` is non-empty but has no `.incomplete` marker, `Restore()` still returns the existing `"restore directory %q is not empty"` error. The marker only enables automatic cleanup for directories that were previously being restored.
-- **Implementation**: All helpers live in `restore_incomplete.go`: `restoreIncompleteFileName` (constant `.incomplete`), `restoreIncompleteFilePath()`, `hasIncompleteRestore()`, `writeRestoreIncompleteMarker()`, `removeRestoreIncompleteMarker()`, `cleanRestoreDir()`.
+- **Implementation**: All helpers live in `restore_incomplete.go`: `restoreIncompleteFileName` (constant `.incomplete`), `restoreIncompleteFilePath()`, `HasIncompleteRestore()`, `writeRestoreIncompleteMarker()`, `removeRestoreIncompleteMarker()`, `cleanRestoreDir()`.
 
 ---
 
@@ -374,8 +376,8 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestConcurrencyOne` | Backup + restore with `Concurrency: 1`; verify data integrity |
 | `TestDefaultConcurrency` | Backup + restore with `Concurrency: 0` (uses `DefaultConcurrency`); verify data integrity |
 | `TestListBackups_SkipsIncomplete` | Valid backup + incomplete dir → `ListBackups` returns only valid |
-| `TestRemoveIncomplete` | Two incomplete dirs + one valid → `RemoveIncomplete` removes 2, valid remains |
-| `TestRemoveIncomplete_NoIncomplete` | No incomplete backups → returns 0, no error |
+| `TestRemoveIncompleteBackups` | Two incomplete dirs + one valid → `RemoveIncompleteBackups` removes 2, valid remains |
+| `TestRemoveIncompleteBackups_NoIncomplete` | No incomplete backups → returns 0, no error |
 | `TestBackup_CleansIncompleteBeforeIncremental` | Valid complete + incomplete incremental as "latest" → new incremental succeeds, incomplete backup removed |
 | `TestRestore_SkipsIncomplete` | Valid complete + incomplete incremental → restore succeeds, data correct, incomplete backup still exists (not cleaned) |
 | `TestBackup_LockPreventsConcurrent` | Acquire lock manually, attempt `Backup` → returns `ErrBackupInProgress` |

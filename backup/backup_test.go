@@ -773,7 +773,7 @@ func TestListBackups_SkipsIncomplete(t *testing.T) {
 	assert.Equal(t, BackupTypeComplete, backups[0].Type)
 }
 
-func TestRemoveIncomplete(t *testing.T) {
+func TestRemoveIncompleteBackups(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -796,7 +796,7 @@ func TestRemoveIncomplete(t *testing.T) {
 	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
 	createIncompleteDir(t, bucket, "backups/20250212140000-complete/")
 
-	removed, err := RemoveIncomplete(ctx, bucket, "backups")
+	removed, err := RemoveIncompleteBackups(ctx, bucket, "backups")
 	require.NoError(t, err)
 	assert.Equal(t, 2, removed)
 
@@ -812,7 +812,7 @@ func TestRemoveIncomplete(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestRemoveIncomplete_NoIncomplete(t *testing.T) {
+func TestRemoveIncompleteBackups_NoIncomplete(t *testing.T) {
 	dir := t.TempDir()
 	db := openTestDB(t, filepath.Join(dir, "db"))
 	defer db.Close()
@@ -830,7 +830,7 @@ func TestRemoveIncomplete_NoIncomplete(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	removed, err := RemoveIncomplete(ctx, bucket, "backups")
+	removed, err := RemoveIncompleteBackups(ctx, bucket, "backups")
 	require.NoError(t, err)
 	assert.Equal(t, 0, removed)
 }
@@ -1412,7 +1412,7 @@ func TestRestore_IncompleteMarkerRemovedOnSuccess(t *testing.T) {
 	require.NoError(t, err)
 
 	// .incomplete marker should NOT exist after a successful restore.
-	assert.False(t, hasIncompleteRestore(restoreDir))
+	assert.False(t, HasIncompleteRestore(restoreDir))
 
 	// DB should be openable.
 	db2 := openTestDB(t, restoreDir)
@@ -1454,7 +1454,7 @@ func TestRestore_IncompleteMarkerCleansInterruptedRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	// .incomplete marker should be gone.
-	assert.False(t, hasIncompleteRestore(restoreDir))
+	assert.False(t, HasIncompleteRestore(restoreDir))
 
 	// Leftover file should be gone.
 	_, err = os.Stat(filepath.Join(restoreDir, "leftover.sst"))
@@ -1523,7 +1523,7 @@ func TestRestore_CancelledLeavesIncompleteMarker(t *testing.T) {
 	require.Error(t, err)
 
 	// .incomplete marker should still be present after a failed restore.
-	assert.True(t, hasIncompleteRestore(restoreDir))
+	assert.True(t, HasIncompleteRestore(restoreDir))
 }
 
 func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
@@ -1563,7 +1563,7 @@ func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	assert.True(t, hasIncompleteRestore(restoreDir))
+	assert.True(t, HasIncompleteRestore(restoreDir))
 
 	// Second restore: should detect .incomplete, clean up, and succeed.
 	err = Restore(context.Background(), bucket, RestoreOptions{
@@ -1571,7 +1571,7 @@ func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
 		RestoreDir: restoreDir,
 	})
 	require.NoError(t, err)
-	assert.False(t, hasIncompleteRestore(restoreDir))
+	assert.False(t, HasIncompleteRestore(restoreDir))
 
 	// Verify data integrity.
 	db2 := openTestDB(t, restoreDir)

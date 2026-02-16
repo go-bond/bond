@@ -34,7 +34,7 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 			return nil
 		}
 
-		incomplete, err := isIncomplete(ctx, bucket, name)
+		incomplete, err := isBackupIncomplete(ctx, bucket, name)
 		if err != nil {
 			return err
 		}

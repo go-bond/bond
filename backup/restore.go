@@ -50,7 +50,7 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 
 	// Check for a .incomplete marker from a previously interrupted restore.
 	// If found, clean the directory so we can start fresh.
-	if hasIncompleteRestore(opts.RestoreDir) {
+	if HasIncompleteRestore(opts.RestoreDir) {
 		if err := cleanRestoreDir(opts.RestoreDir); err != nil {
 			return fmt.Errorf("clean incomplete restore: %w", err)
 		}

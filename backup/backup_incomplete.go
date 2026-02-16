@@ -8,8 +8,8 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-// isIncomplete checks whether a backup directory is incomplete (missing meta.json).
-func isIncomplete(ctx context.Context, bucket objstore.Bucket, backupPrefix string) (bool, error) {
+// isBackupIncomplete checks whether a backup directory is incomplete (missing meta.json).
+func isBackupIncomplete(ctx context.Context, bucket objstore.Bucket, backupPrefix string) (bool, error) {
 	metaPath := path.Join(backupPrefix, metaFileName)
 	exists, err := bucket.Exists(ctx, metaPath)
 	if err != nil {
@@ -40,9 +40,9 @@ func deleteBackupDir(ctx context.Context, bucket objstore.Bucket, dirPrefix stri
 	return nil
 }
 
-// removeIncompleteDirs iterates all backup directories under prefix, identifies
+// removeIncompleteBackupDirs iterates all backup directories under prefix, identifies
 // incomplete backups (directories without meta.json), and deletes them. Returns the count removed.
-func removeIncompleteDirs(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
+func removeIncompleteBackupDirs(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
 	if prefix != "" && prefix[len(prefix)-1] != '/' {
 		prefix += "/"
 	}
@@ -53,7 +53,7 @@ func removeIncompleteDirs(ctx context.Context, bucket objstore.Bucket, prefix st
 			return nil
 		}
 
-		incomplete, err := isIncomplete(ctx, bucket, name)
+		incomplete, err := isBackupIncomplete(ctx, bucket, name)
 		if err != nil {
 			return err
 		}
@@ -75,8 +75,8 @@ func removeIncompleteDirs(ctx context.Context, bucket objstore.Bucket, prefix st
 	return len(incompletePrefixes), nil
 }
 
-// RemoveIncomplete removes incomplete backup directories (those without meta.json)
+// RemoveIncompleteBackups removes incomplete backup directories (those without meta.json)
 // under the given prefix. Returns the number of incomplete directories removed.
-func RemoveIncomplete(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
-	return removeIncompleteDirs(ctx, bucket, prefix)
+func RemoveIncompleteBackups(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
+	return removeIncompleteBackupDirs(ctx, bucket, prefix)
 }

@@ -13,9 +13,9 @@ func restoreIncompleteFilePath(dir string) string {
 	return filepath.Join(dir, restoreIncompleteFileName)
 }
 
-// hasIncompleteRestore reports whether dir contains a .incomplete marker,
+// HasIncompleteRestore reports whether dir contains a .incomplete marker,
 // indicating a previously interrupted restore.
-func hasIncompleteRestore(dir string) bool {
+func HasIncompleteRestore(dir string) bool {
 	_, err := os.Stat(restoreIncompleteFilePath(dir))
 	return err == nil
 }
