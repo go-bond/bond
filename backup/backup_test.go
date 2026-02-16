@@ -21,6 +21,12 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
+func TestMain(m *testing.M) {
+	// Disable lock jitter in tests to avoid unnecessary delays.
+	defaultLockJitter = 0
+	os.Exit(m.Run())
+}
+
 func openTestDB(t *testing.T, dir string) bond.DB {
 	t.Helper()
 	opts := bond.DefaultOptions(bond.MediumPerformance)
@@ -1412,7 +1418,9 @@ func TestRestore_IncompleteMarkerRemovedOnSuccess(t *testing.T) {
 	require.NoError(t, err)
 
 	// .incomplete marker should NOT exist after a successful restore.
-	assert.False(t, HasIncompleteRestore(restoreDir))
+	incomplete, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.False(t, incomplete)
 
 	// DB should be openable.
 	db2 := openTestDB(t, restoreDir)
@@ -1454,7 +1462,9 @@ func TestRestore_IncompleteMarkerCleansInterruptedRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	// .incomplete marker should be gone.
-	assert.False(t, HasIncompleteRestore(restoreDir))
+	incomplete, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.False(t, incomplete)
 
 	// Leftover file should be gone.
 	_, err = os.Stat(filepath.Join(restoreDir, "leftover.sst"))
@@ -1523,7 +1533,9 @@ func TestRestore_CancelledLeavesIncompleteMarker(t *testing.T) {
 	require.Error(t, err)
 
 	// .incomplete marker should still be present after a failed restore.
-	assert.True(t, HasIncompleteRestore(restoreDir))
+	incomplete, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.True(t, incomplete)
 }
 
 func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
@@ -1563,7 +1575,9 @@ func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	assert.True(t, HasIncompleteRestore(restoreDir))
+	incomplete, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.True(t, incomplete)
 
 	// Second restore: should detect .incomplete, clean up, and succeed.
 	err = Restore(context.Background(), bucket, RestoreOptions{
@@ -1571,7 +1585,9 @@ func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
 		RestoreDir: restoreDir,
 	})
 	require.NoError(t, err)
-	assert.False(t, HasIncompleteRestore(restoreDir))
+	incomplete2, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.False(t, incomplete2)
 
 	// Verify data integrity.
 	db2 := openTestDB(t, restoreDir)

@@ -15,9 +15,15 @@ func restoreIncompleteFilePath(dir string) string {
 
 // HasIncompleteRestore reports whether dir contains a .incomplete marker,
 // indicating a previously interrupted restore.
-func HasIncompleteRestore(dir string) bool {
+func HasIncompleteRestore(dir string) (bool, error) {
 	_, err := os.Stat(restoreIncompleteFilePath(dir))
-	return err == nil
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("check restore incomplete marker: %w", err)
 }
 
 // writeRestoreIncompleteMarker creates the .incomplete marker file in dir.

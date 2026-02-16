@@ -9,6 +9,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/go-bond/bond/backup"
+	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 )
 
@@ -29,6 +30,11 @@ func backupDeleteCommand() *cli.Command {
 		&cli.BoolFlag{
 			Name:  "force",
 			Usage: "skip confirmation prompt",
+		},
+		&cli.BoolFlag{
+			Name:  "keep-last",
+			Usage: "when using --older-than, keep the most recent complete backup chain to ensure at least one restorable backup remains (default: true)",
+			Value: true,
 		},
 	}, bucketFlags...)
 
@@ -76,14 +82,17 @@ func backupDeleteCommand() *cli.Command {
 				return nil
 			}
 
+			keepLast := ctx.Bool("keep-last")
+
 			// Determine which backups to delete.
 			var toDelete []backup.BackupInfo
+			var keptByKeepLast int
 			switch {
 			case deleteAll:
 				toDelete = allBackups
 			case olderThan > 0:
 				cutoff := time.Now().UTC().Add(-olderThan)
-				toDelete = selectOlderThan(allBackups, cutoff)
+				toDelete, keptByKeepLast = selectOlderThan(allBackups, cutoff, keepLast)
 			case datetime != "":
 				toDelete = selectByDatetime(allBackups, datetime)
 				if len(toDelete) == 0 {
@@ -121,21 +130,36 @@ func backupDeleteCommand() *cli.Command {
 			}
 			fmt.Println()
 
+			// Warn if --keep-last preserved backups.
+			if keptByKeepLast > 0 {
+				fmt.Printf("NOTE: --keep-last preserved %d backup(s) (the most recent complete chain) to ensure at least one restorable backup remains.\n"+
+					"      Use --keep-last=false to delete all matching backups.\n\n", keptByKeepLast)
+			}
+
 			// Check for orphaned incrementals when deleting a complete backup.
 			if !deleteAll {
 				warnOrphanedIncrementals(toDelete, allBackups)
 			}
 
-			if !force {
-				fmt.Print("Are you sure you want to proceed? [y/N]: ")
-				reader := bufio.NewReader(os.Stdin)
-				answer, _ := reader.ReadString('\n')
-				answer = strings.TrimSpace(strings.ToLower(answer))
-				if answer != "y" && answer != "yes" {
-					fmt.Println("Aborted.")
-					return nil
-				}
+		if !force {
+			// When stdin is not a terminal (e.g. CI, piped input,
+			// /dev/null), require --force instead of silently aborting.
+			// Without this check, EOF from /dev/null or an empty pipe
+			// would be interpreted as "N" with no indication of why the
+			// deletion was skipped.
+			if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+				return fmt.Errorf("stdin is not a terminal; use --force to skip the confirmation prompt in non-interactive environments")
 			}
+
+			fmt.Print("Are you sure you want to proceed? [y/N]: ")
+			reader := bufio.NewReader(os.Stdin)
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer != "y" && answer != "yes" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
 
 			// Perform deletion.
 			for _, b := range toDelete {
@@ -154,7 +178,12 @@ func backupDeleteCommand() *cli.Command {
 // selectOlderThan returns backups older than cutoff. When a complete backup is
 // selected, its dependent incrementals (up to the next complete) are also included
 // to avoid leaving orphaned incrementals.
-func selectOlderThan(all []backup.BackupInfo, cutoff time.Time) []backup.BackupInfo {
+//
+// If keepLast is true and the selection would include every complete backup,
+// the most recent complete backup and its dependent incrementals are excluded
+// to ensure at least one restorable backup chain remains. The second return
+// value reports how many backups were preserved by keepLast.
+func selectOlderThan(all []backup.BackupInfo, cutoff time.Time, keepLast bool) ([]backup.BackupInfo, int) {
 	selected := make(map[int]bool)
 
 	for i, b := range all {
@@ -176,13 +205,52 @@ func selectOlderThan(all []backup.BackupInfo, cutoff time.Time) []backup.BackupI
 		}
 	}
 
+	// Guard: if keepLast is set, check whether ALL complete backups are selected.
+	// If so, exclude the last complete backup chain to prevent deleting everything.
+	var kept int
+	if keepLast {
+		allCompleteSelected := true
+		for i, b := range all {
+			if b.Type == backup.BackupTypeComplete && !selected[i] {
+				allCompleteSelected = false
+				break
+			}
+		}
+
+		if allCompleteSelected {
+			// Find the last complete backup and exclude its chain.
+			lastCompleteIdx := -1
+			for i := len(all) - 1; i >= 0; i-- {
+				if all[i].Type == backup.BackupTypeComplete {
+					lastCompleteIdx = i
+					break
+				}
+			}
+			if lastCompleteIdx >= 0 {
+				if selected[lastCompleteIdx] {
+					delete(selected, lastCompleteIdx)
+					kept++
+				}
+				for j := lastCompleteIdx + 1; j < len(all); j++ {
+					if all[j].Type == backup.BackupTypeComplete {
+						break
+					}
+					if selected[j] {
+						delete(selected, j)
+						kept++
+					}
+				}
+			}
+		}
+	}
+
 	var result []backup.BackupInfo
 	for i, b := range all {
 		if selected[i] {
 			result = append(result, b)
 		}
 	}
-	return result
+	return result, kept
 }
 
 // selectByDatetime finds backups matching the given datetime-type string

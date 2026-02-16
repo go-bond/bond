@@ -30,6 +30,9 @@ func deleteBackupDir(ctx context.Context, bucket objstore.Bucket, dirPrefix stri
 	}
 
 	for _, obj := range objects {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("delete backup dir %s: %w", dirPrefix, err)
+		}
 		if err := bucket.Delete(ctx, obj); err != nil {
 			if bucket.IsObjNotFoundErr(err) {
 				continue

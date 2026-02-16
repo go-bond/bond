@@ -80,9 +80,10 @@ func readMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, 
 			if gErr != nil {
 				return gErr
 			}
+			defer rc.Close()
+
 			var rErr error
 			data, rErr = io.ReadAll(rc)
-			rc.Close()
 			return rErr
 		})
 	if err != nil {

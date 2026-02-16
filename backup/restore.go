@@ -50,7 +50,11 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 
 	// Check for a .incomplete marker from a previously interrupted restore.
 	// If found, clean the directory so we can start fresh.
-	if HasIncompleteRestore(opts.RestoreDir) {
+	incomplete, err := HasIncompleteRestore(opts.RestoreDir)
+	if err != nil {
+		return fmt.Errorf("check incomplete restore: %w", err)
+	}
+	if incomplete {
 		if err := cleanRestoreDir(opts.RestoreDir); err != nil {
 			return fmt.Errorf("clean incomplete restore: %w", err)
 		}
@@ -225,18 +229,26 @@ func downloadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName,
 			if gErr != nil {
 				return gErr
 			}
+			defer rc.Close()
+
 			var r io.Reader = rc
 			if perStreamRate > 0 {
 				sr := shapeio.NewReaderWithContext(rc, ctx)
 				sr.SetRateLimit(perStreamRate)
 				r = sr
 			}
-			data, rErr := io.ReadAll(r)
-			rc.Close()
-			if rErr != nil {
-				return rErr
+
+			f, fErr := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+			if fErr != nil {
+				return fErr
 			}
-			return os.WriteFile(localPath, data, 0644)
+
+			if _, cErr := io.Copy(f, r); cErr != nil {
+				_ = f.Close()
+				_ = os.Remove(localPath)
+				return cErr
+			}
+			return f.Close()
 		})
 	if err != nil {
 		if ctx.Err() != nil {

@@ -62,10 +62,17 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	if err := acquireLock(ctx, bucket, opts.Prefix, ttl); err != nil {
 		return nil, err
 	}
-	stopRefresh := startLockRefresh(ctx, bucket, opts.Prefix, ttl)
+
+	ctx, cancelBackup := context.WithCancelCause(ctx)
+	defer cancelBackup(nil)
+
+	stopRefresh := startLockRefresh(ctx, bucket, opts.Prefix, ttl, cancelBackup)
 	defer func() {
 		stopRefresh()
-		_ = releaseLock(ctx, bucket, opts.Prefix)
+		// Don't release the lock if it expired — another process may own it.
+		if cause := context.Cause(ctx); !errors.Is(cause, ErrLockRefreshFailed) {
+			_ = releaseLock(context.Background(), bucket, opts.Prefix)
+		}
 	}()
 
 	if _, err := removeIncompleteBackupDirs(ctx, bucket, opts.Prefix); err != nil {
@@ -189,6 +196,11 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	}
 
 	if err := g.Wait(); err != nil {
+		// If the error is a context cancellation caused by lock refresh failure,
+		// surface the root cause instead of a generic "context canceled" error.
+		if cause := context.Cause(ctx); errors.Is(cause, ErrLockRefreshFailed) {
+			return nil, cause
+		}
 		return nil, err
 	}
 
