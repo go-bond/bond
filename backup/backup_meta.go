@@ -99,6 +99,11 @@ func readMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, 
 	return &meta, nil
 }
 
+// ReadMeta reads and returns the metadata for the backup at objectPrefix.
+func ReadMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error) {
+	return readMeta(ctx, bucket, objectPrefix, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff)
+}
+
 func newBackupMeta(bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {
 	return &BackupMeta{
 		Type:                bt,

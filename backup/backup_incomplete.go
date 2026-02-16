@@ -75,6 +75,11 @@ func removeIncompleteBackupDirs(ctx context.Context, bucket objstore.Bucket, pre
 	return len(incompletePrefixes), nil
 }
 
+// DeleteBackup deletes all objects under the given backup prefix.
+func DeleteBackup(ctx context.Context, bucket objstore.Bucket, backupPrefix string) error {
+	return deleteBackupDir(ctx, bucket, backupPrefix)
+}
+
 // RemoveIncompleteBackups removes incomplete backup directories (those without meta.json)
 // under the given prefix. Returns the number of incomplete directories removed.
 func RemoveIncompleteBackups(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error) {
