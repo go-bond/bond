@@ -81,16 +81,17 @@ All new files in `backup/` -- no changes to existing bond files.
 
 ```
 backup/
-  backup.go            -- BackupOptions, Backup(), computeIncrementalFiles(), isRetriableError(), uploadFileWithRetry()
-  checkpoint.go        -- HasCheckpoint(), RemoveCheckpoint()
-  restore.go           -- RestoreOptions, Restore(), downloadFileWithRetry()
-  list.go              -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
-  meta.go              -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta(), newMetaRetryPolicy()
-  naming.go            -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
-  progress.go          -- DefaultConcurrency, DefaultRateLimit, DefaultMax{Upload,Download}Retries, DefaultInitialRetryBackoff, MaxRetryBackoff, ProgressEvent, ProgressFunc
-  incomplete.go        -- isIncomplete(), deleteBackupDir(), removeIncompleteDirs(), RemoveIncomplete()
-  lock.go              -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
-  backup_test.go       -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
+  backup.go              -- BackupOptions, Backup(), computeIncrementalFiles(), isRetriableError(), uploadFileWithRetry()
+  checkpoint.go          -- HasCheckpoint(), RemoveCheckpoint()
+  restore.go             -- RestoreOptions, Restore(), downloadFileWithRetry()
+  restore_incomplete.go  -- hasIncompleteRestore(), writeRestoreIncompleteMarker(), removeRestoreIncompleteMarker(), cleanRestoreDir()
+  list.go                -- ListBackups(), FindRestoreSet(), BackupInfo, ErrNoBackupsFound
+  meta.go                -- BackupMeta, FileInfo, writeMeta(), readMeta(), newBackupMeta(), newMetaRetryPolicy()
+  naming.go              -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
+  progress.go            -- DefaultConcurrency, DefaultRateLimit, DefaultMax{Upload,Download}Retries, DefaultInitialRetryBackoff, MaxRetryBackoff, ProgressEvent, ProgressFunc
+  incomplete.go          -- isIncomplete(), deleteBackupDir(), removeIncompleteDirs(), RemoveIncomplete()
+  lock.go                -- acquireLock(), releaseLock(), startLockRefresh(), ErrBackupInProgress, DefaultLockTTL
+  backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
 
 tests/
   backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
@@ -245,23 +246,27 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 ### 5.3 Restore flow
 
-1. Validate `RestoreDir` is specified and is empty or doesn't exist
-2. If `opts.Before` is zero, set it to `time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)` (effectively "all backups")
-3. `FindRestoreSet(ctx, bucket, opts.Prefix, before)` -> `[complete, incr1, incr2, ...]`
-4. If no backups found, return `ErrNoBackupsFound`
-5. Create `RestoreDir` via `os.MkdirAll`
-6. Resolve retry parameters: `MaxDownloadRetries` (default `DefaultMaxDownloadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
-7. Pre-read all metas via `readMeta()` with retry (see §5.10) to compute global totals for progress reporting (`totalFiles`, `totalBytes`)
-8. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
-9. For each backup in order (sequential outer loop preserves incremental override semantics):
-   a. Download files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`)
-   b. For each file in `meta.Files`: call `downloadFileWithRetry()` which downloads via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, retrying transient errors with the failsafe-go retry policy (see §5.9)
-   c. Call `opts.OnProgress` after each file with cumulative counters across all stages
-   d. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
-10. Recreate bond metadata from the **last** backup's meta:
+1. Validate `RestoreDir` is specified
+2. **Check for `.incomplete` marker** (see §5.11): if `RestoreDir` contains a `.incomplete` file from a previously interrupted restore, clean all contents of the directory via `cleanRestoreDir()` so the restore starts fresh
+3. Validate `RestoreDir` is empty or doesn't exist (after potential cleanup)
+4. If `opts.Before` is zero, set it to `time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)` (effectively "all backups")
+5. `FindRestoreSet(ctx, bucket, opts.Prefix, before)` -> `[complete, incr1, incr2, ...]`
+6. If no backups found, return `ErrNoBackupsFound`
+7. Create `RestoreDir` via `os.MkdirAll`
+8. **Write `.incomplete` marker** via `writeRestoreIncompleteMarker()` — marks the restore as in progress
+9. Resolve retry parameters: `MaxDownloadRetries` (default `DefaultMaxDownloadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
+10. Pre-read all metas via `readMeta()` with retry (see §5.10) to compute global totals for progress reporting (`totalFiles`, `totalBytes`)
+11. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
+12. For each backup in order (sequential outer loop preserves incremental override semantics):
+    a. Download files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`)
+    b. For each file in `meta.Files`: call `downloadFileWithRetry()` which downloads via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, retrying transient errors with the failsafe-go retry policy (see §5.9)
+    c. Call `opts.OnProgress` after each file with cumulative counters across all stages
+    d. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
+13. Recreate bond metadata from the **last** backup's meta:
     - `os.MkdirAll(filepath.Join(restoreDir, "bond"), 0755)`
     - Write `bond/PEBBLE_FORMAT_VERSION` with the stored `PebbleFormatVersion` via `utils.WriteFileWithSync`
-11. Caller then opens with `bond.Open(restoreDir, opts)`
+14. **Remove `.incomplete` marker** via `removeRestoreIncompleteMarker()` — only removed on full success
+15. Caller then opens with `bond.Open(restoreDir, opts)`
 
 ### 5.4 ListBackups and FindRestoreSet
 
@@ -327,6 +332,17 @@ Per-file downloads during restore use the same failsafe-go retry pattern as uplo
 - **`readMeta`**: Retries the `bucket.Get()` + `io.ReadAll()` pair. Each attempt fetches a fresh reader. `json.Unmarshal` runs outside the retry loop since it is a local operation.
 - **Parameter threading**: Both functions accept `maxRetries` and `initialBackoff`. In `Backup()`, these come from `MaxUploadRetries` / `InitialRetryBackoff`; in `Restore()`, from `MaxDownloadRetries` / `InitialRetryBackoff`. Retry params are resolved early in both flows (before any `readMeta` calls) so that `computeIncrementalFiles()` and the pre-read-metas loop can use them.
 
+### 5.11 Restore incomplete marker
+
+A `.incomplete` marker file is placed in the local `RestoreDir` to track whether a restore operation has finished successfully. This is a **local filesystem** mechanism (unlike the backup incomplete detection in §5.6 which operates on object storage).
+
+- **Marker creation**: `writeRestoreIncompleteMarker(dir)` creates an empty `.incomplete` file in `RestoreDir` immediately after the directory is created (step 8 in §5.3), before any file downloads begin.
+- **Marker removal**: `removeRestoreIncompleteMarker(dir)` removes the `.incomplete` file only after the entire restore has completed successfully (step 14 in §5.3). If the restore is interrupted (crash, context cancellation, error), the marker remains.
+- **Detection on next restore**: `hasIncompleteRestore(dir)` checks for the `.incomplete` file. If found at the start of `Restore()`, it means a previous restore was interrupted and the directory contains partial/corrupt data.
+- **Cleanup**: `cleanRestoreDir(dir)` removes all contents of the directory (but not the directory itself) when an incomplete marker is detected. After cleanup, the directory is empty and the restore proceeds from scratch.
+- **Non-empty dir without marker**: If `RestoreDir` is non-empty but has no `.incomplete` marker, `Restore()` still returns the existing `"restore directory %q is not empty"` error. The marker only enables automatic cleanup for directories that were previously being restored.
+- **Implementation**: All helpers live in `restore_incomplete.go`: `restoreIncompleteFileName` (constant `.incomplete`), `restoreIncompleteFilePath()`, `hasIncompleteRestore()`, `writeRestoreIncompleteMarker()`, `removeRestoreIncompleteMarker()`, `cleanRestoreDir()`.
+
 ---
 
 ## 6. Testing
@@ -375,6 +391,11 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestBackup_UploadRetry_PermanentErrorFails` | Bucket always returns non-retriable error → backup fails with that error |
 | `TestBackup_UploadRetry_ContextCancelDuringBackoff` | Context cancelled during retry backoff → error is context.Canceled |
 | `TestIsRetriableError` | Retriable: DeadlineExceeded, Temporary(); not retriable: nil, Canceled, permanent |
+| `TestRestore_IncompleteMarkerRemovedOnSuccess` | Successful restore removes `.incomplete` marker; restored DB is openable |
+| `TestRestore_IncompleteMarkerCleansInterruptedRestore` | Simulated interrupted restore (leftover files + `.incomplete` marker) → new restore detects marker, cleans directory, restores successfully with correct data |
+| `TestRestore_NonEmptyDirWithoutIncompleteMarkerFails` | Non-empty dir without `.incomplete` marker still returns "not empty" error (preserves existing behavior) |
+| `TestRestore_CancelledLeavesIncompleteMarker` | Restore cancelled mid-download → `.incomplete` marker remains in RestoreDir |
+| `TestRestore_RetryAfterCancelledRestore` | End-to-end: cancel restore mid-way, then retry to same dir → automatic cleanup and successful restore with data integrity |
 
 ### 6.2 Integration tests (`tests/backup_test.go`)
 
@@ -431,7 +452,7 @@ Test-only imports:
 
 - **Empty DB**: Checkpoint is valid; restore produces a DB with only the bond data version key.
 - **Concurrent writes**: Checkpoint is a point-in-time snapshot. All committed writes prior to the checkpoint call are included.
-- **Non-empty restore dir**: Returns an error (`"restore directory %q is not empty"`).
+- **Non-empty restore dir**: Returns an error (`"restore directory %q is not empty"`) unless a `.incomplete` marker is present from a previously interrupted restore, in which case the directory is cleaned automatically and the restore starts fresh.
 - **Empty RestoreDir option**: Returns an error (`"RestoreDir must be specified"`).
 - **Incremental with no previous backup**: Returns an error (`"no previous backup found; cannot create incremental backup"`).
 - **Bond metadata**: Recreated during restore from `meta.json`'s `pebble_format_version` field using `utils.WriteFileWithSync`.
@@ -447,7 +468,7 @@ Test-only imports:
 - **Stale lock recovery**: If a backup process crashes without releasing its lock, the lock will expire after `LockTTL` (default 1 hour), allowing subsequent backups to proceed.
 - **Lock refresh**: Long-running backups refresh the lock every `TTL/2` to prevent the lock from becoming stale while the backup is still in progress.
 - **Retries in Backup() / Restore()**: Both `Backup()` and `Restore()` have per-file retries on transient errors using failsafe-go retry policies (see §5.8 and §5.9). Operation-level retries (retry whole Backup or whole Restore on failure) are **not implemented**.
-- **Restore completion lock file**: A lock or marker file written after restore completes, to allow detection on reboot of "fully restored" vs "restore interrupted" — **not implemented**.
+- **Interrupted restore recovery**: A `.incomplete` marker file is written to `RestoreDir` at the start of the restore and removed only on successful completion. If `Restore()` is called on a directory with an existing `.incomplete` marker, all contents are cleaned and the restore starts from scratch. This handles crash recovery, context cancellation, and any other interruption gracefully.
 - **Refactor to extract common and utility functions**: Moving shared and utility logic into separate files (e.g. common upload/download helpers, path utilities) — **not implemented**.
 
 ---

@@ -1383,3 +1383,200 @@ func TestIsRetriableError(t *testing.T) {
 	// Not retriable: permanent error
 	assert.False(t, isRetriableError(fmt.Errorf("access denied")))
 }
+
+// --- Restore .incomplete marker tests ---
+
+func TestRestore_IncompleteMarkerRemovedOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// .incomplete marker should NOT exist after a successful restore.
+	assert.False(t, hasIncompleteRestore(restoreDir))
+
+	// DB should be openable.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+}
+
+func TestRestore_IncompleteMarkerCleansInterruptedRestore(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 20)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+
+	// Simulate an interrupted restore: create the directory with leftover
+	// files and a .incomplete marker.
+	require.NoError(t, os.MkdirAll(restoreDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(restoreDir, "leftover.sst"), []byte("partial"), 0644))
+	require.NoError(t, writeRestoreIncompleteMarker(restoreDir))
+
+	// Restore should detect the .incomplete marker, clean the directory, and succeed.
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// .incomplete marker should be gone.
+	assert.False(t, hasIncompleteRestore(restoreDir))
+
+	// Leftover file should be gone.
+	_, err = os.Stat(filepath.Join(restoreDir, "leftover.sst"))
+	assert.True(t, os.IsNotExist(err))
+
+	// Restored DB should be valid.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestRestore_NonEmptyDirWithoutIncompleteMarkerFails(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file but NO .incomplete marker — this should fail as before.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("data"), 0644))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	err := Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: dir,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not empty")
+}
+
+func TestRestore_CancelledLeavesIncompleteMarker(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 50)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+
+	// Cancel after first file download.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var callCount atomic.Int64
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:      "backups",
+		RestoreDir:  restoreDir,
+		Concurrency: 1,
+		OnProgress: func(event ProgressEvent) {
+			if callCount.Add(1) == 1 {
+				cancel()
+			}
+		},
+	})
+	require.Error(t, err)
+
+	// .incomplete marker should still be present after a failed restore.
+	assert.True(t, hasIncompleteRestore(restoreDir))
+}
+
+func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 50)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+
+	// First restore: cancel mid-way.
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	var callCount atomic.Int64
+	err = Restore(ctx1, bucket, RestoreOptions{
+		Prefix:      "backups",
+		RestoreDir:  restoreDir,
+		Concurrency: 1,
+		OnProgress: func(event ProgressEvent) {
+			if callCount.Add(1) == 1 {
+				cancel1()
+			}
+		},
+	})
+	require.Error(t, err)
+	assert.True(t, hasIncompleteRestore(restoreDir))
+
+	// Second restore: should detect .incomplete, clean up, and succeed.
+	err = Restore(context.Background(), bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+	assert.False(t, hasIncompleteRestore(restoreDir))
+
+	// Verify data integrity.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}

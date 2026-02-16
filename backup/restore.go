@@ -48,6 +48,14 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return fmt.Errorf("RestoreDir must be specified")
 	}
 
+	// Check for a .incomplete marker from a previously interrupted restore.
+	// If found, clean the directory so we can start fresh.
+	if hasIncompleteRestore(opts.RestoreDir) {
+		if err := cleanRestoreDir(opts.RestoreDir); err != nil {
+			return fmt.Errorf("clean incomplete restore: %w", err)
+		}
+	}
+
 	// Validate that RestoreDir is empty or doesn't exist.
 	entries, err := os.ReadDir(opts.RestoreDir)
 	if err != nil && !os.IsNotExist(err) {
@@ -67,9 +75,12 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return err
 	}
 
-	// Create the restore directory.
+	// Create the restore directory and place the .incomplete marker.
 	if err := os.MkdirAll(opts.RestoreDir, 0755); err != nil {
 		return fmt.Errorf("create restore dir: %w", err)
+	}
+	if err := writeRestoreIncompleteMarker(opts.RestoreDir); err != nil {
+		return err
 	}
 
 	maxRetries := opts.MaxDownloadRetries
@@ -180,6 +191,11 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
 			return fmt.Errorf("write pebble format version: %w", err)
 		}
+	}
+
+	// Restore completed successfully — remove the .incomplete marker.
+	if err := removeRestoreIncompleteMarker(opts.RestoreDir); err != nil {
+		return err
 	}
 
 	return nil
