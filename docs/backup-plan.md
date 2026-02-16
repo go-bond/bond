@@ -24,7 +24,10 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `Restore(ctx, bucket, opts) error`
 - `ListBackups(ctx, bucket, prefix) ([]BackupInfo, error)`
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
+- `DeleteBackup(ctx, bucket, backupPrefix) error`
 - `RemoveIncompleteBackups(ctx, bucket, prefix) (int, error)`
+- `ReadMeta(ctx, bucket, objectPrefix) (*BackupMeta, error)`
+- `HasIncompleteRestore(dir) (bool, error)`
 - `HasCheckpoint(dir) (bool, error)`
 - `RemoveCheckpoint(dir) error`
 
@@ -83,20 +86,28 @@ All new files in `backup/` -- no changes to existing bond files.
 backup/
   backup.go              -- BackupOptions, Backup(), isRetriableError(), uploadFileWithRetry(), computeIncrementalFiles()
   backup_checkpoint.go   -- HasCheckpoint(), RemoveCheckpoint()
-  backup_incomplete.go   -- isBackupIncomplete(), deleteBackupDir(), removeIncompleteBackupDirs(), RemoveIncompleteBackups()
+  backup_incomplete.go   -- isBackupIncomplete(), deleteBackupDir(), removeIncompleteBackupDirs(), DeleteBackup(), RemoveIncompleteBackups()
   backup_list.go         -- BackupInfo, ErrNoBackupsFound, ListBackups(), FindRestoreSet()
-  backup_lock.go         -- DefaultLockTTL, ErrBackupInProgress, acquireLock(), releaseLock(), startLockRefresh()
-  backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), newBackupMeta()
+  backup_lock.go         -- DefaultLockTTL, ErrBackupInProgress, ErrLockRefreshFailed, lockPayload, acquireLock(), uploadAndVerifyLock(), releaseLock(), startLockRefresh()
+  backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), ReadMeta(), newBackupMeta()
   backup_naming.go       -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
-  backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, edge cases
+  backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, rate limiting, edge cases
   consts.go              -- DefaultConcurrency, DefaultRateLimit, DefaultMaxUploadRetries, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff, MaxRetryBackoff
   progress.go            -- ProgressEvent, ProgressFunc
   restore.go             -- RestoreOptions, Restore(), downloadFileWithRetry()
   restore_incomplete.go  -- HasIncompleteRestore(), writeRestoreIncompleteMarker(), removeRestoreIncompleteMarker(), cleanRestoreDir()
   stream_ratelimit.go    -- resolvePerStreamRate()
 
+cmd/bond-cli/
+  bond-cli.go            -- entry point; registers inspect and backup commands
+  backup.go              -- BackupCommand with list, delete, restore subcommands
+  backup_list.go         -- backupListCommand(), groupBackups(), grouped display with totals
+  backup_delete.go       -- backupDeleteCommand(), selectOlderThan(), selectByDatetime(), warnOrphanedIncrementals()
+  backup_restore.go      -- backupRestoreCommand(), progress display, point-in-time support
+  bucket.go              -- newBucket(), newS3Bucket(), newGCSBucket(), newFSBucket(), bucketFlags
+
 tests/
-  backup_test.go       -- Integration tests: table-level backup/restore with Bond Table API
+  backup_test.go         -- Integration tests: table-level backup/restore with Bond Table API
 ```
 
 ---
@@ -186,7 +197,10 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) error
 func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
+func DeleteBackup(ctx context.Context, bucket objstore.Bucket, backupPrefix string) error
 func RemoveIncompleteBackups(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
+func ReadMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error)
+func HasIncompleteRestore(dir string) (bool, error)
 func HasCheckpoint(dir string) (bool, error)
 func RemoveCheckpoint(dir string) error
 ```
@@ -208,6 +222,7 @@ const MaxRetryBackoff = 30 * time.Second
 ```go
 var ErrNoBackupsFound = fmt.Errorf("no backups found")
 var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
+var ErrLockRefreshFailed = fmt.Errorf("lock refresh failed for longer than TTL")
 ```
 
 ---
@@ -218,23 +233,26 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 
 1. Default `opts.Type` to `BackupTypeComplete` if empty
 2. Acquire lock via `acquireLock(ctx, bucket, opts.Prefix, ttl)`; fail fast with `ErrBackupInProgress` if held
-3. Start lock refresh goroutine via `startLockRefresh()`; defer `stopRefresh()` and `releaseLock()`
-4. Remove incomplete backup dirs via `removeIncompleteBackupDirs(ctx, bucket, opts.Prefix)`
-5. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
-6. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
-7. Validate `opts.CheckpointDir` is non-empty (required)
-8. Remove any stale checkpoint at `opts.CheckpointDir` via `os.RemoveAll` + `defer os.RemoveAll(opts.CheckpointDir)` for cleanup
-9. `db.Backend().Checkpoint(opts.CheckpointDir)` into the caller-provided directory
-10. `filepath.WalkDir(opts.CheckpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
-11. Resolve retry parameters: `MaxUploadRetries` (default `DefaultMaxUploadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
-12. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
-13. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
-14. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
-15. Upload `meta.json` via `writeMeta()` with retry (see §5.10), return `*BackupMeta`
+3. Create a cancellable context via `context.WithCancelCause(ctx)`; defer `cancelBackup(nil)`
+4. Start lock refresh goroutine via `startLockRefresh(ctx, bucket, prefix, ttl, cancelBackup)` — if lock refresh fails for longer than TTL, the backup context is cancelled with `ErrLockRefreshFailed`
+5. Defer `stopRefresh()` and conditional lock release: the lock is **not** released if the context was cancelled due to `ErrLockRefreshFailed` (another process may have already acquired the stale lock); otherwise `releaseLock(context.Background(), bucket, prefix)` is called
+6. Remove incomplete backup dirs via `removeIncompleteBackupDirs(ctx, bucket, opts.Prefix)`
+7. Determine datetime (`opts.At` or `time.Now().UTC()`), ensure UTC
+8. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
+9. Validate `opts.CheckpointDir` is non-empty (required)
+10. Remove any stale checkpoint at `opts.CheckpointDir` via `os.RemoveAll` + `defer os.RemoveAll(opts.CheckpointDir)` for cleanup
+11. `db.Backend().Checkpoint(opts.CheckpointDir)` into the caller-provided directory
+12. `filepath.WalkDir(opts.CheckpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
+13. Resolve retry parameters: `MaxUploadRetries` (default `DefaultMaxUploadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
+14. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
+15. If `g.Wait()` returns an error and the context was cancelled by lock refresh failure, surface `ErrLockRefreshFailed` instead of generic `context.Canceled`
+16. Read `pebble_format_version` via `db.Backend().FormatMajorVersion()` and `bond_data_version` via `bond.BOND_DB_DATA_VERSION`
+17. Build `BackupMeta` via `newBackupMeta()` where `Files == CheckpointFiles` (all files)
+18. Upload `meta.json` via `writeMeta()` with retry (see §5.10), return `*BackupMeta`
 
 ### 5.2 Incremental backup flow
 
-1. Same steps 1-11 as complete (lock, incomplete backup cleanup, checkpoint dir validation, checkpoint, retry resolution)
+1. Same steps 1-13 as complete (lock, cancellable context, lock refresh, conditional release, incomplete backup cleanup, checkpoint dir validation, checkpoint, retry resolution)
 2. Call `computeIncrementalFiles()` which:
    a. `ListBackups()` -> take the last one -> `readMeta()` with retry (see §5.10)
    b. Build a set of `{name: size}` from the previous backup's `CheckpointFiles`
@@ -261,7 +279,7 @@ var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 11. Pre-create all needed subdirectories upfront to avoid concurrent `MkdirAll` calls
 12. For each backup in order (sequential outer loop preserves incremental override semantics):
     a. Download files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`)
-    b. For each file in `meta.Files`: call `downloadFileWithRetry()` which downloads via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to `filepath.Join(opts.RestoreDir, file.Name)` via `os.WriteFile`, retrying transient errors with the failsafe-go retry policy (see §5.9)
+    b. For each file in `meta.Files`: call `downloadFileWithRetry()` which downloads via `bucket.Get()`, streams to `filepath.Join(opts.RestoreDir, file.Name)` via `io.Copy`, retrying transient errors with the failsafe-go retry policy (see §5.9)
     c. Call `opts.OnProgress` after each file with cumulative counters across all stages
     d. Each incremental overwrites changed files (MANIFEST, CURRENT, etc.) and adds new SSTs
 13. Recreate bond metadata from the **last** backup's meta:
@@ -295,12 +313,14 @@ An incomplete backup is a directory matching `{datetime}-{type}/` that has no `m
 
 ### 5.7 Backup locking
 
-A lock prevents concurrent `Backup()` calls from running against the same prefix. The lock is a JSON file at `{prefix}/.lock` containing `{"created_at":"<RFC3339>"}`.
+A lock prevents concurrent `Backup()` calls from running against the same prefix. The lock is a JSON file at `{prefix}/.lock` containing `{"created_at":"<RFC3339>","nonce":"<hex>"}`.
 
-- **`acquireLock(ctx, bucket, prefix, ttl)`**: Checks if lock exists. If it does and its age < TTL, returns `ErrBackupInProgress`. If age >= TTL (stale) or lock doesn't exist, uploads a new lock.
+- **Lock payload**: `lockPayload` struct contains `CreatedAt time.Time` and `Nonce string`. The nonce is a 128-bit random hex string generated via `crypto/rand` (with `time.UnixNano()` fallback), used for read-after-write verification.
+- **`acquireLock(ctx, bucket, prefix, ttl)`**: Checks if lock exists. If it does and its age < TTL, returns `ErrBackupInProgress`. If age >= TTL (stale), lock doesn't exist, or lock data is corrupt, calls `uploadAndVerifyLock()` to write a new lock with read-after-write verification.
+- **`uploadAndVerifyLock(ctx, bucket, lockPath)`**: Uploads a new lock with a unique nonce, waits a random jitter (0 to `defaultLockJitter`, 3s by default), then re-reads the lock to verify the nonce still matches. If another process overwrote the lock in that window, returns `ErrBackupInProgress`. This mitigates the TOCTOU race inherent in object storage (no atomic CAS). The `defaultLockJitter` is a package-level `var` (not `const`) so tests can set it to zero.
 - **`releaseLock(ctx, bucket, prefix)`**: Deletes the lock. Ignores not-found errors.
-- **`startLockRefresh(ctx, bucket, prefix, ttl)`**: Starts a background goroutine that re-uploads the lock every `ttl/2` to prevent long-running backups from having their lock considered stale. Returns a `stop` function.
-- **`Backup()` integration**: Acquires lock, starts refresh, defers both `stopRefresh()` and `releaseLock()`, then proceeds with incomplete backup cleanup and backup. The lock is always released on both success and error.
+- **`startLockRefresh(ctx, bucket, prefix, ttl, cancelFunc)`**: Starts a background goroutine that re-uploads the lock every `ttl/3` to prevent long-running backups from having their lock considered stale. If the lock cannot be refreshed for longer than the full TTL, it calls `cancelFunc(ErrLockRefreshFailed)` to abort the backup — the stale lock could be acquired by another process, so continuing is unsafe. Returns a `stop` function that terminates the goroutine.
+- **`Backup()` integration**: Acquires lock, creates a cancellable context via `context.WithCancelCause(ctx)`, starts refresh with the cancel function, defers `stopRefresh()` and conditional lock release. The lock is **not** released if the context was cancelled due to `ErrLockRefreshFailed` (another process may have already acquired the stale lock); otherwise `releaseLock(context.Background(), bucket, prefix)` is called. After parallel uploads, if the error is caused by lock refresh failure, the root cause (`ErrLockRefreshFailed`) is surfaced instead of a generic `context.Canceled`.
 - **`Restore()`**: Does **not** acquire a lock. Restore is read-only with respect to the backup set.
 
 ### 5.8 Upload retry
@@ -322,7 +342,7 @@ Per-file downloads during restore use the same failsafe-go retry pattern as uplo
 - **Attempts**: One initial attempt plus up to `MaxDownloadRetries` retries per file (default 3 → at most 4 attempts per file).
 - **Backoff**: Exponential via `WithBackoff(initialBackoff, MaxRetryBackoff)` (initial delay `InitialRetryBackoff`, default 1s; cap `MaxRetryBackoff`, 30s) with `WithJitterFactor(0.25)` (±25%). Context cancellation during backoff is handled by failsafe-go via `WithContext(ctx)`.
 - **ReturnLastFailure**: Same as uploads — raw last error returned on exhaustion.
-- **Scope**: Each attempt re-fetches the object via `bucket.Get()`, reads all bytes via `io.ReadAll`, and writes to disk via `os.WriteFile`. The `bucket.Get` and `io.ReadAll` steps can fail with transient errors (retried); the local `os.WriteFile` is not transient and will not be retried by the predicate.
+- **Streaming**: Each attempt re-fetches the object via `bucket.Get()` (returns `io.ReadCloser`), opens the local file via `os.OpenFile` (create/truncate), and streams the data via `io.Copy(f, r)`. Rate limiting is applied via `shapeio.NewReaderWithContext` wrapping the `ReadCloser`. On copy error, the partial file is removed via `os.Remove`. This streams directly to disk without buffering the entire object in memory.
 - **Options**: `RestoreOptions.MaxDownloadRetries` and `RestoreOptions.InitialRetryBackoff`; zero values use the defaults above.
 
 ### 5.10 Meta read/write retry
@@ -388,6 +408,10 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestHasCheckpoint_WithCheckpoint` | Returns `true` after creating a directory |
 | `TestRemoveCheckpoint` | Creates dir with files, removes it, verifies gone |
 | `TestRemoveCheckpoint_NoCheckpoint` | Idempotent — no error when directory does not exist |
+| `TestResolvePerStreamRate` | Per-stream rate calculation: default rate, custom rate, disabled (negative), zero concurrency |
+| `TestBackupWithRateLimit` | Backup + restore with explicit rate limit; verify data integrity |
+| `TestRestoreWithRateLimit` | Restore with explicit rate limit; verify data integrity |
+| `TestBackupNoRateLimit` | Backup + restore with rate limiting disabled (negative); verify data integrity |
 | `TestBackup_CleansStaleCheckpoint` | Stale checkpoint cleaned before backup, checkpoint cleaned after |
 | `TestBackup_UploadRetry_SuccessAfterRetries` | Bucket fails first 2 attempts per key then succeeds → backup and restore succeed |
 | `TestBackup_UploadRetry_PermanentErrorFails` | Bucket always returns non-retriable error → backup fails with that error |
@@ -443,7 +467,16 @@ The `backup/` package imports:
 - `github.com/fujiwara/shapeio` — for per-stream bandwidth rate limiting via token-bucket shaped `io.Reader`
 - `github.com/thanos-io/objstore` — for `objstore.Bucket` interface (promoted from indirect to direct dependency)
 - `golang.org/x/sync/errgroup` — for parallel uploads/downloads with concurrency limits
-- Standard library: `bytes`, `context`, `encoding/json`, `errors`, `fmt`, `io`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
+- Standard library: `bytes`, `context`, `crypto/rand`, `encoding/hex`, `encoding/json`, `errors`, `fmt`, `io`, `math/rand/v2`, `os`, `path`, `path/filepath`, `sort`, `strings`, `sync/atomic`, `time`
+
+The `cmd/bond-cli/` CLI imports (in addition to the `backup/` package):
+- `github.com/urfave/cli/v2` — for CLI command structure and flag parsing
+- `github.com/dustin/go-humanize` — for human-readable byte sizes in output
+- `github.com/mattn/go-isatty` — for detecting non-terminal stdin in `backup delete`
+- `github.com/go-kit/log` — required by objstore provider constructors (nop logger)
+- `github.com/thanos-io/objstore/providers/s3` — S3 bucket provider
+- `github.com/thanos-io/objstore/providers/gcs` — GCS bucket provider
+- `github.com/thanos-io/objstore/providers/filesystem` — local filesystem bucket provider
 
 Test-only imports:
 - `github.com/stretchr/testify/assert` and `require`
@@ -468,7 +501,8 @@ Test-only imports:
 - **Incomplete backup directories**: Directories matching the backup pattern but missing `meta.json` are skipped by `ListBackups()` and cleaned up at the start of `Backup()`. `Restore()` simply skips them.
 - **Concurrent backups**: A lock file (`{prefix}/.lock`) prevents concurrent `Backup()` calls. Returns `ErrBackupInProgress` if another backup holds an active lock. Stale locks (older than TTL) are overridden.
 - **Stale lock recovery**: If a backup process crashes without releasing its lock, the lock will expire after `LockTTL` (default 1 hour), allowing subsequent backups to proceed.
-- **Lock refresh**: Long-running backups refresh the lock every `TTL/2` to prevent the lock from becoming stale while the backup is still in progress.
+- **Lock refresh**: Long-running backups refresh the lock every `TTL/3` to prevent the lock from becoming stale while the backup is still in progress. If the lock cannot be refreshed for longer than the full TTL, the backup is cancelled with `ErrLockRefreshFailed`.
+- **Lock TOCTOU mitigation**: Lock acquisition uses read-after-write verification with a random nonce and jitter delay to mitigate the TOCTOU race inherent in object storage (no atomic CAS). This makes concurrent acquisition collisions extremely unlikely but does not eliminate them entirely.
 - **Retries in Backup() / Restore()**: Both `Backup()` and `Restore()` have per-file retries on transient errors using failsafe-go retry policies (see §5.8 and §5.9). Operation-level retries (retry whole Backup or whole Restore on failure) are **not implemented**.
 - **Interrupted restore recovery**: A `.incomplete` marker file is written to `RestoreDir` at the start of the restore and removed only on successful completion. If `Restore()` is called on a directory with an existing `.incomplete` marker, all contents are cleaned and the restore starts from scratch. This handles crash recovery, context cancellation, and any other interruption gracefully.
 - **Refactor to extract common and utility functions**: Moving shared and utility logic into separate files (e.g. common upload/download helpers, path utilities) — **not implemented**.
@@ -530,3 +564,99 @@ err = backup.Restore(ctx, bucket, backup.RestoreOptions{
     Before:     time.Date(2025, 2, 12, 12, 30, 0, 0, time.UTC),
 })
 ```
+
+---
+
+## 11. CLI (`bond-cli backup`)
+
+The `bond-cli` binary provides backup management commands for listing, restoring, and deleting backups in object storage. The CLI is built with `github.com/urfave/cli/v2`.
+
+### 11.1 Entry point
+
+`cmd/bond-cli/bond-cli.go` registers `BackupCommand` alongside the existing `inspect` command:
+
+```go
+app := cli.App{
+    Name:  "bond-cli",
+    Usage: "tools to manage bond db",
+    Commands: []*cli.Command{
+        inspect.NewInspectCLI(nil),
+        BackupCommand,
+    },
+}
+```
+
+### 11.2 Storage backends (`bucket.go`)
+
+All backup subcommands share a common set of `bucketFlags` for configuring the object storage backend. The `--storage` flag selects the backend type, and backend-specific flags provide connection details.
+
+**Shared flags:**
+- `--storage` (required): Storage backend type — `s3`, `gcs`, or `fs`
+- `--prefix`: Object storage prefix for backups (e.g. `backups/`)
+
+**S3 flags** (env vars supported):
+- `--s3-endpoint` (`S3_ENDPOINT`): S3 endpoint URL (required for S3)
+- `--s3-bucket` (`S3_BUCKET`): S3 bucket name (required for S3)
+- `--s3-access-key` (`AWS_ACCESS_KEY_ID`): S3 access key (required for S3)
+- `--s3-secret-key` (`AWS_SECRET_ACCESS_KEY`): S3 secret key (required for S3)
+- `--s3-region` (`AWS_REGION`): S3 region
+- `--s3-insecure`: Use HTTP instead of HTTPS
+
+**GCS flags:**
+- `--gcs-bucket` (`GCS_BUCKET`): GCS bucket name (required for GCS)
+- `--gcs-service-account` (`GOOGLE_APPLICATION_CREDENTIALS`): Path to service account JSON key file; falls back to Google Application Default Credentials (ADC) if omitted
+
+**Filesystem flags:**
+- `--fs-directory`: Local directory to use as the bucket root (required for fs)
+
+### 11.3 `bond-cli backup list`
+
+Lists all backups grouped by complete + incremental chains.
+
+```
+bond-cli backup list --storage s3 --s3-endpoint ... --s3-bucket ... --prefix backups/
+```
+
+Output shows each backup group with TYPE, DATETIME, FILES, SIZE, and PREFIX columns, plus per-group and overall totals. Uses `ReadMeta()` to fetch metadata for each backup. Groups are formed by starting a new group at each complete backup; orphaned incrementals before any complete backup are placed in their own group.
+
+### 11.4 `bond-cli backup restore`
+
+Restores a backup set from object storage to a local directory.
+
+```
+bond-cli backup restore --storage s3 ... --prefix backups/ --restore-dir /path/to/restored
+```
+
+**Flags:**
+- `--restore-dir` (required): Local directory to restore into (must be empty or non-existent)
+- `--before`: Point-in-time cutoff in RFC3339 format (e.g. `2025-02-12T15:00:00Z`); if omitted, restores the latest
+- `--concurrency`: Number of parallel downloads (default: `DefaultConcurrency`, 4)
+- `--rate-limit`: Download rate limit in MB/s (0 for default, negative to disable)
+
+Displays inline progress during the restore: `[files/total] bytes done/total  filename`.
+
+### 11.5 `bond-cli backup delete`
+
+Deletes backups from object storage with safety features.
+
+```
+bond-cli backup delete --storage s3 ... --prefix backups/ --older-than 720h
+bond-cli backup delete --storage s3 ... --prefix backups/ --all --force
+bond-cli backup delete --storage s3 ... --prefix backups/ --datetime 20250212120000-complete
+```
+
+**Selection flags** (mutually exclusive — exactly one required):
+- `--all`: Delete all backups under the prefix
+- `--older-than`: Delete backups older than the given duration (e.g. `720h` for 30 days)
+- `--datetime`: Delete a specific backup by its datetime-type identifier (e.g. `20250212120000-complete`)
+
+**Safety flags:**
+- `--force`: Skip the confirmation prompt
+- `--keep-last` (default: `true`): When using `--older-than`, preserves the most recent complete backup chain to ensure at least one restorable backup remains. Use `--keep-last=false` to delete all matching backups.
+
+**Safety features:**
+- **Non-terminal stdin detection**: If stdin is not a terminal (e.g. CI, piped input, `/dev/null`) and `--force` is not set, returns an error instructing the user to use `--force`. Detected via `go-isatty`.
+- **Orphaned incremental warnings**: When deleting a complete backup, warns if dependent incrementals are not included in the delete set.
+- **Cascading incremental selection**: When `--older-than` selects a complete backup, its dependent incrementals (up to the next complete) are automatically included to avoid leaving orphaned incrementals.
+- **Pre-deletion summary**: Shows the number of backups, total files, and total size to be deleted, plus the list of backups with type, datetime, and prefix.
+- **`--keep-last` guard**: If `--older-than` with `--keep-last` would delete every complete backup, the most recent complete chain is excluded and the user is informed how many backups were preserved.
