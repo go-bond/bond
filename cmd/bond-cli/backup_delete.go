@@ -19,13 +19,13 @@ func backupDeleteCommand() *cli.Command {
 			Name:  "all",
 			Usage: "delete all backups under the prefix",
 		},
-		&cli.DurationFlag{
+		&cli.StringFlag{
 			Name:  "older-than",
-			Usage: "delete backups older than this duration (e.g. 720h for 30 days)",
+			Usage: `delete backups older than a duration (e.g. 720h) or before a datetime (e.g. "2026-02-13 13:39:53 UTC")`,
 		},
 		&cli.StringFlag{
 			Name:  "datetime",
-			Usage: "delete a specific backup by datetime-type (e.g. 20250212120000-complete)",
+			Usage: `delete backup(s) at a specific datetime (e.g. "2026-02-13 13:39:53 UTC" or 20260213133953)`,
 		},
 		&cli.BoolFlag{
 			Name:  "force",
@@ -44,7 +44,7 @@ func backupDeleteCommand() *cli.Command {
 		Flags: flags,
 		Action: func(ctx *cli.Context) error {
 			deleteAll := ctx.Bool("all")
-			olderThan := ctx.Duration("older-than")
+			olderThanRaw := ctx.String("older-than")
 			datetime := ctx.String("datetime")
 			force := ctx.Bool("force")
 
@@ -52,7 +52,7 @@ func backupDeleteCommand() *cli.Command {
 			if deleteAll {
 				modes++
 			}
-			if olderThan > 0 {
+			if olderThanRaw != "" {
 				modes++
 			}
 			if datetime != "" {
@@ -90,13 +90,24 @@ func backupDeleteCommand() *cli.Command {
 			switch {
 			case deleteAll:
 				toDelete = allBackups
-			case olderThan > 0:
-				cutoff := time.Now().UTC().Add(-olderThan)
+			case olderThanRaw != "":
+				cutoff, pErr := parseOlderThanFlag(olderThanRaw)
+				if pErr != nil {
+					return pErr
+				}
 				toDelete, keptByKeepLast = selectOlderThan(allBackups, cutoff, keepLast)
 			case datetime != "":
-				toDelete = selectByDatetime(allBackups, datetime)
+				target, pErr := parseDatetime(datetime)
+				if pErr != nil {
+					return pErr
+				}
+				var chainDeps int
+				toDelete, chainDeps = selectByDatetime(allBackups, target)
 				if len(toDelete) == 0 {
-					return fmt.Errorf("no backup found matching %q", datetime)
+					return fmt.Errorf("no backup found matching datetime %s", target.UTC().Format("2006-01-02 15:04:05 UTC"))
+				}
+				if chainDeps > 0 {
+					fmt.Printf("NOTE: %d additional backup(s) will be included because they depend on the selected backup for restore.\n\n", chainDeps)
 				}
 			}
 
@@ -141,25 +152,25 @@ func backupDeleteCommand() *cli.Command {
 				warnOrphanedIncrementals(toDelete, allBackups)
 			}
 
-		if !force {
-			// When stdin is not a terminal (e.g. CI, piped input,
-			// /dev/null), require --force instead of silently aborting.
-			// Without this check, EOF from /dev/null or an empty pipe
-			// would be interpreted as "N" with no indication of why the
-			// deletion was skipped.
-			if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-				return fmt.Errorf("stdin is not a terminal; use --force to skip the confirmation prompt in non-interactive environments")
-			}
+			if !force {
+				// When stdin is not a terminal (e.g. CI, piped input,
+				// /dev/null), require --force instead of silently aborting.
+				// Without this check, EOF from /dev/null or an empty pipe
+				// would be interpreted as "N" with no indication of why the
+				// deletion was skipped.
+				if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+					return fmt.Errorf("stdin is not a terminal; use --force to skip the confirmation prompt in non-interactive environments")
+				}
 
-			fmt.Print("Are you sure you want to proceed? [y/N]: ")
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Println("Aborted.")
-				return nil
+				fmt.Print("Are you sure you want to proceed? [y/N]: ")
+				reader := bufio.NewReader(os.Stdin)
+				answer, _ := reader.ReadString('\n')
+				answer = strings.TrimSpace(strings.ToLower(answer))
+				if answer != "y" && answer != "yes" {
+					fmt.Println("Aborted.")
+					return nil
+				}
 			}
-		}
 
 			// Perform deletion.
 			for _, b := range toDelete {
@@ -253,17 +264,92 @@ func selectOlderThan(all []backup.BackupInfo, cutoff time.Time, keepLast bool) (
 	return result, kept
 }
 
-// selectByDatetime finds backups matching the given datetime-type string
-// (e.g. "20250212120000-complete").
-func selectByDatetime(all []backup.BackupInfo, datetime string) []backup.BackupInfo {
+// parseDatetime parses a datetime string. It accepts:
+//   - Human-readable: "2006-01-02 15:04:05 UTC"
+//   - RFC 3339:       "2006-01-02T15:04:05Z"
+//   - Compact:        "20060102150405"
+//   - Legacy (with type suffix, ignored): "20060102150405-complete"
+func parseDatetime(s string) (time.Time, error) {
+	if t, err := time.Parse("2006-01-02 15:04:05 UTC", s); err == nil {
+		return t.UTC(), nil
+	}
+
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UTC(), nil
+	}
+
+	compact := strings.TrimSuffix(strings.TrimSuffix(s, "-complete"), "-incremental")
+	if t, err := time.Parse("20060102150405", compact); err == nil {
+		return t.UTC(), nil
+	}
+
+	return time.Time{}, fmt.Errorf(
+		"unrecognized datetime format %q; expected \"2006-01-02 15:04:05 UTC\", RFC3339, or \"20060102150405\"", s)
+}
+
+// parseOlderThanFlag parses the --older-than flag value. It accepts either a
+// Go duration (e.g. "720h") which is resolved relative to now, or an absolute
+// datetime (e.g. "2026-02-13 13:39:53 UTC" or "20260213133953").
+func parseOlderThanFlag(s string) (time.Time, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return time.Now().UTC().Add(-d), nil
+	}
+	if t, err := parseDatetime(s); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf(
+		"unrecognized --older-than value %q; expected a duration (e.g. \"720h\") or datetime (e.g. \"2006-01-02 15:04:05 UTC\")", s)
+}
+
+// selectByDatetime finds all backups at the given datetime and includes
+// chain-dependent backups that would become orphaned or unrestorable.
+//
+// If a matched backup is complete, all subsequent incrementals up to the
+// next complete are included (they cannot be restored without their base).
+//
+// If a matched backup is incremental, all later incrementals in the same
+// chain are included (restore applies incrementals sequentially, so a gap
+// makes every later incremental in the chain unrestorable).
+//
+// The second return value reports how many extra backups were added beyond
+// the direct datetime matches.
+func selectByDatetime(all []backup.BackupInfo, target time.Time) ([]backup.BackupInfo, int) {
+	selected := make(map[int]bool)
+	for i, b := range all {
+		if b.Datetime.UTC().Equal(target) {
+			selected[i] = true
+		}
+	}
+	if len(selected) == 0 {
+		return nil, 0
+	}
+
+	directMatches := len(selected)
+
+	// Include all subsequent incrementals in the same chain (up to the next
+	// complete backup) for every matched backup. This applies whether the
+	// target is complete or incremental: a complete's incrementals are
+	// orphaned without it, and an incremental's successors need every prior
+	// incremental to restore.
+	for i := range all {
+		if !selected[i] {
+			continue
+		}
+		for j := i + 1; j < len(all); j++ {
+			if all[j].Type == backup.BackupTypeComplete {
+				break
+			}
+			selected[j] = true
+		}
+	}
+
 	var result []backup.BackupInfo
-	for _, b := range all {
-		dirName := b.Datetime.UTC().Format("20060102150405") + "-" + string(b.Type)
-		if dirName == datetime {
+	for i, b := range all {
+		if selected[i] {
 			result = append(result, b)
 		}
 	}
-	return result
+	return result, len(result) - directMatches
 }
 
 // warnOrphanedIncrementals prints a warning if deleting a complete backup

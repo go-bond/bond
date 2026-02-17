@@ -18,7 +18,7 @@ func backupRestoreCommand() *cli.Command {
 		},
 		&cli.StringFlag{
 			Name:  "before",
-			Usage: "point-in-time cutoff in RFC3339 format (e.g. 2025-02-12T15:00:00Z); if omitted, restores latest",
+			Usage: `point-in-time cutoff (e.g. "2026-02-13 13:39:53 UTC" or 2025-02-12T15:00:00Z); if omitted, restores latest`,
 		},
 		&cli.IntFlag{
 			Name:  "concurrency",
@@ -45,9 +45,9 @@ func backupRestoreCommand() *cli.Command {
 
 			var before time.Time
 			if s := ctx.String("before"); s != "" {
-				before, err = time.Parse(time.RFC3339, s)
+				before, err = parseDatetime(s)
 				if err != nil {
-					return fmt.Errorf("invalid --before value %q: expected RFC3339 format (e.g. 2025-02-12T15:00:00Z): %w", s, err)
+					return fmt.Errorf("invalid --before value: %w", err)
 				}
 			}
 
