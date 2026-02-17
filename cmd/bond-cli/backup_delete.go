@@ -109,7 +109,7 @@ func backupDeleteCommand() *cli.Command {
 			var totalFiles int
 			var totalSize int64
 			for _, b := range toDelete {
-				meta, err := backup.ReadMeta(ctx.Context, bucket, b.Prefix)
+				meta, err := backup.ReadBackupMeta(ctx.Context, bucket, b.Prefix)
 				if err != nil {
 					return fmt.Errorf("read meta for %s: %w", b.Prefix, err)
 				}

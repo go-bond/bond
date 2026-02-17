@@ -39,7 +39,7 @@ func backupListCommand() *cli.Command {
 			// Read metadata for each backup.
 			metas := make([]*backup.BackupMeta, len(backups))
 			for i, b := range backups {
-				meta, err := backup.ReadMeta(ctx.Context, bucket, b.Prefix)
+				meta, err := backup.ReadBackupMeta(ctx.Context, bucket, b.Prefix)
 				if err != nil {
 					return fmt.Errorf("read meta for %s: %w", b.Prefix, err)
 				}

@@ -1596,3 +1596,632 @@ func TestRestore_RetryAfterCancelledRestore(t *testing.T) {
 	restoredKVs := collectAllKVs(t, db2)
 	assert.Equal(t, originalKVs, restoredKVs)
 }
+
+// --- Download retry tests ---
+
+// downloadFailingBucket wraps InMemBucket and fails the first N Get() attempts per key.
+type downloadFailingBucket struct {
+	*objstore.InMemBucket
+	mu           sync.Mutex
+	attempts     map[string]int
+	failAttempts int  // fail first N Get() attempts per key with retriable error
+	alwaysFail   bool // if true, always return permanent error
+}
+
+// isRestoreDataFile returns true for keys that are data file downloads (not meta.json).
+func isRestoreDataFile(name string) bool {
+	if strings.HasSuffix(name, "/meta.json") {
+		return false
+	}
+	return strings.Contains(name, "-complete/") || strings.Contains(name, "-incremental/")
+}
+
+func (b *downloadFailingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if !isRestoreDataFile(name) {
+		return b.InMemBucket.Get(ctx, name)
+	}
+	b.mu.Lock()
+	n := b.attempts[name]
+	b.attempts[name]++
+	failAttempts := b.failAttempts
+	alwaysFail := b.alwaysFail
+	b.mu.Unlock()
+
+	if alwaysFail {
+		return nil, fmt.Errorf("access denied")
+	}
+	if n < failAttempts {
+		return nil, &temporaryError{msg: "transient download failure"}
+	}
+	return b.InMemBucket.Get(ctx, name)
+}
+
+func TestRestore_DownloadRetry_SuccessAfterRetries(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+	originalKVs := collectAllKVs(t, db)
+
+	inner := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, inner, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	bucket := &downloadFailingBucket{
+		InMemBucket:  inner,
+		attempts:     make(map[string]int),
+		failAttempts: 2,
+	}
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestRestore_DownloadRetry_PermanentErrorFails(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	inner := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, inner, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	bucket := &downloadFailingBucket{
+		InMemBucket: inner,
+		attempts:    make(map[string]int),
+		alwaysFail:  true,
+	}
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "download ")
+	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestRestore_DownloadRetry_ContextCancelDuringBackoff(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	inner := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, inner, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	bucket := &downloadFailingBucket{
+		InMemBucket:  inner,
+		attempts:     make(map[string]int),
+		failAttempts: 1,
+	}
+
+	ctx2, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+	}()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx2, bucket, RestoreOptions{
+		Prefix:              "backups",
+		RestoreDir:          restoreDir,
+		InitialRetryBackoff: 200 * time.Millisecond,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled), "expected context cancellation: %v", err)
+}
+
+// --- Lock refresh failure test ---
+
+// lockRefreshFailBucket wraps InMemBucket and fails lock upload after initial acquisition.
+type lockRefreshFailBucket struct {
+	*objstore.InMemBucket
+	mu              sync.Mutex
+	lockUploadCount int
+}
+
+func (b *lockRefreshFailBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	if strings.HasSuffix(name, "/.lock") {
+		b.mu.Lock()
+		b.lockUploadCount++
+		count := b.lockUploadCount
+		b.mu.Unlock()
+
+		// Allow the first two lock uploads (acquire + verify write), fail all subsequent (refresh).
+		if count > 2 {
+			return fmt.Errorf("simulated lock refresh failure")
+		}
+	}
+	return b.InMemBucket.Upload(ctx, name, r, opts...)
+}
+
+func TestBackup_LockRefreshFailure(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 50)
+
+	bucket := &lockRefreshFailBucket{
+		InMemBucket: objstore.NewInMemBucket(),
+	}
+
+	ctx := context.Background()
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+		LockTTL:       10 * time.Millisecond,
+		Concurrency:   1,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrLockRefreshFailed), "expected ErrLockRefreshFailed, got: %v", err)
+
+	// Lock should NOT be released (another process may own it).
+	exists, err := bucket.Exists(context.Background(), "backups/.lock")
+	require.NoError(t, err)
+	assert.True(t, exists, "lock should remain because refresh failed")
+}
+
+// --- DeleteBackup tests ---
+
+func TestDeleteBackup(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Verify backup exists.
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+
+	err = DeleteBackup(ctx, bucket, backups[0].Prefix)
+	require.NoError(t, err)
+
+	// All objects under the backup prefix should be gone.
+	remaining, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	assert.Len(t, remaining, 0)
+}
+
+func TestDeleteBackup_AlreadyDeleted(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Deleting a nonexistent prefix should not error.
+	err := DeleteBackup(ctx, bucket, "backups/20250212120000-complete/")
+	require.NoError(t, err)
+}
+
+// --- Multiple complete backups restore test ---
+
+func TestRestoreWithMultipleCompleteBackups(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Phase 1: Initial data + complete backup at T=12:00.
+	insertTestData(t, db, 0, 10)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 2: More data + incremental at T=13:00.
+	insertTestData(t, db, 10, 10)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 3: More data + second complete backup at T=14:00.
+	insertTestData(t, db, 20, 10)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 4: More data + incremental at T=15:00.
+	insertTestData(t, db, 30, 10)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 15, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	originalKVs := collectAllKVs(t, db)
+	db.Close()
+
+	// FindRestoreSet should pick [complete2, incr2], not [complete1, incr1, complete2, incr2].
+	set, err := FindRestoreSet(ctx, bucket, "backups", time.Date(2025, 2, 12, 15, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Len(t, set, 2)
+	assert.Equal(t, BackupTypeComplete, set[0].Type)
+	assert.Equal(t, time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC), set[0].Datetime)
+	assert.Equal(t, BackupTypeIncremental, set[1].Type)
+
+	// Restore and verify data integrity.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+// --- Corrupt lock test ---
+
+func TestBackup_CorruptLockIsOverridden(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Upload corrupt (non-JSON) lock data.
+	require.NoError(t, bucket.Upload(ctx, "backups/.lock", bytes.NewReader([]byte("not-json"))))
+
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, meta)
+}
+
+// --- Input validation tests ---
+
+func TestBackup_EmptyCheckpointDir(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: "",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CheckpointDir is required")
+}
+
+func TestRestore_EmptyRestoreDir(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	err := Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: "",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RestoreDir must be specified")
+}
+
+// --- ReadBackupMeta tests ---
+
+func TestReadBackupMeta(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	backupMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Read the meta using the public API.
+	readResult, err := ReadBackupMeta(ctx, bucket, "backups/20250212120000-complete/")
+	require.NoError(t, err)
+
+	assert.Equal(t, backupMeta.Type, readResult.Type)
+	assert.Equal(t, backupMeta.Datetime, readResult.Datetime)
+	assert.Equal(t, backupMeta.PebbleFormatVersion, readResult.PebbleFormatVersion)
+	assert.Equal(t, backupMeta.BondDataVersion, readResult.BondDataVersion)
+	assert.Equal(t, backupMeta.Files, readResult.Files)
+	assert.Equal(t, backupMeta.CheckpointFiles, readResult.CheckpointFiles)
+}
+
+func TestReadBackupMeta_NotFound(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := ReadBackupMeta(ctx, bucket, "backups/nonexistent/")
+	require.Error(t, err)
+}
+
+// --- Default values tests ---
+
+func TestBackup_DefaultTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	before := time.Now().UTC()
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	after := time.Now().UTC()
+
+	// Parse the datetime from meta and verify it's within the test window.
+	parsed, err := time.Parse("20060102150405", meta.Datetime)
+	require.NoError(t, err)
+
+	assert.False(t, parsed.Before(before.Truncate(time.Second)), "meta datetime %v should not be before %v", parsed, before)
+	assert.False(t, parsed.After(after.Add(time.Second)), "meta datetime %v should not be after %v", parsed, after)
+}
+
+func TestBackup_DefaultType(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          "",
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, BackupTypeComplete, meta.Type)
+}
+
+// --- Edge case tests ---
+
+func TestListBackups_Empty(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	assert.Empty(t, backups)
+}
+
+func TestFindRestoreSet_ExactBoundary(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete at T=12:00.
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental at T=13:00.
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental at T=14:00.
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Before=T=13:00 exactly should include T=12 complete + T=13 incremental.
+	set, err := FindRestoreSet(ctx, bucket, "backups", time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Len(t, set, 2)
+	assert.Equal(t, BackupTypeComplete, set[0].Type)
+	assert.Equal(t, time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC), set[0].Datetime)
+	assert.Equal(t, BackupTypeIncremental, set[1].Type)
+	assert.Equal(t, time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC), set[1].Datetime)
+}
+
+func TestHasCheckpoint_FileNotDir(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "checkpoint")
+	require.NoError(t, os.WriteFile(p, []byte("not a directory"), 0644))
+
+	has, err := HasCheckpoint(p)
+	require.NoError(t, err)
+	assert.False(t, has, "HasCheckpoint should return false for a regular file")
+}
+
+func TestRestore_CreatesNestedDir(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 5)
+	originalKVs := collectAllKVs(t, db)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Restore to a deeply nested directory that doesn't exist yet.
+	restoreDir := filepath.Join(dir, "a", "b", "c", "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+// --- Incremental diff correctness test ---
+
+func TestBackup_IncrementalDiffCorrectness(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 10)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup.
+	completeMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Build a set of complete backup's checkpoint files.
+	completeFileSet := make(map[string]int64, len(completeMeta.CheckpointFiles))
+	for _, f := range completeMeta.CheckpointFiles {
+		completeFileSet[f.Name] = f.Size
+	}
+
+	// Insert more data to force new/changed SST files.
+	insertTestData(t, db, 10, 100)
+
+	// Incremental backup.
+	incrMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Every file in the incremental's Files list should be either:
+	// (a) not present in the complete's CheckpointFiles, OR
+	// (b) present but with a different size.
+	for _, f := range incrMeta.Files {
+		prevSize, existed := completeFileSet[f.Name]
+		if existed {
+			assert.NotEqual(t, prevSize, f.Size,
+				"incremental file %s has same size as complete (%d), should have been excluded", f.Name, f.Size)
+		}
+	}
+
+	// CheckpointFiles should contain all files at this checkpoint, not just the diff.
+	assert.GreaterOrEqual(t, len(incrMeta.CheckpointFiles), len(incrMeta.Files),
+		"CheckpointFiles should have at least as many files as Files (diff)")
+}

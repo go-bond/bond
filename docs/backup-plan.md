@@ -26,7 +26,7 @@ Backup/restore are stateless operations implemented as standalone functions:
 - `FindRestoreSet(ctx, bucket, prefix, before) ([]BackupInfo, error)`
 - `DeleteBackup(ctx, bucket, backupPrefix) error`
 - `RemoveIncompleteBackups(ctx, bucket, prefix) (int, error)`
-- `ReadMeta(ctx, bucket, objectPrefix) (*BackupMeta, error)`
+- `ReadBackupMeta(ctx, bucket, objectPrefix) (*BackupMeta, error)`
 - `HasIncompleteRestore(dir) (bool, error)`
 - `HasCheckpoint(dir) (bool, error)`
 - `RemoveCheckpoint(dir) error`
@@ -89,7 +89,7 @@ backup/
   backup_incomplete.go   -- isBackupIncomplete(), deleteBackupDir(), removeIncompleteBackupDirs(), DeleteBackup(), RemoveIncompleteBackups()
   backup_list.go         -- BackupInfo, ErrNoBackupsFound, ListBackups(), FindRestoreSet()
   backup_lock.go         -- DefaultLockTTL, ErrBackupInProgress, ErrLockRefreshFailed, lockPayload, acquireLock(), uploadAndVerifyLock(), releaseLock(), startLockRefresh()
-  backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), ReadMeta(), newBackupMeta()
+  backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), ReadBackupMeta(), newBackupMeta()
   backup_naming.go       -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
   backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, rate limiting, edge cases
   consts.go              -- DefaultConcurrency, DefaultRateLimit, DefaultMaxUploadRetries, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff, MaxRetryBackoff
@@ -199,7 +199,7 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)
 func DeleteBackup(ctx context.Context, bucket objstore.Bucket, backupPrefix string) error
 func RemoveIncompleteBackups(ctx context.Context, bucket objstore.Bucket, prefix string) (int, error)
-func ReadMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error)
+func ReadBackupMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error)
 func HasIncompleteRestore(dir string) (bool, error)
 func HasCheckpoint(dir string) (bool, error)
 func RemoveCheckpoint(dir string) error
@@ -617,7 +617,7 @@ Lists all backups grouped by complete + incremental chains.
 bond-cli backup list --storage s3 --s3-endpoint ... --s3-bucket ... --prefix backups/
 ```
 
-Output shows each backup group with TYPE, DATETIME, FILES, SIZE, and PREFIX columns, plus per-group and overall totals. Uses `ReadMeta()` to fetch metadata for each backup. Groups are formed by starting a new group at each complete backup; orphaned incrementals before any complete backup are placed in their own group.
+Output shows each backup group with TYPE, DATETIME, FILES, SIZE, and PREFIX columns, plus per-group and overall totals. Uses `ReadBackupMeta()` to fetch metadata for each backup. Groups are formed by starting a new group at each complete backup; orphaned incrementals before any complete backup are placed in their own group.
 
 ### 11.4 `bond-cli backup restore`
 

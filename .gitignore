@@ -9,6 +9,7 @@ tests/tmp
 tests/test_bloom_filter
 
 bond-cli
+!cmd/bond-cli
 
 *.csv
 *.xlsx
