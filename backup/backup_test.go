@@ -1754,6 +1754,8 @@ func TestRestore_DownloadRetry_ContextCancelDuringBackoff(t *testing.T) {
 // --- Lock refresh failure test ---
 
 // lockRefreshFailBucket wraps InMemBucket and fails lock upload after initial acquisition.
+// Non-lock uploads are artificially delayed so the backup cannot finish before the
+// lock refresh goroutine detects the failure and cancels the context.
 type lockRefreshFailBucket struct {
 	*objstore.InMemBucket
 	mu              sync.Mutex
@@ -1770,6 +1772,14 @@ func (b *lockRefreshFailBucket) Upload(ctx context.Context, name string, r io.Re
 		// Allow the first two lock uploads (acquire + verify write), fail all subsequent (refresh).
 		if count > 2 {
 			return fmt.Errorf("simulated lock refresh failure")
+		}
+	} else {
+		// Delay non-lock uploads so the backup takes longer than the lock TTL,
+		// giving the refresh goroutine time to detect failure and cancel.
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	return b.InMemBucket.Upload(ctx, name, r, opts...)
