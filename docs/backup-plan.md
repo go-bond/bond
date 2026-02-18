@@ -505,7 +505,6 @@ Test-only imports:
 - **Lock TOCTOU mitigation**: Lock acquisition uses read-after-write verification with a random nonce and jitter delay to mitigate the TOCTOU race inherent in object storage (no atomic CAS). This makes concurrent acquisition collisions extremely unlikely but does not eliminate them entirely.
 - **Retries in Backup() / Restore()**: Both `Backup()` and `Restore()` have per-file retries on transient errors using failsafe-go retry policies (see §5.8 and §5.9). Operation-level retries (retry whole Backup or whole Restore on failure) are **not implemented**.
 - **Interrupted restore recovery**: A `.incomplete` marker file is written to `RestoreDir` at the start of the restore and removed only on successful completion. If `Restore()` is called on a directory with an existing `.incomplete` marker, all contents are cleaned and the restore starts from scratch. This handles crash recovery, context cancellation, and any other interruption gracefully.
-- **Refactor to extract common and utility functions**: Moving shared and utility logic into separate files (e.g. common upload/download helpers, path utilities) — **not implemented**.
 
 ---
 
