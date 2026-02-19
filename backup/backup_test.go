@@ -122,7 +122,7 @@ func TestBackupComplete(t *testing.T) {
 	require.NotNil(t, meta)
 
 	assert.Equal(t, BackupTypeComplete, meta.Type)
-	assert.Equal(t, "20250212120000", meta.Datetime)
+	assert.Equal(t, time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC), meta.Datetime)
 	assert.Greater(t, len(meta.Files), 0)
 	assert.Equal(t, meta.Files, meta.CheckpointFiles)
 	assert.Greater(t, meta.PebbleFormatVersion, uint64(0))
@@ -1073,25 +1073,25 @@ func TestRemoveCheckpoint_NoCheckpoint(t *testing.T) {
 }
 
 func TestResolvePerStreamRate(t *testing.T) {
-	// Zero rateLimit -> DefaultRateLimit / concurrency
-	rate := resolvePerStreamRate(0, 4)
-	assert.Equal(t, DefaultRateLimit/4, rate)
+	// Zero rateBPS -> default / concurrency
+	rate := resolvePerStreamRate(0, DefaultMaxUploadBPS, 4)
+	assert.Equal(t, float64(DefaultMaxUploadBPS)/4, rate)
 
-	// Positive rateLimit -> rateLimit / concurrency
-	rate = resolvePerStreamRate(50*1024*1024, 5)
+	// Positive rateBPS -> rateBPS / concurrency
+	rate = resolvePerStreamRate(50*1024*1024, DefaultMaxUploadBPS, 5)
 	assert.Equal(t, float64(50*1024*1024)/5, rate)
 
-	// Negative rateLimit -> disabled (0)
-	rate = resolvePerStreamRate(-1, 4)
+	// Negative rateBPS -> disabled (0)
+	rate = resolvePerStreamRate(-1, DefaultMaxUploadBPS, 4)
 	assert.Equal(t, float64(0), rate)
 
 	// Zero concurrency -> DefaultConcurrency
-	rate = resolvePerStreamRate(80*1024*1024, 0)
+	rate = resolvePerStreamRate(80*1024*1024, DefaultMaxDownloadBPS, 0)
 	assert.Equal(t, float64(80*1024*1024)/float64(DefaultConcurrency), rate)
 
-	// Both zero -> DefaultRateLimit / DefaultConcurrency
-	rate = resolvePerStreamRate(0, 0)
-	assert.Equal(t, DefaultRateLimit/float64(DefaultConcurrency), rate)
+	// Both zero -> default / DefaultConcurrency
+	rate = resolvePerStreamRate(0, DefaultMaxDownloadBPS, 0)
+	assert.Equal(t, float64(DefaultMaxDownloadBPS)/float64(DefaultConcurrency), rate)
 }
 
 func TestBackupWithRateLimit(t *testing.T) {
@@ -1109,7 +1109,7 @@ func TestBackupWithRateLimit(t *testing.T) {
 		Type:          BackupTypeComplete,
 		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
 		CheckpointDir: filepath.Join(dir, "checkpoint"),
-		RateLimit:     50 * 1024 * 1024, // 50 MB/s
+		MaxUploadBPS:  50 * 1024 * 1024, // 50 MB/s
 	})
 	require.NoError(t, err)
 	db.Close()
@@ -1117,9 +1117,9 @@ func TestBackupWithRateLimit(t *testing.T) {
 	// Restore and verify data integrity.
 	restoreDir := filepath.Join(dir, "restored")
 	err = Restore(ctx, bucket, RestoreOptions{
-		Prefix:     "backups",
-		RestoreDir: restoreDir,
-		RateLimit:  -1, // disable for speed
+		Prefix:         "backups",
+		RestoreDir:     restoreDir,
+		MaxDownloadBPS: -1, // disable for speed
 	})
 	require.NoError(t, err)
 
@@ -1145,16 +1145,16 @@ func TestRestoreWithRateLimit(t *testing.T) {
 		Type:          BackupTypeComplete,
 		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
 		CheckpointDir: filepath.Join(dir, "checkpoint"),
-		RateLimit:     -1, // disable for speed
+		MaxUploadBPS:  -1, // disable for speed
 	})
 	require.NoError(t, err)
 	db.Close()
 
 	restoreDir := filepath.Join(dir, "restored")
 	err = Restore(ctx, bucket, RestoreOptions{
-		Prefix:     "backups",
-		RestoreDir: restoreDir,
-		RateLimit:  50 * 1024 * 1024, // 50 MB/s
+		Prefix:         "backups",
+		RestoreDir:     restoreDir,
+		MaxDownloadBPS: 50 * 1024 * 1024, // 50 MB/s
 	})
 	require.NoError(t, err)
 
@@ -1180,16 +1180,16 @@ func TestBackupNoRateLimit(t *testing.T) {
 		Type:          BackupTypeComplete,
 		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
 		CheckpointDir: filepath.Join(dir, "checkpoint"),
-		RateLimit:     -1, // disabled
+		MaxUploadBPS:  -1, // disabled
 	})
 	require.NoError(t, err)
 	db.Close()
 
 	restoreDir := filepath.Join(dir, "restored")
 	err = Restore(ctx, bucket, RestoreOptions{
-		Prefix:     "backups",
-		RestoreDir: restoreDir,
-		RateLimit:  -1, // disabled
+		Prefix:         "backups",
+		RestoreDir:     restoreDir,
+		MaxDownloadBPS: -1, // disabled
 	})
 	require.NoError(t, err)
 
@@ -2052,12 +2052,9 @@ func TestBackup_DefaultTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	after := time.Now().UTC()
 
-	// Parse the datetime from meta and verify it's within the test window.
-	parsed, err := time.Parse("20060102150405", meta.Datetime)
-	require.NoError(t, err)
-
-	assert.False(t, parsed.Before(before.Truncate(time.Second)), "meta datetime %v should not be before %v", parsed, before)
-	assert.False(t, parsed.After(after.Add(time.Second)), "meta datetime %v should not be after %v", parsed, after)
+	// Verify the datetime is within the test window.
+	assert.False(t, meta.Datetime.Before(before.Truncate(time.Second)), "meta datetime %v should not be before %v", meta.Datetime, before)
+	assert.False(t, meta.Datetime.After(after.Add(time.Second)), "meta datetime %v should not be after %v", meta.Datetime, after)
 }
 
 func TestBackup_DefaultType(t *testing.T) {

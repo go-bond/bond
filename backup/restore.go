@@ -31,9 +31,9 @@ type RestoreOptions struct {
 	Concurrency int
 	// OnProgress is called after each file download completes. Must be goroutine-safe.
 	OnProgress ProgressFunc
-	// RateLimit is the aggregate download rate limit in bytes per second.
-	// Zero uses DefaultRateLimit (100 MB/s). Negative disables rate limiting.
-	RateLimit float64
+	// MaxDownloadBPS is the aggregate download rate limit in bytes per second.
+	// Zero uses DefaultMaxDownloadBPS (100 MB/s). Negative disables rate limiting.
+	MaxDownloadBPS int64
 	// MaxDownloadRetries is the number of retries per file after the first failed download.
 	// Zero uses DefaultMaxDownloadRetries. Only transient errors are retried.
 	MaxDownloadRetries int
@@ -69,12 +69,7 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return fmt.Errorf("restore directory %q is not empty", opts.RestoreDir)
 	}
 
-	before := opts.Before
-	if before.IsZero() {
-		before = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
-	}
-
-	restoreSet, err := FindRestoreSet(ctx, bucket, opts.Prefix, before)
+	restoreSet, err := FindRestoreSet(ctx, bucket, opts.Prefix, opts.Before)
 	if err != nil {
 		return err
 	}
@@ -135,7 +130,7 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		concurrency = DefaultConcurrency
 	}
 
-	perStreamRate := resolvePerStreamRate(opts.RateLimit, concurrency)
+	perStreamRate := resolvePerStreamRate(opts.MaxDownloadBPS, DefaultMaxDownloadBPS, concurrency)
 
 	// Atomic counters accumulate across all stages.
 	var filesDone atomic.Int64

@@ -92,7 +92,7 @@ backup/
   backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), ReadBackupMeta(), newBackupMeta()
   backup_naming.go       -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
   backup_test.go         -- Unit tests for backup, restore, list, naming, incomplete backups, locking, checkpoint, rate limiting, edge cases
-  consts.go              -- DefaultConcurrency, DefaultRateLimit, DefaultMaxUploadRetries, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff, MaxRetryBackoff
+  consts.go              -- DefaultConcurrency, DefaultMaxUploadBPS, DefaultMaxDownloadBPS, DefaultMaxUploadRetries, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff, MaxRetryBackoff
   progress.go            -- ProgressEvent, ProgressFunc
   restore.go             -- RestoreOptions, Restore(), downloadFileWithRetry()
   restore_incomplete.go  -- HasIncompleteRestore(), writeRestoreIncompleteMarker(), removeRestoreIncompleteMarker(), cleanRestoreDir()
@@ -125,7 +125,7 @@ type BackupOptions struct {
     OnProgress    ProgressFunc  // Called after each file upload; must be goroutine-safe
     LockTTL       time.Duration // Max age of backup lock before stale; zero = DefaultLockTTL (1h)
     CheckpointDir string        // Directory for Pebble checkpoint; must be on same filesystem as DB. Required.
-    RateLimit     float64       // Aggregate upload rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
+    MaxUploadBPS  int64         // Aggregate upload rate limit in bytes/sec; zero = DefaultMaxUploadBPS (100 MB/s); negative disables
     MaxUploadRetries int        // Retries per file after first failed upload; zero = DefaultMaxUploadRetries. Only transient errors retried.
     InitialRetryBackoff time.Duration // Delay before first retry; zero = DefaultInitialRetryBackoff.
 }
@@ -140,7 +140,7 @@ type RestoreOptions struct {
     Before              time.Time     // Point-in-time cutoff; zero = all backups
     Concurrency         int           // Parallel downloads per stage; <= 0 uses DefaultConcurrency
     OnProgress          ProgressFunc  // Called after each file download; must be goroutine-safe
-    RateLimit           float64       // Aggregate download rate limit in bytes/sec; zero = DefaultRateLimit (100 MB/s); negative disables
+    MaxDownloadBPS      int64         // Aggregate download rate limit in bytes/sec; zero = DefaultMaxDownloadBPS (100 MB/s); negative disables
     MaxDownloadRetries  int           // Retries per file after first failed download; zero = DefaultMaxDownloadRetries. Only transient errors retried.
     InitialRetryBackoff time.Duration // Delay before first retry; zero = DefaultInitialRetryBackoff.
 }
@@ -151,12 +151,12 @@ type RestoreOptions struct {
 ```go
 type BackupMeta struct {
     Type                BackupType `json:"type"`                  // "complete" or "incremental"
-    Datetime            string     `json:"datetime"`              // "20060102150405"
+    Datetime            time.Time  `json:"datetime"`              // RFC3339
     PebbleFormatVersion uint64     `json:"pebble_format_version"`
     BondDataVersion     uint32     `json:"bond_data_version"`
     Files               []FileInfo `json:"files"`                 // files uploaded in THIS backup
     CheckpointFiles     []FileInfo `json:"checkpoint_files"`      // ALL files in the checkpoint
-    CreatedAt           string     `json:"created_at"`            // RFC3339
+    CreatedAt           time.Time  `json:"created_at"`            // RFC3339
 }
 ```
 
@@ -209,7 +209,8 @@ func RemoveCheckpoint(dir string) error
 
 ```go
 const DefaultConcurrency = 4
-const DefaultRateLimit float64 = 100 * 1024 * 1024 // 100 MB/s
+const DefaultMaxUploadBPS int64 = 100 * 1024 * 1024 // 100 MB/s
+const DefaultMaxDownloadBPS int64 = 100 * 1024 * 1024 // 100 MB/s
 const DefaultLockTTL = 1 * time.Hour
 const DefaultMaxUploadRetries = 3
 const DefaultMaxDownloadRetries = 3
@@ -303,7 +304,7 @@ var ErrLockRefreshFailed = fmt.Errorf("lock refresh failed for longer than TTL")
 
 An incomplete backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
 
-- **Detection**: `isBackupIncomplete(ctx, bucket, backupPrefix)` checks `bucket.Exists()` for `meta.json`.
+- **Detection**: `isBackupIncomplete(ctx, bucket, backupPrefix)` downloads `meta.json` via `bucket.Get()`, parses it as JSON into `BackupMeta`, and validates that `Type`, `Datetime`, and `CreatedAt` are non-zero. A backup is incomplete if the file is missing, unreadable, unparseable, or has empty required fields.
 - **Cleanup**: `deleteBackupDir(ctx, bucket, dirPrefix)` discovers all objects via `bucket.Iter()` with `WithRecursiveIter()`, then deletes each. Guards against concurrent deletion with `bucket.IsObjNotFoundErr()`.
 - **`removeIncompleteBackupDirs(ctx, bucket, prefix)`**: Iterates all dirs under prefix, identifies incomplete backups, deletes them. Returns count removed.
 - **`RemoveIncompleteBackups(ctx, bucket, prefix)`**: Public API that delegates to `removeIncompleteBackupDirs`.
@@ -630,7 +631,7 @@ bond-cli backup restore --storage s3 ... --prefix backups/ --restore-dir /path/t
 - `--restore-dir` (required): Local directory to restore into (must be empty or non-existent)
 - `--before`: Point-in-time cutoff in RFC3339 format (e.g. `2025-02-12T15:00:00Z`); if omitted, restores the latest
 - `--concurrency`: Number of parallel downloads (default: `DefaultConcurrency`, 4)
-- `--rate-limit`: Download rate limit in MB/s (0 for default, negative to disable)
+- `--max-download-bps`: Aggregate download rate limit in bytes/sec (0 for default, negative to disable)
 
 Displays inline progress during the restore: `[files/total] bytes done/total  filename`.
 

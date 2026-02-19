@@ -38,9 +38,9 @@ type BackupOptions struct {
 	// The caller is responsible for choosing a location on the same filesystem as the DB.
 	// Required.
 	CheckpointDir string
-	// RateLimit is the aggregate upload rate limit in bytes per second.
-	// Zero uses DefaultRateLimit (100 MB/s). Negative disables rate limiting.
-	RateLimit float64
+	// MaxUploadBPS is the aggregate upload rate limit in bytes per second.
+	// Zero uses DefaultMaxUploadBPS (100 MB/s). Negative disables rate limiting.
+	MaxUploadBPS int64
 	// MaxUploadRetries is the number of retries per file after the first failed upload.
 	// Zero uses DefaultMaxUploadRetries. Only transient errors are retried.
 	MaxUploadRetries int
@@ -158,7 +158,7 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		concurrency = DefaultConcurrency
 	}
 
-	perStreamRate := resolvePerStreamRate(opts.RateLimit, concurrency)
+	perStreamRate := resolvePerStreamRate(opts.MaxUploadBPS, DefaultMaxUploadBPS, concurrency)
 
 	// Upload the files in parallel.
 	var filesDone atomic.Int64

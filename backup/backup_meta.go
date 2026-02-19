@@ -17,12 +17,12 @@ import (
 // BackupMeta contains metadata about a single backup.
 type BackupMeta struct {
 	Type                BackupType `json:"type"`
-	Datetime            string     `json:"datetime"`
+	Datetime            time.Time  `json:"datetime"`
 	PebbleFormatVersion uint64     `json:"pebble_format_version"`
 	BondDataVersion     uint32     `json:"bond_data_version"`
 	Files               []FileInfo `json:"files"`
 	CheckpointFiles     []FileInfo `json:"checkpoint_files"`
-	CreatedAt           string     `json:"created_at"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // FileInfo describes a file in a backup.
@@ -108,11 +108,11 @@ func ReadBackupMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix st
 func newBackupMeta(bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {
 	return &BackupMeta{
 		Type:                bt,
-		Datetime:            dt.UTC().Format(datetimeFormat),
+		Datetime:            dt.UTC(),
 		PebbleFormatVersion: pebbleFmtVer,
 		BondDataVersion:     bondDataVer,
 		Files:               files,
 		CheckpointFiles:     checkpointFiles,
-		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+		CreatedAt:           time.Now().UTC(),
 	}
 }

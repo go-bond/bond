@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/go-bond/bond"
@@ -81,7 +81,6 @@ func main() {
 	})
 
 	if err := app.Run(os.Args); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "[Error] %s\n", err.Error())
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }

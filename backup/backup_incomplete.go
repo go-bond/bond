@@ -2,20 +2,44 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"path"
 
 	"github.com/thanos-io/objstore"
 )
 
-// isBackupIncomplete checks whether a backup directory is incomplete (missing meta.json).
+// isBackupIncomplete checks whether a backup directory is incomplete by
+// downloading and validating meta.json. A backup is considered incomplete if
+// the file is missing, cannot be read, or contains invalid/empty metadata.
 func isBackupIncomplete(ctx context.Context, bucket objstore.Bucket, backupPrefix string) (bool, error) {
 	metaPath := path.Join(backupPrefix, metaFileName)
-	exists, err := bucket.Exists(ctx, metaPath)
+
+	rc, err := bucket.Get(ctx, metaPath)
 	if err != nil {
-		return false, fmt.Errorf("check meta.json existence: %w", err)
+		if bucket.IsObjNotFoundErr(err) {
+			return true, nil
+		}
+		return false, fmt.Errorf("get meta.json: %w", err)
 	}
-	return !exists, nil
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return true, nil
+	}
+
+	var meta BackupMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return true, nil
+	}
+
+	if meta.Type == "" || meta.Datetime.IsZero() || meta.CreatedAt.IsZero() {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // deleteBackupDir deletes all objects under the given directory prefix.

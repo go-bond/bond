@@ -73,9 +73,13 @@ func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, 
 
 	// Filter to backups at or before the cutoff.
 	var filtered []BackupInfo
-	for _, b := range allBackups {
-		if !b.Datetime.After(before) {
-			filtered = append(filtered, b)
+	if before.IsZero() {
+		filtered = allBackups
+	} else {
+		for _, b := range allBackups {
+			if !b.Datetime.After(before) {
+				filtered = append(filtered, b)
+			}
 		}
 	}
 

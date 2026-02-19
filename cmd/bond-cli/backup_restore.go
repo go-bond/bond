@@ -25,9 +25,9 @@ func backupRestoreCommand() *cli.Command {
 			Usage: "number of parallel downloads",
 			Value: backup.DefaultConcurrency,
 		},
-		&cli.Float64Flag{
-			Name:  "rate-limit",
-			Usage: "download rate limit in MB/s (0 for default, negative to disable)",
+		&cli.Int64Flag{
+			Name:  "max-download-bps",
+			Usage: "aggregate download rate limit in bytes/sec (0 for default, negative to disable)",
 			Value: 0,
 		},
 	}, bucketFlags...)
@@ -51,20 +51,12 @@ func backupRestoreCommand() *cli.Command {
 				}
 			}
 
-			rateLimitMBs := ctx.Float64("rate-limit")
-			var rateLimit float64
-			if rateLimitMBs > 0 {
-				rateLimit = rateLimitMBs * 1024 * 1024
-			} else if rateLimitMBs < 0 {
-				rateLimit = -1
-			}
-
 			opts := backup.RestoreOptions{
-				Prefix:      ctx.String("prefix"),
-				RestoreDir:  ctx.String("restore-dir"),
-				Before:      before,
-				Concurrency: ctx.Int("concurrency"),
-				RateLimit:   rateLimit,
+				Prefix:         ctx.String("prefix"),
+				RestoreDir:     ctx.String("restore-dir"),
+				Before:         before,
+				Concurrency:    ctx.Int("concurrency"),
+				MaxDownloadBPS: ctx.Int64("max-download-bps"),
 			OnProgress: func(ev backup.ProgressEvent) {
 				fmt.Printf("\x1b[2K\r[%d/%d files] %s / %s  %s",
 					ev.FilesDone, ev.FilesTotal,

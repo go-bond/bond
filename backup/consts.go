@@ -6,9 +6,13 @@ import "time"
 // Concurrency is not set (zero value) in BackupOptions or RestoreOptions.
 const DefaultConcurrency = 4
 
-// DefaultRateLimit is the aggregate rate limit in bytes per second applied
-// across all concurrent streams when RateLimit is not set (zero value).
-const DefaultRateLimit float64 = 100 * 1024 * 1024 // 100 MB/s
+// DefaultMaxUploadBPS is the aggregate upload rate limit in bytes per second
+// applied across all concurrent streams when MaxUploadBPS is not set (zero value).
+const DefaultMaxUploadBPS int64 = 100 * 1024 * 1024 // 100 MB/s
+
+// DefaultMaxDownloadBPS is the aggregate download rate limit in bytes per second
+// applied across all concurrent streams when MaxDownloadBPS is not set (zero value).
+const DefaultMaxDownloadBPS int64 = 100 * 1024 * 1024 // 100 MB/s
 
 // DefaultMaxUploadRetries is the number of retries per file after the first
 // failed upload when MaxUploadRetries is not set (zero value).
