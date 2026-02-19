@@ -76,7 +76,7 @@ func removeIncompleteBackupDirs(ctx context.Context, bucket objstore.Bucket, pre
 
 	var incompletePrefixes []string
 	err := bucket.Iter(ctx, prefix, func(name string) error {
-		if _, _, err := parseBackupDir(name); err != nil {
+		if _, _, _, err := parseBackupDir(name); err != nil {
 			return nil
 		}
 

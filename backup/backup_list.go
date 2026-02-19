@@ -14,10 +14,15 @@ type BackupInfo struct {
 	Datetime time.Time
 	Type     BackupType
 	Prefix   string
+	Seq      int
 }
 
 // ErrNoBackupsFound is returned when no suitable backups exist.
 var ErrNoBackupsFound = fmt.Errorf("no backups found")
+
+// ErrIncompleteRestoreChain is returned when the backup chain has gaps
+// (one or more intermediate backups have been removed).
+var ErrIncompleteRestoreChain = fmt.Errorf("backup chain is incomplete: one or more backups may have been removed")
 
 // ListBackups discovers all backups under the given prefix and returns them
 // sorted by datetime ascending.
@@ -28,7 +33,7 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 
 	var backups []BackupInfo
 	err := bucket.Iter(ctx, prefix, func(name string) error {
-		dt, bt, err := parseBackupDir(name)
+		dt, bt, seq, err := parseBackupDir(name)
 		if err != nil {
 			// Skip entries that don't match the backup dir pattern.
 			return nil
@@ -46,6 +51,7 @@ func ListBackups(ctx context.Context, bucket objstore.Bucket, prefix string) ([]
 			Datetime: dt,
 			Type:     bt,
 			Prefix:   name,
+			Seq:      seq,
 		})
 		return nil
 	})
@@ -97,5 +103,16 @@ func FindRestoreSet(ctx context.Context, bucket objstore.Bucket, prefix string, 
 	}
 
 	// Return the complete backup plus all subsequent incrementals.
-	return filtered[latestCompleteIdx:], nil
+	restoreSet := filtered[latestCompleteIdx:]
+
+	// Verify the chain has no gaps by checking sequence number contiguity.
+	for i, b := range restoreSet {
+		expected := restoreSet[0].Seq + i
+		if b.Seq != expected {
+			return nil, fmt.Errorf("%w: expected seq %d but got %d at %s",
+				ErrIncompleteRestoreChain, expected, b.Seq, b.Prefix)
+		}
+	}
+
+	return restoreSet, nil
 }

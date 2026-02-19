@@ -85,7 +85,23 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	}
 	dt = dt.UTC()
 
-	objPrefix := backupObjectPrefix(opts.Prefix, dt, opts.Type)
+	// Determine the chain sequence number. Complete backups always start at 0;
+	// incrementals continue from the previous backup's seq.
+	var seq int
+	var existingBackups []BackupInfo
+	if opts.Type == BackupTypeIncremental {
+		var lErr error
+		existingBackups, lErr = ListBackups(ctx, bucket, opts.Prefix)
+		if lErr != nil {
+			return nil, fmt.Errorf("list backups for seq: %w", lErr)
+		}
+		if len(existingBackups) == 0 {
+			return nil, fmt.Errorf("no previous backup found; cannot create incremental backup")
+		}
+		seq = existingBackups[len(existingBackups)-1].Seq + 1
+	}
+
+	objPrefix := backupObjectPrefix(opts.Prefix, dt, opts.Type, seq)
 
 	if opts.CheckpointDir == "" {
 		return nil, fmt.Errorf("CheckpointDir is required")
@@ -139,7 +155,7 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	// Determine which files to upload.
 	var filesToUpload []FileInfo
 	if opts.Type == BackupTypeIncremental {
-		filesToUpload, err = computeIncrementalFiles(ctx, bucket, opts.Prefix, allFiles, maxRetries, initialBackoff)
+		filesToUpload, err = computeIncrementalFiles(ctx, bucket, existingBackups, allFiles, maxRetries, initialBackoff)
 		if err != nil {
 			return nil, err
 		}
@@ -276,11 +292,7 @@ func uploadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName, l
 	return nil
 }
 
-func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, prefix string, allFiles []FileInfo, maxRetries int, initialBackoff time.Duration) ([]FileInfo, error) {
-	backups, err := ListBackups(ctx, bucket, prefix)
-	if err != nil {
-		return nil, fmt.Errorf("list backups for incremental: %w", err)
-	}
+func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, backups []BackupInfo, allFiles []FileInfo, maxRetries int, initialBackoff time.Duration) ([]FileInfo, error) {
 	if len(backups) == 0 {
 		return nil, fmt.Errorf("no previous backup found; cannot create incremental backup")
 	}

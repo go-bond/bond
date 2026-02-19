@@ -68,37 +68,43 @@ func collectAllKVs(t *testing.T, db bond.DB) map[string]string {
 func TestNamingHelpers(t *testing.T) {
 	ts := time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC)
 
-	name := backupDirName(ts, BackupTypeComplete)
-	assert.Equal(t, "20250212120000-complete", name)
+	name := backupDirName(ts, BackupTypeComplete, 0)
+	assert.Equal(t, "20250212120000-complete-00000", name)
 
-	name = backupDirName(ts, BackupTypeIncremental)
-	assert.Equal(t, "20250212120000-incremental", name)
+	name = backupDirName(ts, BackupTypeIncremental, 1)
+	assert.Equal(t, "20250212120000-incremental-00001", name)
 
-	prefix := backupObjectPrefix("backups", ts, BackupTypeComplete)
-	assert.Equal(t, "backups/20250212120000-complete/", prefix)
+	prefix := backupObjectPrefix("backups", ts, BackupTypeComplete, 0)
+	assert.Equal(t, "backups/20250212120000-complete-00000/", prefix)
 
 	// Round-trip
-	parsedTime, parsedType, err := parseBackupDir("20250212120000-complete")
+	parsedTime, parsedType, parsedSeq, err := parseBackupDir("20250212120000-complete-00000")
 	require.NoError(t, err)
 	assert.Equal(t, ts, parsedTime)
 	assert.Equal(t, BackupTypeComplete, parsedType)
+	assert.Equal(t, 0, parsedSeq)
 
-	parsedTime, parsedType, err = parseBackupDir("20250212120000-incremental/")
+	parsedTime, parsedType, parsedSeq, err = parseBackupDir("20250212120000-incremental-00001/")
 	require.NoError(t, err)
 	assert.Equal(t, ts, parsedTime)
 	assert.Equal(t, BackupTypeIncremental, parsedType)
+	assert.Equal(t, 1, parsedSeq)
 
 	// With path prefix
-	parsedTime, parsedType, err = parseBackupDir("backups/20250212120000-complete/")
+	parsedTime, parsedType, parsedSeq, err = parseBackupDir("backups/20250212120000-complete-00000/")
 	require.NoError(t, err)
 	assert.Equal(t, ts, parsedTime)
 	assert.Equal(t, BackupTypeComplete, parsedType)
+	assert.Equal(t, 0, parsedSeq)
 
 	// Invalid
-	_, _, err = parseBackupDir("invalid")
+	_, _, _, err = parseBackupDir("invalid")
 	assert.Error(t, err)
 
-	_, _, err = parseBackupDir("20250212120000-unknown")
+	_, _, _, err = parseBackupDir("20250212120000-unknown-00000")
+	assert.Error(t, err)
+
+	_, _, _, err = parseBackupDir("20250212120000-complete")
 	assert.Error(t, err)
 }
 
@@ -129,7 +135,7 @@ func TestBackupComplete(t *testing.T) {
 	assert.Equal(t, uint32(bond.BOND_DB_DATA_VERSION), meta.BondDataVersion)
 
 	// Verify meta.json exists in the bucket.
-	ok, err := bucket.Exists(ctx, "backups/20250212120000-complete/meta.json")
+	ok, err := bucket.Exists(ctx, "backups/20250212120000-complete-00000/meta.json")
 	require.NoError(t, err)
 	assert.True(t, ok)
 
@@ -771,7 +777,7 @@ func TestListBackups_SkipsIncomplete(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create an incomplete directory (no meta.json).
-	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental-00001/")
 
 	backups, err := ListBackups(ctx, bucket, "backups")
 	require.NoError(t, err)
@@ -799,8 +805,8 @@ func TestRemoveIncompleteBackups(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create two incomplete directories.
-	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
-	createIncompleteDir(t, bucket, "backups/20250212140000-complete/")
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental-00001/")
+	createIncompleteDir(t, bucket, "backups/20250212140000-complete-00000/")
 
 	removed, err := RemoveIncompleteBackups(ctx, bucket, "backups")
 	require.NoError(t, err)
@@ -813,7 +819,7 @@ func TestRemoveIncompleteBackups(t *testing.T) {
 	assert.Equal(t, BackupTypeComplete, backups[0].Type)
 
 	// Incomplete backup files should be gone.
-	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental-00001/000001.sst")
 	require.NoError(t, err)
 	assert.False(t, exists)
 }
@@ -861,7 +867,7 @@ func TestBackup_CleansIncompleteBeforeIncremental(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create an incomplete incremental that would be "latest" by datetime.
-	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental-00001/")
 
 	// Insert more data, take a new incremental at T=14:00.
 	insertTestData(t, db, 10, 10)
@@ -875,7 +881,7 @@ func TestBackup_CleansIncompleteBeforeIncremental(t *testing.T) {
 	require.NotNil(t, meta)
 
 	// Incomplete backup should be cleaned up.
-	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental-00001/000001.sst")
 	require.NoError(t, err)
 	assert.False(t, exists)
 
@@ -906,7 +912,7 @@ func TestRestore_SkipsIncomplete(t *testing.T) {
 	db.Close()
 
 	// Create an incomplete incremental.
-	createIncompleteDir(t, bucket, "backups/20250212130000-incremental/")
+	createIncompleteDir(t, bucket, "backups/20250212130000-incremental-00001/")
 
 	// Restore should succeed, using only the valid complete backup.
 	restoreDir := filepath.Join(dir, "restored")
@@ -923,7 +929,7 @@ func TestRestore_SkipsIncomplete(t *testing.T) {
 	assert.Equal(t, originalKVs, restoredKVs)
 
 	// Incomplete backup should still exist (restore does not clean up).
-	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental/000001.sst")
+	exists, err := bucket.Exists(ctx, "backups/20250212130000-incremental-00001/000001.sst")
 	require.NoError(t, err)
 	assert.True(t, exists)
 }
@@ -1259,7 +1265,7 @@ func isBackupCheckpointFile(name string) bool {
 	if strings.HasSuffix(name, "/meta.json") {
 		return false
 	}
-	return strings.Contains(name, "-complete/") || strings.Contains(name, "-incremental/")
+	return strings.Contains(name, "-complete-") || strings.Contains(name, "-incremental-")
 }
 
 func (b *uploadFailingBucket) Upload(ctx context.Context, name string, r io.Reader, _ ...objstore.ObjectUploadOption) error {
@@ -1613,7 +1619,7 @@ func isRestoreDataFile(name string) bool {
 	if strings.HasSuffix(name, "/meta.json") {
 		return false
 	}
-	return strings.Contains(name, "-complete/") || strings.Contains(name, "-incremental/")
+	return strings.Contains(name, "-complete-") || strings.Contains(name, "-incremental-")
 }
 
 func (b *downloadFailingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
@@ -1853,7 +1859,7 @@ func TestDeleteBackup_AlreadyDeleted(t *testing.T) {
 	ctx := context.Background()
 
 	// Deleting a nonexistent prefix should not error.
-	err := DeleteBackup(ctx, bucket, "backups/20250212120000-complete/")
+	err := DeleteBackup(ctx, bucket, "backups/20250212120000-complete-00000/")
 	require.NoError(t, err)
 }
 
@@ -2012,7 +2018,7 @@ func TestReadBackupMeta(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read the meta using the public API.
-	readResult, err := ReadBackupMeta(ctx, bucket, "backups/20250212120000-complete/")
+	readResult, err := ReadBackupMeta(ctx, bucket, "backups/20250212120000-complete-00000/")
 	require.NoError(t, err)
 
 	assert.Equal(t, backupMeta.Type, readResult.Type)
@@ -2133,6 +2139,52 @@ func TestFindRestoreSet_ExactBoundary(t *testing.T) {
 	assert.Equal(t, time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC), set[0].Datetime)
 	assert.Equal(t, BackupTypeIncremental, set[1].Type)
 	assert.Equal(t, time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC), set[1].Datetime)
+}
+
+func TestFindRestoreSet_MissingIncremental(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete at T=12:00 (seq=0).
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental at T=13:00 (seq=1).
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental at T=14:00 (seq=2).
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Delete the middle incremental (seq=1) to create a gap.
+	err = DeleteBackup(ctx, bucket, "backups/20250212130000-incremental-00001/")
+	require.NoError(t, err)
+
+	// FindRestoreSet should detect the gap and return ErrIncompleteRestoreChain.
+	_, err = FindRestoreSet(ctx, bucket, "backups", time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC))
+	assert.ErrorIs(t, err, ErrIncompleteRestoreChain)
 }
 
 func TestHasCheckpoint_FileNotDir(t *testing.T) {

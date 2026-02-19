@@ -12,17 +12,18 @@ The `backup/` package provides full database backup and restore for Bond via Peb
 
 Restore finds the latest complete backup and applies all subsequent incrementals in chronological order. Each incremental overwrites changed metadata files (MANIFEST, CURRENT, etc.) and adds new SST files. Leftover SSTs from earlier backups are harmless since Pebble only reads files referenced by the active MANIFEST.
 
-Point-in-time restore is supported via the `Before` option, which limits the restore set to backups at or before the given timestamp.
+Point-in-time restore is supported via the `Before` option, which limits the restore set to backups at or before the given timestamp. **Chain integrity** is enforced: if any intermediate backup in the chain has been removed, `FindRestoreSet` returns `ErrIncompleteRestoreChain` so restore does not proceed with a broken chain.
 
 ## Object Storage Layout
 
 ```
-{prefix}/{datetime}-complete/          Files + meta.json
-{prefix}/{datetime}-incremental/       Files + meta.json
-{prefix}/.lock                         Concurrency lock
+{prefix}/{datetime}-complete-{seq}/          Files + meta.json   (seq = 00000 for complete)
+{prefix}/{datetime}-incremental-{seq}/      Files + meta.json  (seq = 00001, 00002, ... per chain)
+{prefix}/.lock                               Concurrency lock
 ```
 
-Datetimes use `YYYYMMDDHHMMSS` format (UTC, lexicographically sortable).
+- **Datetime**: `YYYYMMDDHHMMSS` format (UTC, lexicographically sortable).
+- **Sequence**: Per-chain sequence number, zero-padded to 5 digits. Complete backups use `00000`; incrementals use the previous backup's seq + 1. The sequence resets with each new complete backup. Used to detect gaps (e.g. a deleted incremental) before restore.
 
 ## Metadata
 
@@ -50,7 +51,7 @@ The `bond-cli backup` command provides subcommands for managing backups:
 
 | Command | Purpose |
 |---------|---------|
-| `backup list` | Lists all backups grouped by complete + incremental chains, showing file counts and sizes. |
+| `backup list` | Lists all backups grouped by complete + incremental chains, showing type, seq, datetime, file counts, sizes, and prefix. |
 | `backup restore` | Restores a backup set to a local directory with progress display. Supports `--before` for point-in-time restore. |
 | `backup delete` | Deletes backups by age (`--older-than`), specific datetime, or all. Includes safety guards: confirmation prompts, `--keep-last` to preserve at least one restorable chain, and orphaned incremental warnings. |
 

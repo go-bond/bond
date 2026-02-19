@@ -56,8 +56,8 @@ func backupListCommand() *cli.Command {
 			for i, g := range groups {
 				fmt.Printf("BACKUP GROUP %d (%s)\n", i+1,
 					g.backups[0].Datetime.UTC().Format("2006-01-02 15:04:05 UTC"))
-				fmt.Printf("  %-15s %-27s %-8s %-12s %s\n",
-					"TYPE", "DATETIME", "FILES", "SIZE", "PREFIX")
+			fmt.Printf("  %-15s %-5s %-27s %-8s %-12s %s\n",
+				"TYPE", "SEQ", "DATETIME", "FILES", "SIZE", "PREFIX")
 
 				var groupFiles int
 				var groupSize int64
@@ -70,12 +70,13 @@ func backupListCommand() *cli.Command {
 						size += f.Size
 					}
 
-					fmt.Printf("  %-15s %-27s %-8d %-12s %s\n",
-						b.Type,
-						b.Datetime.UTC().Format("2006-01-02 15:04:05 UTC"),
-						files,
-						humanize.IBytes(uint64(size)),
-						b.Prefix)
+				fmt.Printf("  %-15s %-5d %-27s %-8d %-12s %s\n",
+					b.Type,
+					b.Seq,
+					b.Datetime.UTC().Format("2006-01-02 15:04:05 UTC"),
+					files,
+					humanize.IBytes(uint64(size)),
+					b.Prefix)
 
 					groupFiles += files
 					groupSize += size

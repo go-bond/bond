@@ -49,7 +49,7 @@ The optimized restore operates in four phases:
 
 ### Phase 1: Determine the Restore Set
 
-Use the existing `FindRestoreSet(ctx, bucket, prefix, before)` function unchanged. It returns `[complete, incr1, incr2, ..., incrN]` sorted by datetime ascending.
+Use the existing `FindRestoreSet(ctx, bucket, prefix, before)` function. It returns `[complete, incr1, incr2, ..., incrN]` sorted by datetime ascending, with contiguous per-chain sequence numbers (0, 1, 2, ...). If the chain has a gap (e.g. an intermediate backup was deleted), it returns `ErrIncompleteRestoreChain` and restore does not proceed.
 
 ### Phase 2: Read the Target File Set
 

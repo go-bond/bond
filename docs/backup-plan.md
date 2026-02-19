@@ -61,20 +61,22 @@ Pebble Checkpoint doesn't include `bond/PEBBLE_FORMAT_VERSION`. During backup, t
 All keys live under a configurable **prefix** (e.g. `backups/`).
 
 - **Complete backup**
-  `{prefix}/{datetime}-complete/{files}`
-  Example: `backups/20250212120000-complete/MANIFEST-000001`, `backups/20250212120000-complete/000001.sst`, ...
+  `{prefix}/{datetime}-complete-{seq}/{files}`
+  Example: `backups/20250212120000-complete-00000/MANIFEST-000001`, `backups/20250212120000-complete-00000/000001.sst`, ...
 
 - **Incremental backup**
-  `{prefix}/{datetime}-incremental/{files}`
-  Example: `backups/20250212130000-incremental/MANIFEST-000002`, `backups/20250212130000-incremental/000003.sst`, ...
+  `{prefix}/{datetime}-incremental-{seq}/{files}`
+  Example: `backups/20250212130000-incremental-00001/MANIFEST-000002`, `backups/20250212130000-incremental-00001/000003.sst`, ...
 
 - **Metadata**
-  `{prefix}/{datetime}-{type}/meta.json`
+  `{prefix}/{datetime}-{type}-{seq}/meta.json`
 
 - **Lock file**
   `{prefix}/.lock`
 
 **Datetime format**: `20060102150405` (fixed-length, lexicographically sortable, UTC).
+
+**Sequence number**: Each backup directory includes a per-chain sequence number (`{seq}`), zero-padded to 5 digits (e.g. `00000`, `00001`). Complete backups always use seq `0`; incrementals use the previous backup's seq + 1. The sequence resets to 0 with each new complete backup. This allows `FindRestoreSet` to detect gaps (e.g. a deleted intermediate incremental) by verifying that seq numbers in the restore set are contiguous.
 
 ---
 
@@ -87,7 +89,7 @@ backup/
   backup.go              -- BackupOptions, Backup(), isRetriableError(), uploadFileWithRetry(), computeIncrementalFiles()
   backup_checkpoint.go   -- HasCheckpoint(), RemoveCheckpoint()
   backup_incomplete.go   -- isBackupIncomplete(), deleteBackupDir(), removeIncompleteBackupDirs(), DeleteBackup(), RemoveIncompleteBackups()
-  backup_list.go         -- BackupInfo, ErrNoBackupsFound, ListBackups(), FindRestoreSet()
+  backup_list.go         -- BackupInfo, ErrNoBackupsFound, ErrIncompleteRestoreChain, ListBackups(), FindRestoreSet()
   backup_lock.go         -- DefaultLockTTL, ErrBackupInProgress, ErrLockRefreshFailed, lockPayload, acquireLock(), uploadAndVerifyLock(), releaseLock(), startLockRefresh()
   backup_meta.go         -- BackupMeta, FileInfo, newMetaRetryPolicy(), writeMeta(), readMeta(), ReadBackupMeta(), newBackupMeta()
   backup_naming.go       -- BackupType, datetimeFormat, backupDirName(), backupObjectPrefix(), parseBackupDir()
@@ -176,6 +178,7 @@ type BackupInfo struct {
     Datetime time.Time
     Type     BackupType
     Prefix   string
+    Seq      int  // Per-chain sequence number: 0 for complete, 1,2,... for incrementals
 }
 ```
 
@@ -222,6 +225,7 @@ const MaxRetryBackoff = 30 * time.Second
 
 ```go
 var ErrNoBackupsFound = fmt.Errorf("no backups found")
+var ErrIncompleteRestoreChain = fmt.Errorf("backup chain is incomplete: one or more backups may have been removed")
 var ErrBackupInProgress = fmt.Errorf("another backup is in progress")
 var ErrLockRefreshFailed = fmt.Errorf("lock refresh failed for longer than TTL")
 ```
@@ -291,18 +295,18 @@ var ErrLockRefreshFailed = fmt.Errorf("lock refresh failed for longer than TTL")
 
 ### 5.4 ListBackups and FindRestoreSet
 
-- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips incomplete dirs via `isBackupIncomplete()`, returns sorted by datetime ascending.
-- `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
+- `ListBackups`: calls `bucket.Iter(ctx, prefix, ...)`, auto-appends `/` to prefix if missing, parses each entry with `parseBackupDir` (skips non-matching entries), skips incomplete dirs via `isBackupIncomplete()`, populates `Seq` from the directory name, returns sorted by datetime ascending.
+- `FindRestoreSet`: calls `ListBackups`, filters to backups at or before `before` (UTC), finds the latest complete backup in the filtered set by scanning backwards, returns `[complete, incr1, incr2, ...]`. Then validates **chain contiguity**: sequence numbers in the restore set must be contiguous starting from the complete backup's seq (0, 1, 2, ...). If a gap is detected (e.g. an intermediate incremental was deleted), returns an error wrapping `ErrIncompleteRestoreChain`. Returns `ErrNoBackupsFound` if no complete backup exists at or before the cutoff.
 
 ### 5.5 Naming helpers
 
-- `backupDirName(t, bt)` -> `"20250212120000-complete"` (datetime format + hyphen + type)
-- `backupObjectPrefix(prefix, t, bt)` -> `"backups/20250212120000-complete/"` (with trailing slash)
-- `parseBackupDir(name)` -> `(time.Time, BackupType, error)`: strips trailing `/`, takes `path.Base()`, splits on first `-`, parses datetime and validates type
+- `backupDirName(t, bt, seq)` -> `"20250212120000-complete-00000"` (datetime + type + zero-padded 5-digit seq)
+- `backupObjectPrefix(prefix, t, bt, seq)` -> `"backups/20250212120000-complete-00000/"` (with trailing slash)
+- `parseBackupDir(name)` -> `(time.Time, BackupType, int, error)`: strips trailing `/`, takes `path.Base()`, splits on `-` into 3 parts (datetime, type, seq), parses datetime and seq, validates type
 
 ### 5.6 Incomplete backup handling
 
-An incomplete backup is a directory matching `{datetime}-{type}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
+An incomplete backup is a directory matching `{datetime}-{type}-{seq}/` that has no `meta.json` file. This can happen if `Backup()` is interrupted after uploading checkpoint files but before writing `meta.json`.
 
 - **Detection**: `isBackupIncomplete(ctx, bucket, backupPrefix)` downloads `meta.json` via `bucket.Get()`, parses it as JSON into `BackupMeta`, and validates that `Type`, `Datetime`, and `CreatedAt` are non-zero. A backup is incomplete if the file is missing, unreadable, unparseable, or has empty required fields.
 - **Cleanup**: `deleteBackupDir(ctx, bucket, dirPrefix)` discovers all objects via `bucket.Iter()` with `WithRecursiveIter()`, then deletes each. Guards against concurrent deletion with `bucket.IsObjNotFoundErr()`.
@@ -387,6 +391,7 @@ All tests use `objstore.NewInMemBucket()` and `t.TempDir()`. Helper functions:
 | `TestRestoreBeforeTime` | 3 timed backups (complete + 2 incrementals), restore with `Before=12:30` (after complete, before first incremental), verify only phase 1 data |
 | `TestListBackups` | 3 backups (complete + 2 incrementals), verify sorted order and correct types |
 | `TestFindRestoreSet` | Verify correct [complete + incrementals] chain for different cutoff times, and `ErrNoBackupsFound` when cutoff is before all backups |
+| `TestFindRestoreSet_MissingIncremental` | Create chain, delete a middle incremental, verify `FindRestoreSet` returns `ErrIncompleteRestoreChain` |
 | `TestBackupEmptyDB` | Backup/restore empty database; verify checkpoint files exist (MANIFEST, CURRENT, etc.); restored DB has only bond data version key |
 | `TestRestoreCreatesMetadata` | Verify `bond/PEBBLE_FORMAT_VERSION` file exists after restore and contains correct format version |
 | `TestRestoreNonEmptyDir` | Error when restore dir is not empty; error message contains "not empty" |
