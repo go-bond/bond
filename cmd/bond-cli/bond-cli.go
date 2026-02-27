@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/go-bond/bond/inspect"
@@ -14,12 +14,11 @@ func main() {
 		Usage: "tools to manage bond db",
 		Commands: []*cli.Command{
 			inspect.NewInspectCLI(nil),
-			DumpCommand,
-			RestoreCommand,
+			BackupCommand,
 		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "[Error] %s\n", err.Error())
+		log.Fatal(err)
 	}
 }
