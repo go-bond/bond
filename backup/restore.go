@@ -209,7 +209,7 @@ func downloadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName,
 
 	policy := retrypolicy.NewBuilder[any]().
 		HandleIf(func(_ any, err error) bool {
-			return isRetriableError(err)
+			return isRetryableError(err)
 		}).
 		WithMaxRetries(maxRetries).
 		WithBackoff(initialBackoff, MaxRetryBackoff).

@@ -232,8 +232,8 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	return meta, nil
 }
 
-// isRetriableError reports whether the error from a bucket operation should be retried.
-func isRetriableError(err error) bool {
+// isRetryableError reports whether the error from a bucket operation should be retried.
+func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -259,7 +259,7 @@ func uploadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName, l
 
 	policy := retrypolicy.NewBuilder[any]().
 		HandleIf(func(_ any, err error) bool {
-			return isRetriableError(err)
+			return isRetryableError(err)
 		}).
 		WithMaxRetries(maxRetries).
 		WithBackoff(initialBackoff, MaxRetryBackoff).

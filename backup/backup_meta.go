@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
@@ -36,7 +38,7 @@ const metaFileName = "meta.json"
 func newMetaRetryPolicy(maxRetries int, initialBackoff time.Duration) retrypolicy.RetryPolicy[any] {
 	return retrypolicy.NewBuilder[any]().
 		HandleIf(func(_ any, err error) bool {
-			return isRetriableError(err)
+			return isRetryableError(err)
 		}).
 		WithMaxRetries(maxRetries).
 		WithBackoff(initialBackoff, MaxRetryBackoff).
@@ -97,12 +99,43 @@ func readMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string, 
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return nil, fmt.Errorf("unmarshal backup meta: %w", err)
 	}
+	if err := validateMetaFileNames(&meta); err != nil {
+		return nil, fmt.Errorf("invalid backup meta %s: %w", objName, err)
+	}
 	return &meta, nil
 }
 
 // ReadBackupMeta reads and returns the metadata for the backup at objectPrefix.
 func ReadBackupMeta(ctx context.Context, bucket objstore.Bucket, objectPrefix string) (*BackupMeta, error) {
 	return readMeta(ctx, bucket, objectPrefix, DefaultMaxDownloadRetries, DefaultInitialRetryBackoff)
+}
+
+// validateMetaFileNames rejects file names that could escape the target
+// directory via path traversal (e.g. "../../etc/passwd") or absolute paths.
+func validateMetaFileNames(meta *BackupMeta) error {
+	for _, list := range [2][]FileInfo{meta.Files, meta.CheckpointFiles} {
+		for _, fi := range list {
+			if err := validateFileName(fi.Name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateFileName(name string) error {
+	if name == "" {
+		return fmt.Errorf("file name is empty")
+	}
+	if filepath.IsAbs(name) {
+		return fmt.Errorf("file name %q is an absolute path", name)
+	}
+	for _, part := range strings.Split(filepath.ToSlash(name), "/") {
+		if part == ".." {
+			return fmt.Errorf("file name %q contains path traversal", name)
+		}
+	}
+	return nil
 }
 
 func newBackupMeta(bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {

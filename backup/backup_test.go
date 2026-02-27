@@ -1255,7 +1255,7 @@ type uploadFailingBucket struct {
 	*objstore.InMemBucket
 	mu           sync.Mutex
 	attempts     map[string]int // key -> number of Upload attempts so far
-	failAttempts int           // fail first N attempts per key with retriable error
+	failAttempts int           // fail first N attempts per key with retryable error
 	alwaysFail   bool          // if true, always return permanent error (no delegation)
 }
 
@@ -1384,16 +1384,16 @@ func TestBackup_UploadRetry_ContextCancelDuringBackoff(t *testing.T) {
 }
 
 func TestIsRetriableError(t *testing.T) {
-	// Not retriable: nil, Canceled
-	assert.False(t, isRetriableError(nil))
-	assert.False(t, isRetriableError(context.Canceled))
+	// Not retryable: nil, Canceled
+	assert.False(t, isRetryableError(nil))
+	assert.False(t, isRetryableError(context.Canceled))
 
-	// Retriable: DeadlineExceeded, Temporary()
-	assert.True(t, isRetriableError(context.DeadlineExceeded))
-	assert.True(t, isRetriableError(&temporaryError{msg: "x"}))
+	// Retryable: DeadlineExceeded, Temporary()
+	assert.True(t, isRetryableError(context.DeadlineExceeded))
+	assert.True(t, isRetryableError(&temporaryError{msg: "x"}))
 
-	// Not retriable: permanent error
-	assert.False(t, isRetriableError(fmt.Errorf("access denied")))
+	// Not retryable: permanent error
+	assert.False(t, isRetryableError(fmt.Errorf("access denied")))
 }
 
 // --- Restore .incomplete marker tests ---
@@ -1610,7 +1610,7 @@ type downloadFailingBucket struct {
 	*objstore.InMemBucket
 	mu           sync.Mutex
 	attempts     map[string]int
-	failAttempts int  // fail first N Get() attempts per key with retriable error
+	failAttempts int  // fail first N Get() attempts per key with retryable error
 	alwaysFail   bool // if true, always return permanent error
 }
 
@@ -2283,4 +2283,58 @@ func TestBackup_IncrementalDiffCorrectness(t *testing.T) {
 	// CheckpointFiles should contain all files at this checkpoint, not just the diff.
 	assert.GreaterOrEqual(t, len(incrMeta.CheckpointFiles), len(incrMeta.Files),
 		"CheckpointFiles should have at least as many files as Files (diff)")
+}
+
+func TestValidateFileName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "simple file", input: "000001.sst", wantErr: false},
+		{name: "nested path", input: "subdir/file.sst", wantErr: false},
+		{name: "deeply nested", input: "a/b/c/file.sst", wantErr: false},
+		{name: "empty", input: "", wantErr: true},
+		{name: "absolute unix", input: "/etc/passwd", wantErr: true},
+		{name: "dotdot only", input: "..", wantErr: true},
+		{name: "dotdot prefix", input: "../etc/passwd", wantErr: true},
+		{name: "double dotdot", input: "../../etc/passwd", wantErr: true},
+		{name: "dotdot mid-path", input: "subdir/../../etc/passwd", wantErr: true},
+		{name: "dotdot at end", input: "subdir/..", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateFileName(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err, "expected error for %q", tt.input)
+			} else {
+				assert.NoError(t, err, "unexpected error for %q", tt.input)
+			}
+		})
+	}
+}
+
+func TestValidateMetaFileNames_RejectsTamperedMeta(t *testing.T) {
+	meta := &BackupMeta{
+		Files: []FileInfo{
+			{Name: "000001.sst", Size: 100},
+			{Name: "../../etc/passwd", Size: 50},
+		},
+	}
+	err := validateMetaFileNames(meta)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path traversal")
+}
+
+func TestValidateMetaFileNames_RejectsInCheckpointFiles(t *testing.T) {
+	meta := &BackupMeta{
+		Files: []FileInfo{{Name: "000001.sst", Size: 100}},
+		CheckpointFiles: []FileInfo{
+			{Name: "000001.sst", Size: 100},
+			{Name: "../escape.txt", Size: 10},
+		},
+	}
+	err := validateMetaFileNames(meta)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path traversal")
 }
