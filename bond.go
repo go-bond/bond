@@ -52,6 +52,7 @@ type DB interface {
 
 	Backend() *pebble.DB
 	Serializer() Serializer[any]
+	Dir() string
 
 	Getter
 	Setter
@@ -124,6 +125,7 @@ type internalPools interface {
 }
 
 type _db struct {
+	dir    string
 	pebble *pebble.DB
 
 	serializer Serializer[any]
@@ -207,6 +209,7 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	}
 
 	db := &_db{
+		dir:        dirname,
 		pebble:     pdb,
 		serializer: serializer,
 		keyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
@@ -232,6 +235,10 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	}
 
 	return db, nil
+}
+
+func (db *_db) Dir() string {
+	return db.dir
 }
 
 func (db *_db) Backend() *pebble.DB {

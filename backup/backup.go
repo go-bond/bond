@@ -85,10 +85,20 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	}
 	dt = dt.UTC()
 
+	maxRetries := opts.MaxUploadRetries
+	if maxRetries <= 0 {
+		maxRetries = DefaultMaxUploadRetries
+	}
+	initialBackoff := opts.InitialRetryBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = DefaultInitialRetryBackoff
+	}
+
 	// Determine the chain sequence number. Complete backups always start at 0;
 	// incrementals continue from the previous backup's seq.
 	var seq int
 	var existingBackups []BackupInfo
+	var latestBucketMeta *BackupMeta
 	if opts.Type == BackupTypeIncremental {
 		var lErr error
 		existingBackups, lErr = ListBackups(ctx, bucket, opts.Prefix)
@@ -99,6 +109,28 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 			return nil, fmt.Errorf("no previous backup found; cannot create incremental backup")
 		}
 		seq = existingBackups[len(existingBackups)-1].Seq + 1
+
+		// Validate chain integrity via UUID.
+		localMeta, err := readLocalMeta(db.Dir())
+		if err != nil {
+			return nil, fmt.Errorf("read local meta: %w", err)
+		}
+		if localMeta == nil || localMeta.UUID == "" {
+			return nil, fmt.Errorf("no local backup UUID found; a complete backup is required to start a new chain: %w", ErrChainBroken)
+		}
+
+		prev := existingBackups[len(existingBackups)-1]
+		latestBucketMeta, err = readMeta(ctx, bucket, prev.Prefix, maxRetries, initialBackoff)
+		if err != nil {
+			return nil, fmt.Errorf("read previous backup meta: %w", err)
+		}
+		if latestBucketMeta.UUID == "" {
+			return nil, fmt.Errorf("latest bucket backup has no UUID; a complete backup is required to start a new chain: %w", ErrChainBroken)
+		}
+		if localMeta.UUID != latestBucketMeta.UUID {
+			return nil, fmt.Errorf("backup UUID mismatch: database has UUID %q but the latest backup in the bucket has UUID %q; a complete backup is required to start a new chain: %w",
+				localMeta.UUID, latestBucketMeta.UUID, ErrChainBroken)
+		}
 	}
 
 	objPrefix := backupObjectPrefix(opts.Prefix, dt, opts.Type, seq)
@@ -143,19 +175,10 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		return nil, fmt.Errorf("walk checkpoint: %w", err)
 	}
 
-	maxRetries := opts.MaxUploadRetries
-	if maxRetries <= 0 {
-		maxRetries = DefaultMaxUploadRetries
-	}
-	initialBackoff := opts.InitialRetryBackoff
-	if initialBackoff <= 0 {
-		initialBackoff = DefaultInitialRetryBackoff
-	}
-
 	// Determine which files to upload.
 	var filesToUpload []FileInfo
 	if opts.Type == BackupTypeIncremental {
-		filesToUpload, err = computeIncrementalFiles(ctx, bucket, existingBackups, allFiles, maxRetries, initialBackoff)
+		filesToUpload, err = computeIncrementalFiles(latestBucketMeta, allFiles)
 		if err != nil {
 			return nil, err
 		}
@@ -224,9 +247,14 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	pebbleFmtVer := uint64(db.Backend().FormatMajorVersion())
 	bondDataVer := uint32(bond.BOND_DB_DATA_VERSION)
 
-	meta := newBackupMeta(opts.Type, dt, pebbleFmtVer, bondDataVer, filesToUpload, allFiles)
+	backupUUID := generateUUID()
+	meta := newBackupMeta(backupUUID, opts.Type, dt, pebbleFmtVer, bondDataVer, filesToUpload, allFiles)
 	if err := writeMeta(ctx, bucket, objPrefix, meta, maxRetries, initialBackoff); err != nil {
 		return nil, err
+	}
+
+	if err := writeLocalMeta(db.Dir(), meta); err != nil {
+		return nil, fmt.Errorf("write local meta: %w", err)
 	}
 
 	return meta, nil
@@ -292,16 +320,9 @@ func uploadFileWithRetry(ctx context.Context, bucket objstore.Bucket, objName, l
 	return nil
 }
 
-func computeIncrementalFiles(ctx context.Context, bucket objstore.Bucket, backups []BackupInfo, allFiles []FileInfo, maxRetries int, initialBackoff time.Duration) ([]FileInfo, error) {
-	if len(backups) == 0 {
-		return nil, fmt.Errorf("no previous backup found; cannot create incremental backup")
-	}
-
-	// Read the previous backup's metadata.
-	prev := backups[len(backups)-1]
-	prevMeta, err := readMeta(ctx, bucket, prev.Prefix, maxRetries, initialBackoff)
-	if err != nil {
-		return nil, fmt.Errorf("read previous backup meta: %w", err)
+func computeIncrementalFiles(prevMeta *BackupMeta, allFiles []FileInfo) ([]FileInfo, error) {
+	if prevMeta == nil {
+		return nil, fmt.Errorf("no previous backup metadata; cannot create incremental backup")
 	}
 
 	// Build lookup from previous checkpoint files.

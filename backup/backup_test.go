@@ -3,6 +3,7 @@ package backup
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2337,4 +2338,327 @@ func TestValidateMetaFileNames_RejectsInCheckpointFiles(t *testing.T) {
 	err := validateMetaFileNames(meta)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "path traversal")
+}
+
+// --- UUID chain integrity tests ---
+
+func TestBackupCompleteGeneratesUUID(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, meta.UUID)
+
+	// Verify local bond/meta.json exists with matching UUID.
+	localMeta, err := readLocalMeta(db.Dir())
+	require.NoError(t, err)
+	require.NotNil(t, localMeta)
+	assert.Equal(t, meta.UUID, localMeta.UUID)
+}
+
+func TestBackupIncrementalValidatesUUID(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	completeMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	insertTestData(t, db, 5, 5)
+
+	incrMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental should have a different UUID than the complete.
+	assert.NotEqual(t, completeMeta.UUID, incrMeta.UUID)
+	assert.NotEmpty(t, incrMeta.UUID)
+
+	// Local meta.json should be updated with the incremental UUID.
+	localMeta, err := readLocalMeta(db.Dir())
+	require.NoError(t, err)
+	require.NotNil(t, localMeta)
+	assert.Equal(t, incrMeta.UUID, localMeta.UUID)
+}
+
+func TestBackupIncrementalFailsUUIDMismatch(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Tamper with local meta.json UUID.
+	localMeta, err := readLocalMeta(db.Dir())
+	require.NoError(t, err)
+	localMeta.UUID = "tampered-uuid"
+	err = writeLocalMeta(db.Dir(), localMeta)
+	require.NoError(t, err)
+
+	insertTestData(t, db, 5, 5)
+
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChainBroken)
+}
+
+func TestBackupIncrementalFailsNoLocalMeta(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Delete the local meta.json.
+	err = os.Remove(filepath.Join(db.Dir(), "bond", "meta.json"))
+	require.NoError(t, err)
+
+	insertTestData(t, db, 5, 5)
+
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChainBroken)
+}
+
+func TestBackupIncrementalFailsLegacyBucketMeta(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Rewrite bucket meta.json to remove UUID (simulate legacy backup).
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+
+	bucketMeta, err := ReadBackupMeta(ctx, bucket, backups[0].Prefix)
+	require.NoError(t, err)
+	bucketMeta.UUID = "" // remove UUID
+	data, err := json.MarshalIndent(bucketMeta, "", "  ")
+	require.NoError(t, err)
+	metaPath := backups[0].Prefix + "meta.json"
+	require.NoError(t, bucket.Upload(ctx, metaPath, bytes.NewReader(data)))
+
+	insertTestData(t, db, 5, 5)
+
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChainBroken)
+}
+
+func TestRestoreWritesLocalMeta(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 5)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// Verify bond/meta.json exists with correct UUID.
+	localMeta, err := readLocalMeta(restoreDir)
+	require.NoError(t, err)
+	require.NotNil(t, localMeta)
+	assert.Equal(t, meta.UUID, localMeta.UUID)
+}
+
+func TestRestoreThenIncrementalSameBucket(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Restore to a new directory.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// Open the restored DB and do an incremental backup to the same bucket.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	insertTestData(t, db2, 10, 5)
+
+	_, err = Backup(ctx, db2, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint2"),
+	})
+	require.NoError(t, err)
+}
+
+func TestRestoreThenIncrementalDifferentBucket(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	insertTestData(t, db, 0, 10)
+
+	bucketA := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup to bucket A.
+	_, err := Backup(ctx, db, bucketA, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Restore from bucket A.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucketA, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// Open restored DB and try incremental to bucket B (different bucket).
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	bucketB := objstore.NewInMemBucket()
+
+	// First, do a complete backup to bucket B so there's a previous backup.
+	_, err = Backup(ctx, db2, bucketB, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint2"),
+	})
+	require.NoError(t, err)
+
+	// Now the local meta has the UUID from the bucket B complete backup.
+	// Do another complete to bucket A to change bucket A's latest UUID.
+	db3 := openTestDB(t, filepath.Join(dir, "db3"))
+	defer db3.Close()
+	insertTestData(t, db3, 0, 5)
+
+	_, err = Backup(ctx, db3, bucketA, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 3, 1, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint3"),
+	})
+	require.NoError(t, err)
+
+	// Now db2's local UUID (from bucket B complete) doesn't match bucket A's latest.
+	insertTestData(t, db2, 10, 5)
+
+	_, err = Backup(ctx, db2, bucketA, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint4"),
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChainBroken)
 }
