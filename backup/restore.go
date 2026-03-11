@@ -2,12 +2,12 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +18,69 @@ import (
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 )
+
+// backupWithMeta pairs a backup's object prefix with its parsed metadata.
+type backupWithMeta struct {
+	prefix string
+	meta   *BackupMeta
+}
+
+// fileSource maps a required file to the backup that should supply it.
+type fileSource struct {
+	File         FileInfo
+	BackupPrefix string
+}
+
+// resolveFileSources determines, for each required file, which backup in the
+// chain should supply it. Backups are walked in reverse order so that the most
+// recent version of each file wins. Returns an error if any required file
+// cannot be found in any backup.
+func resolveFileSources(requiredFiles []FileInfo, backups []backupWithMeta) ([]fileSource, error) {
+	// Build a map of required file names to their expected sizes.
+	need := make(map[string]int64, len(requiredFiles))
+	for _, f := range requiredFiles {
+		need[f.Name] = f.Size
+	}
+
+	resolved := make([]fileSource, 0, len(requiredFiles))
+	resolvedSet := make(map[string]struct{}, len(requiredFiles))
+
+	// Walk backups from newest to oldest.
+	for i := len(backups) - 1; i >= 0; i-- {
+		bm := backups[i]
+		for _, fi := range bm.meta.Files {
+			expectedSize, required := need[fi.Name]
+			if !required {
+				continue
+			}
+			if _, already := resolvedSet[fi.Name]; already {
+				continue
+			}
+			if fi.Size != expectedSize {
+				return nil, fmt.Errorf("corrupt backup chain: file %s has size %d in backup %s but expected %d",
+					fi.Name, fi.Size, bm.prefix, expectedSize)
+			}
+			resolved = append(resolved, fileSource{
+				File:         fi,
+				BackupPrefix: bm.prefix,
+			})
+			resolvedSet[fi.Name] = struct{}{}
+		}
+	}
+
+	if len(resolved) != len(requiredFiles) {
+		var missing []string
+		for _, f := range requiredFiles {
+			if _, ok := resolvedSet[f.Name]; !ok {
+				missing = append(missing, f.Name)
+			}
+		}
+		sort.Strings(missing)
+		return nil, fmt.Errorf("corrupt backup chain: %d file(s) not found in any backup: %v", len(missing), missing)
+	}
+
+	return resolved, nil
+}
 
 // RestoreOptions configures a restore operation.
 type RestoreOptions struct {
@@ -74,6 +137,9 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 	if err != nil {
 		return err
 	}
+	if len(restoreSet) == 0 {
+		return fmt.Errorf("no backups found for prefix %q", opts.Prefix)
+	}
 
 	// Create the restore directory and place the .incomplete marker.
 	if err := os.MkdirAll(opts.RestoreDir, 0755); err != nil {
@@ -92,33 +158,36 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		initialBackoff = DefaultInitialRetryBackoff
 	}
 
-	// Pre-read all metas to compute global totals for progress reporting.
-	type backupWithMeta struct {
-		prefix string
-		meta   *BackupMeta
-	}
+	// Pre-read all metas.
 	allBackups := make([]backupWithMeta, 0, len(restoreSet))
-	var totalFiles int
-	var totalBytes int64
 	for _, backup := range restoreSet {
 		meta, err := readMeta(ctx, bucket, backup.Prefix, maxRetries, initialBackoff)
 		if err != nil {
 			return fmt.Errorf("read meta for %s: %w", backup.Prefix, err)
 		}
 		allBackups = append(allBackups, backupWithMeta{prefix: backup.Prefix, meta: meta})
-		totalFiles += len(meta.Files)
-		for _, fi := range meta.Files {
-			totalBytes += fi.Size
-		}
+	}
+
+	// Use the last backup's CheckpointFiles as the definitive file set
+	// and resolve each file to its most recent source backup.
+	lastMeta := allBackups[len(allBackups)-1].meta
+	resolved, err := resolveFileSources(lastMeta.CheckpointFiles, allBackups)
+	if err != nil {
+		return err
+	}
+
+	// Compute totals from the deduplicated resolved set.
+	totalFiles := len(resolved)
+	var totalBytes int64
+	for _, rs := range resolved {
+		totalBytes += rs.File.Size
 	}
 
 	// Pre-create all needed subdirectories to avoid concurrent MkdirAll calls.
 	dirs := make(map[string]struct{})
-	for _, bm := range allBackups {
-		for _, fi := range bm.meta.Files {
-			localPath := filepath.Join(opts.RestoreDir, fi.Name)
-			dirs[filepath.Dir(localPath)] = struct{}{}
-		}
+	for _, rs := range resolved {
+		localPath := filepath.Join(opts.RestoreDir, rs.File.Name)
+		dirs[filepath.Dir(localPath)] = struct{}{}
 	}
 	for d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -133,73 +202,59 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 
 	perStreamRate := resolvePerStreamRate(opts.MaxDownloadBPS, DefaultMaxDownloadBPS, concurrency)
 
-	// Atomic counters accumulate across all stages.
+	// Single parallel download phase over the resolved file set.
 	var filesDone atomic.Int64
 	var bytesDone atomic.Int64
 
-	// Download and apply each backup in order (sequential outer loop preserves
-	// incremental override semantics; inner loop is parallel).
-	var lastMeta *BackupMeta
-	for _, bm := range allBackups {
-		g, gctx := errgroup.WithContext(ctx)
-		g.SetLimit(concurrency)
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency)
 
-		for _, fi := range bm.meta.Files {
-			prefix := bm.prefix
-			g.Go(func() error {
-				if err := gctx.Err(); err != nil {
-					return err
-				}
-				objName := path.Join(prefix, fi.Name)
-				localPath := filepath.Join(opts.RestoreDir, fi.Name)
-				if err := downloadFileWithRetry(gctx, bucket, objName, localPath, perStreamRate, maxRetries, initialBackoff); err != nil {
-					return err
-				}
+	for _, rs := range resolved {
+		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
+			objName := path.Join(rs.BackupPrefix, rs.File.Name)
+			localPath := filepath.Join(opts.RestoreDir, rs.File.Name)
+			if err := downloadFileWithRetry(gctx, bucket, objName, localPath, perStreamRate, maxRetries, initialBackoff); err != nil {
+				return err
+			}
 
-				done := int(filesDone.Add(1))
-				bytes := bytesDone.Add(fi.Size)
-				if opts.OnProgress != nil {
-					opts.OnProgress(ProgressEvent{
-						File:       fi.Name,
-						FileSize:   fi.Size,
-						FilesDone:  done,
-						FilesTotal: totalFiles,
-						BytesDone:  bytes,
-						BytesTotal: totalBytes,
-					})
-				}
-				return nil
-			})
-		}
+			done := int(filesDone.Add(1))
+			bytes := bytesDone.Add(rs.File.Size)
+			if opts.OnProgress != nil {
+				opts.OnProgress(ProgressEvent{
+					File:       rs.File.Name,
+					FileSize:   rs.File.Size,
+					FilesDone:  done,
+					FilesTotal: totalFiles,
+					BytesDone:  bytes,
+					BytesTotal: totalBytes,
+				})
+			}
+			return nil
+		})
+	}
 
-		if err := g.Wait(); err != nil {
-			return err
-		}
-
-		lastMeta = bm.meta
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Recreate bond metadata directory with PEBBLE_FORMAT_VERSION.
-	if lastMeta != nil {
-		bondDir := filepath.Join(opts.RestoreDir, "bond")
-		if err := os.MkdirAll(bondDir, 0755); err != nil {
-			return fmt.Errorf("create bond dir: %w", err)
-		}
+	bondDir := filepath.Join(opts.RestoreDir, "bond")
+	if err := os.MkdirAll(bondDir, 0755); err != nil {
+		return fmt.Errorf("create bond dir: %w", err)
+	}
 
-		versionFile := filepath.Join(bondDir, "PEBBLE_FORMAT_VERSION")
-		versionData := []byte(fmt.Sprintf("%d", lastMeta.PebbleFormatVersion))
-		if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
-			return fmt.Errorf("write pebble format version: %w", err)
-		}
+	versionFile := filepath.Join(bondDir, "PEBBLE_FORMAT_VERSION")
+	versionData := []byte(fmt.Sprintf("%d", lastMeta.PebbleFormatVersion))
+	if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
+		return fmt.Errorf("write pebble format version: %w", err)
+	}
 
-		// Write local backup meta so incremental backups can validate chain integrity.
-		metaData, err := json.MarshalIndent(lastMeta, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal local meta: %w", err)
-		}
-		if err := utils.WriteFileWithSync(filepath.Join(bondDir, "meta.json"), metaData, 0644); err != nil {
-			return fmt.Errorf("write local meta: %w", err)
-		}
+	// Write local backup meta so incremental backups can validate chain integrity.
+	if err := writeLocalMeta(opts.RestoreDir, lastMeta); err != nil {
+		return fmt.Errorf("write local meta: %w", err)
 	}
 
 	// Restore completed successfully — remove the .incomplete marker.

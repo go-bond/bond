@@ -2662,3 +2662,516 @@ func TestRestoreThenIncrementalDifferentBucket(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrChainBroken)
 }
+
+// --- Optimized incremental restore tests ---
+
+// countingBucket wraps InMemBucket and counts per-key data file downloads.
+type countingBucket struct {
+	*objstore.InMemBucket
+	mu        sync.Mutex
+	downloads map[string]int
+}
+
+func newCountingBucket(inner *objstore.InMemBucket) *countingBucket {
+	return &countingBucket{
+		InMemBucket: inner,
+		downloads:   make(map[string]int),
+	}
+}
+
+func (b *countingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	if isRestoreDataFile(name) {
+		b.mu.Lock()
+		b.downloads[name]++
+		b.mu.Unlock()
+	}
+	return b.InMemBucket.Get(ctx, name)
+}
+
+func (b *countingBucket) totalDataDownloads() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	total := 0
+	for _, n := range b.downloads {
+		total += n
+	}
+	return total
+}
+
+func TestOptimizedRestore_MatchesLegacy(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Phase 1: 100 KVs, complete backup.
+	insertTestData(t, db, 0, 100)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 2: 100 more KVs, incremental.
+	insertTestData(t, db, 100, 100)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 3: 100 more KVs, incremental.
+	insertTestData(t, db, 200, 100)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	originalKVs := collectAllKVs(t, db)
+	db.Close()
+
+	// Restore and verify.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestOptimizedRestore_NoRedundantDownloads(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	inner := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup.
+	insertTestData(t, db, 0, 50)
+	_, err := Backup(ctx, db, inner, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental backup.
+	insertTestData(t, db, 50, 50)
+	lastMeta, err := Backup(ctx, db, inner, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	cb := newCountingBucket(inner)
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, cb, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	// Each file should be downloaded exactly once.
+	cb.mu.Lock()
+	for key, count := range cb.downloads {
+		assert.Equal(t, 1, count, "file %s downloaded %d times", key, count)
+	}
+	cb.mu.Unlock()
+
+	// Total downloads should equal the checkpoint file count.
+	assert.Equal(t, len(lastMeta.CheckpointFiles), cb.totalDataDownloads())
+
+	// Verify data integrity.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+}
+
+func TestOptimizedRestore_SingleComplete(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	insertTestData(t, db, 0, 50)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	originalKVs := collectAllKVs(t, db)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
+
+func TestOptimizedRestore_PointInTime(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Phase 1: Complete at T=12:00.
+	insertTestData(t, db, 0, 50)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Phase 2: Incremental at T=13:00.
+	insertTestData(t, db, 50, 50)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	phase2KVs := collectAllKVs(t, db)
+
+	// Phase 3: Incremental at T=14:00.
+	insertTestData(t, db, 100, 50)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 14, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Restore with Before=13:30, should include complete + first incremental.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		Before:     time.Date(2025, 2, 12, 13, 30, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, phase2KVs, restoredKVs)
+}
+
+func TestOptimizedRestore_CorruptChain(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup.
+	insertTestData(t, db, 0, 10)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental backup.
+	insertTestData(t, db, 10, 10)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	// Tamper with the last backup's meta.json: add a phantom file to CheckpointFiles.
+	backups, err := ListBackups(ctx, bucket, "backups")
+	require.NoError(t, err)
+	lastBackup := backups[len(backups)-1]
+
+	meta, err := ReadBackupMeta(ctx, bucket, lastBackup.Prefix)
+	require.NoError(t, err)
+	meta.CheckpointFiles = append(meta.CheckpointFiles, FileInfo{Name: "phantom.sst", Size: 999})
+
+	tamperedData, err := json.Marshal(meta)
+	require.NoError(t, err)
+	require.NoError(t, bucket.Upload(ctx, lastBackup.Prefix+"meta.json", bytes.NewReader(tamperedData)))
+
+	// Restore should fail with corrupt chain error.
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "corrupt backup chain")
+	assert.Contains(t, err.Error(), "phantom.sst")
+}
+
+func TestResolveFileSources_BackwardPriority(t *testing.T) {
+	backups := []backupWithMeta{
+		{
+			prefix: "backup0/",
+			meta: &BackupMeta{
+				Files: []FileInfo{
+					{Name: "MANIFEST", Size: 100},
+					{Name: "000001.sst", Size: 200},
+				},
+			},
+		},
+		{
+			prefix: "backup1/",
+			meta: &BackupMeta{
+				Files: []FileInfo{
+					{Name: "MANIFEST", Size: 150},
+					{Name: "000002.sst", Size: 300},
+				},
+			},
+		},
+	}
+
+	required := []FileInfo{
+		{Name: "MANIFEST", Size: 150},
+		{Name: "000001.sst", Size: 200},
+		{Name: "000002.sst", Size: 300},
+	}
+
+	resolved, err := resolveFileSources(required, backups)
+	require.NoError(t, err)
+	require.Len(t, resolved, 3)
+
+	// Build lookup by file name.
+	byName := make(map[string]fileSource)
+	for _, rs := range resolved {
+		byName[rs.File.Name] = rs
+	}
+
+	// MANIFEST should come from backup1 (most recent).
+	assert.Equal(t, "backup1/", byName["MANIFEST"].BackupPrefix)
+	// 000001.sst only in backup0.
+	assert.Equal(t, "backup0/", byName["000001.sst"].BackupPrefix)
+	// 000002.sst only in backup1.
+	assert.Equal(t, "backup1/", byName["000002.sst"].BackupPrefix)
+}
+
+func TestResolveFileSources_AllFromComplete(t *testing.T) {
+	backups := []backupWithMeta{
+		{
+			prefix: "complete/",
+			meta: &BackupMeta{
+				Files: []FileInfo{
+					{Name: "MANIFEST", Size: 100},
+					{Name: "000001.sst", Size: 200},
+					{Name: "CURRENT", Size: 10},
+				},
+			},
+		},
+	}
+
+	required := []FileInfo{
+		{Name: "MANIFEST", Size: 100},
+		{Name: "000001.sst", Size: 200},
+		{Name: "CURRENT", Size: 10},
+	}
+
+	resolved, err := resolveFileSources(required, backups)
+	require.NoError(t, err)
+	require.Len(t, resolved, 3)
+
+	for _, rs := range resolved {
+		assert.Equal(t, "complete/", rs.BackupPrefix, "file %s should resolve to complete backup", rs.File.Name)
+	}
+}
+
+func TestResolveFileSources_SizeMismatch(t *testing.T) {
+	backups := []backupWithMeta{
+		{
+			prefix: "backup0/",
+			meta: &BackupMeta{
+				Files: []FileInfo{
+					{Name: "000001.sst", Size: 999}, // wrong size
+				},
+			},
+		},
+	}
+
+	required := []FileInfo{
+		{Name: "000001.sst", Size: 200},
+	}
+
+	_, err := resolveFileSources(required, backups)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "corrupt backup chain")
+	assert.Contains(t, err.Error(), "000001.sst")
+}
+
+func TestOptimizedRestore_Progress(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete backup.
+	insertTestData(t, db, 0, 20)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	// Incremental backup.
+	insertTestData(t, db, 20, 20)
+	lastMeta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	var mu sync.Mutex
+	var events []ProgressEvent
+
+	restoreDir := filepath.Join(dir, "restored")
+	err = Restore(ctx, bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+		OnProgress: func(event ProgressEvent) {
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+		},
+	})
+	require.NoError(t, err)
+
+	// FilesTotal should equal len(CheckpointFiles).
+	require.Greater(t, len(events), 0)
+	assert.Equal(t, len(lastMeta.CheckpointFiles), events[0].FilesTotal)
+
+	// One event per file.
+	assert.Equal(t, len(lastMeta.CheckpointFiles), len(events))
+
+	// All checkpoint files should appear in events.
+	filesSeen := make(map[string]struct{})
+	for _, e := range events {
+		filesSeen[e.File] = struct{}{}
+	}
+	for _, fi := range lastMeta.CheckpointFiles {
+		_, ok := filesSeen[fi.Name]
+		assert.True(t, ok, "missing progress event for file %s", fi.Name)
+	}
+}
+
+func TestOptimizedRestore_InterruptAndRetry(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+
+	// Complete + incremental.
+	insertTestData(t, db, 0, 50)
+	_, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	insertTestData(t, db, 50, 50)
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+
+	originalKVs := collectAllKVs(t, db)
+	db.Close()
+
+	restoreDir := filepath.Join(dir, "restored")
+
+	// First restore: cancel after first file.
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	var callCount atomic.Int64
+	err = Restore(ctx1, bucket, RestoreOptions{
+		Prefix:      "backups",
+		RestoreDir:  restoreDir,
+		Concurrency: 1,
+		OnProgress: func(event ProgressEvent) {
+			if callCount.Add(1) == 1 {
+				cancel1()
+			}
+		},
+	})
+	require.Error(t, err)
+
+	// .incomplete marker should be present.
+	incomplete, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.True(t, incomplete)
+
+	// Second restore: should clean up and succeed.
+	err = Restore(context.Background(), bucket, RestoreOptions{
+		Prefix:     "backups",
+		RestoreDir: restoreDir,
+	})
+	require.NoError(t, err)
+
+	incomplete2, err := HasIncompleteRestore(restoreDir)
+	require.NoError(t, err)
+	assert.False(t, incomplete2)
+
+	// Verify data integrity.
+	db2 := openTestDB(t, restoreDir)
+	defer db2.Close()
+
+	restoredKVs := collectAllKVs(t, db2)
+	assert.Equal(t, originalKVs, restoredKVs)
+}
