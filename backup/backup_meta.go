@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,11 +15,18 @@ import (
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/retrypolicy"
+	"github.com/go-bond/bond/utils"
+	"github.com/google/uuid"
 	"github.com/thanos-io/objstore"
 )
 
+// ErrChainBroken is returned when an incremental backup cannot continue
+// because the local UUID does not match the latest backup in the bucket.
+var ErrChainBroken = errors.New("backup chain broken")
+
 // BackupMeta contains metadata about a single backup.
 type BackupMeta struct {
+	UUID                string     `json:"uuid"`
 	Type                BackupType `json:"type"`
 	Datetime            time.Time  `json:"datetime"`
 	PebbleFormatVersion uint64     `json:"pebble_format_version"`
@@ -138,8 +147,13 @@ func validateFileName(name string) error {
 	return nil
 }
 
-func newBackupMeta(bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {
+func generateUUID() string {
+	return uuid.Must(uuid.NewV7()).String()
+}
+
+func newBackupMeta(backupUUID string, bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {
 	return &BackupMeta{
+		UUID:                backupUUID,
 		Type:                bt,
 		Datetime:            dt.UTC(),
 		PebbleFormatVersion: pebbleFmtVer,
@@ -148,4 +162,35 @@ func newBackupMeta(bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer
 		CheckpointFiles:     checkpointFiles,
 		CreatedAt:           time.Now().UTC(),
 	}
+}
+
+const localMetaDir = "bond"
+const localMetaFile = "meta.json"
+
+func writeLocalMeta(dbDir string, meta *BackupMeta) error {
+	dir := filepath.Join(dbDir, localMetaDir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create local meta dir: %w", err)
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal local meta: %w", err)
+	}
+	return utils.WriteFileWithSync(filepath.Join(dir, localMetaFile), data, 0644)
+}
+
+func readLocalMeta(dbDir string) (*BackupMeta, error) {
+	p := filepath.Join(dbDir, localMetaDir, localMetaFile)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read local meta: %w", err)
+	}
+	var meta BackupMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("unmarshal local meta: %w", err)
+	}
+	return &meta, nil
 }

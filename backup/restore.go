@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -189,6 +190,15 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		versionData := []byte(fmt.Sprintf("%d", lastMeta.PebbleFormatVersion))
 		if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
 			return fmt.Errorf("write pebble format version: %w", err)
+		}
+
+		// Write local backup meta so incremental backups can validate chain integrity.
+		metaData, err := json.MarshalIndent(lastMeta, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal local meta: %w", err)
+		}
+		if err := utils.WriteFileWithSync(filepath.Join(bondDir, "meta.json"), metaData, 0644); err != nil {
+			return fmt.Errorf("write local meta: %w", err)
 		}
 	}
 
