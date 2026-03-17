@@ -31,20 +31,20 @@ func (t *_table[T]) UnsafeUpdate(ctx context.Context, trs []T, oldTrs []T, optBa
 
 	// key
 	var (
-		keyBuffer       = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer  = t.db.getKeyBufferPool().Get()
-		indexKeyBuffer2 = t.db.getKeyBufferPool().Get()
+		keyBuffer       = t.db.getKeyBuffer()
+		indexKeyBuffer  = t.db.getKeyBuffer()
+		indexKeyBuffer2 = t.db.getKeyBuffer()
 	)
 	defer func() {
-		t.db.getKeyBufferPool().Put(keyBuffer[:0])
-		t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
-		t.db.getKeyBufferPool().Put(indexKeyBuffer2[:0])
+		t.db.putKeyBuffer(keyBuffer[:0])
+		t.db.putKeyBuffer(indexKeyBuffer[:0])
+		t.db.putKeyBuffer(indexKeyBuffer2[:0])
 	}()
 
 	// value
-	value := t.db.getValueBufferPool().Get()
+	value := t.db.getValueBuffer()
 	valueBuffer := bytes.NewBuffer(value)
-	defer t.db.getValueBufferPool().Put(value[:0])
+	defer t.db.putValueBuffer(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
@@ -121,8 +121,8 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 		defer batch.Close()
 	}
 
-	indexKeyBuffer := t.db.getKeyBufferPool().Get()
-	defer t.db.getKeyBufferPool().Put(indexKeyBuffer[:0])
+	indexKeyBuffer := t.db.getKeyBuffer()
+	defer t.db.putKeyBuffer(indexKeyBuffer[:0])
 
 	// key buffers
 	batchSize := min(len(trs), persistentBatchSize)
@@ -130,9 +130,9 @@ func (t *_table[T]) UnsafeInsert(ctx context.Context, trs []T, optBatch ...Batch
 	defer t.db.putKeyArray(keysBuffer)
 
 	// value
-	value := t.db.getValueBufferPool().Get()
+	value := t.db.getValueBuffer()
 	valueBuffer := bytes.NewBuffer(value)
-	defer t.db.getValueBufferPool().Put(value[:0])
+	defer t.db.putValueBuffer(value[:0])
 
 	// serializer
 	var serialize = t.serializer.Serializer.Serialize
