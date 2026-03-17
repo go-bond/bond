@@ -114,14 +114,17 @@ type Backup interface {
 type Closer io.Closer
 
 type internalPools interface {
-	getKeyBufferPool() utils.SyncPool[[]byte]
-	getMultiKeyBufferPool() utils.SyncPool[[]byte]
-	getValueBufferPool() utils.SyncPool[[]byte]
-	getBytesArrayPool() utils.SyncPool[[][]byte]
 	getKeyArray(numOfKeys int) [][]byte
 	putKeyArray(arr [][]byte)
 	getValueArray(numOfValues int) [][]byte
 	putValueArray(arr [][]byte)
+
+	getKeyBuffer() []byte
+	putKeyBuffer(key []byte)
+	getMultiKeyBuffer() []byte
+	putMultiKeyBuffer(key []byte)
+	getValueBuffer() []byte
+	putValueBuffer(value []byte)
 }
 
 type _db struct {
@@ -340,22 +343,6 @@ func (db *_db) notifyOnClose() {
 	}
 }
 
-func (db *_db) getKeyBufferPool() utils.SyncPool[[]byte] {
-	return db.keyBufferPool
-}
-
-func (db *_db) getMultiKeyBufferPool() utils.SyncPool[[]byte] {
-	return db.multiKeyBufferPool
-}
-
-func (db *_db) getValueBufferPool() utils.SyncPool[[]byte] {
-	return db.valueBufferPool
-}
-
-func (db *_db) getBytesArrayPool() utils.SyncPool[[][]byte] {
-	return db.byteArraysPool
-}
-
 func (db *_db) getKeyArray(numOfKeys int) [][]byte {
 	keys := db.byteArraysPool.Get()
 	if cap(keys) < numOfKeys {
@@ -370,7 +357,7 @@ func (db *_db) getKeyArray(numOfKeys int) [][]byte {
 
 func (db *_db) putKeyArray(arr [][]byte) {
 	for _, key := range arr {
-		db.keyBufferPool.Put(key[:0])
+		db.putKeyBuffer(key[:0])
 	}
 	db.byteArraysPool.Put(arr[:0])
 }
@@ -389,9 +376,48 @@ func (db *_db) getValueArray(numOfValues int) [][]byte {
 
 func (db *_db) putValueArray(arr [][]byte) {
 	for _, value := range arr {
-		db.valueBufferPool.Put(value[:0])
+		db.putValueBuffer(value)
 	}
 	db.byteArraysPool.Put(arr[:0])
+}
+
+// getKeyBuffer gets a key buffer from the pool.
+func (db *_db) getKeyBuffer() []byte {
+	return db.keyBufferPool.Get()
+}
+
+// putKeyBuffer puts the key buffer back to the pool if it is small enough.
+// otherwise, discard it to avoid memory bloat.
+func (db *_db) putKeyBuffer(key []byte) {
+	if cap(key) <= 4*DefaultKeyBufferSize {
+		db.keyBufferPool.Put(key[:0])
+	}
+}
+
+// getMultiKeyBuffer gets a multi key buffer from the pool.
+func (db *_db) getMultiKeyBuffer() []byte {
+	return db.multiKeyBufferPool.Get()
+}
+
+// putMultiKeyBuffer puts the multi key buffer back to the pool if it is small enough.
+// otherwise, discard it to avoid memory bloat.
+func (db *_db) putMultiKeyBuffer(key []byte) {
+	if cap(key) <= 4*DefaultKeyBufferSize*DefaultNumberOfKeyBuffersInMultiKeyBuffer {
+		db.multiKeyBufferPool.Put(key[:0])
+	}
+}
+
+// getValueBuffer gets a value buffer from the pool.
+func (db *_db) getValueBuffer() []byte {
+	return db.valueBufferPool.Get()
+}
+
+// putValueBuffer puts the value buffer back to the pool if it is small enough.
+// otherwise, discard it to avoid memory bloat.
+func (db *_db) putValueBuffer(value []byte) {
+	if cap(value) <= 2*DefaultValueBufferSize {
+		db.valueBufferPool.Put(value[:0])
+	}
 }
 
 func (db *_db) Dump(_ context.Context, path string, tables []TableID, withIndex bool) error {
