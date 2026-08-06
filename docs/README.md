@@ -5,6 +5,7 @@
 - [Architecture](./architecture.md)
 - [Storage compatibility and inspection](./05-storage-compatibility.md)
 - [Declarative catalog and API migration](./06-declarative-catalog.md)
+- [Typed KeySchema feasibility on stock Pebble](./07-typed-schema-feasibility.md)
 - [Research](./research/README.md)
 
 ## Organization of documentation

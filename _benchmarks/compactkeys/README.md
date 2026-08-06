@@ -39,6 +39,25 @@ go run ./compactkeys/cmd/compact-key-schema \
   --output=../specs/projects/bond-pebble-compact-keys/artifacts/phase_3/candidates
 ```
 
+Phase 6 typed-family comparisons use matching isolated one-family datasets.
+They validate `pk-u64`, `pk-u32`, and `pk-bytes` without claiming that stock
+Pebble can route schemas per table. The legacy and typed run in each pair keep
+all non-schema policies and the dataset digest fixed:
+
+```bash
+cd _benchmarks
+go test ./compactkeys -run '^$' -bench '^BenchmarkBondLifecycleTypedFamilies$' -benchmem -count=3
+go run ./compactkeys/cmd/typed-key-schema \
+  --seed=20260806 \
+  --rows=10000 \
+  --warmups=1 \
+  --repetitions=3 \
+  --output=../specs/projects/bond-pebble-compact-keys/artifacts/phase_6/typed-candidates
+```
+
+These names remain internal experiment-only readers/writers. Bond production
+options continue to expose only Pebble's legacy schema.
+
 Compression candidates always use uniform Bloom so compression remains attributable. Filter candidates use the frozen corrected-legacy compression baseline. Point misses use `Get` and require `pebble.ErrNotFound`; separate filter-diagnostic probes use `SeekPrefixGE` with `UseL6Filters=true` because the diagnostic full compaction normally places the representative corpus in L6. All databases and checkpoints live under isolated temporary run roots.
 
 Non-schema baselines use Pebble's comparer-derived legacy writer and exactly one legacy reader. Only explicit compact-key candidates install the internal experimental reader set. Manifest/checkpoint compatibility requirements are derived from encountered SST schema properties (with the active writer as an empty-SST fallback), not every reader registered for a controlled experiment.

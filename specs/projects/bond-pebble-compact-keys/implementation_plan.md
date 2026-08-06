@@ -16,7 +16,7 @@ The root `PLAN.md` is retained as the approved detailed source and is part of th
 - [x] Phase 3: Implement and prove global `bond/full-key/v1` bundle candidates on stock Pebble with unit, fuzz/property, integration, mixed-schema, and lifecycle benchmarks; accept or reject with data.
 - [x] Phase 4: Centralize the reader registry and writer selection, add backup/checkpoint compatibility metadata and restore validation, update all open paths and inspection tooling, and exercise reversible writer rollout.
 - [x] Phase 5: Implement the pre-open declarative catalog, stable fingerprints/diffs, bound typed table/index handles, breaking API migration guidance, and compile-tested multi-table examples.
-- [ ] Phase 6: Evaluate typed schema families and per-range routing strictly with stock pinned Pebble; implement measured supported behavior or document a no-go and separately scoped upstream proposal without modifying/forking Pebble here.
+- [x] Phase 6: Evaluate typed schema families and per-range routing strictly with stock pinned Pebble; implement measured supported behavior or document a no-go and separately scoped upstream proposal without modifying/forking Pebble here.
 - [ ] Phase 7: Run the final full/race/focused compatibility suites, benchmark reproducibility and regression audit, backup/restore/rollback exercises, open-path and documentation audit, and publish the final accepted/rejected decisions.
 
 Each later phase starts by rerunning its relevant drift checks and stops at the gates in the functional and component specifications.

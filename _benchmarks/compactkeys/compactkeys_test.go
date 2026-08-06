@@ -14,6 +14,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/internal/fullkeyexperiment"
+	"github.com/go-bond/bond/internal/typedschemaexperiment"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,6 +72,8 @@ func TestDatasetGeneratorCoversShapes(t *testing.T) {
 	wantKeyShapes := map[KeyShape]bool{
 		KeyShapeSequentialUint64: false,
 		KeyShapeRandomUint64:     false,
+		KeyShapeSequentialUint32: false,
+		KeyShapeRandomUint32:     false,
 		KeyShapeBytes20:          false,
 		KeyShapeBytes32:          false,
 		KeyShapeBytes64:          false,
@@ -306,6 +309,42 @@ func TestLifecycleFullKeyCandidates(t *testing.T) {
 
 func BenchmarkBondLifecycleFullKeySchemas(b *testing.B) {
 	RunFullKeyLifecycleBenchmarks(b, repositoryRoot(b))
+}
+
+func TestLifecycleTypedFamilyCandidates(t *testing.T) {
+	for _, suite := range TypedFamilySuites(bond.LowPerformance, 20260806, 40) {
+		t.Run(suite.Name, func(t *testing.T) {
+			dataset, err := Generate(suite.Dataset)
+			require.NoError(t, err)
+			for _, candidate := range suite.Engines {
+				t.Run(candidate.Name, func(t *testing.T) {
+					manifest, err := RunLifecycle(context.Background(), RunRequest{
+						RepoRoot: repositoryRoot(t),
+						RootDir:  filepath.Join(t.TempDir(), "lifecycle"),
+						Engine:   candidate,
+						Run:      RunSpec{Repetitions: 1, Run: 1, BatchSize: 32},
+						Dataset:  dataset,
+					})
+					require.NoError(t, err)
+					require.Equal(t, dataset.Digest, manifest.DatasetDigest)
+					require.Equal(t, candidate.WriterSchema, manifest.ActiveKeySchema)
+					require.Equal(t, typedschemaexperiment.BundleSize, manifest.Schema.ActiveBundleSize)
+					require.Positive(t, manifest.Results.AfterCompaction.SST.KeySchemas[manifest.ActiveKeySchema])
+					if typedschemaexperiment.IsName(candidate.WriterSchema) {
+						require.Contains(t, manifest.Schema.RegisteredReaders, typedschemaexperiment.NameUint64)
+						require.Contains(t, manifest.Schema.RegisteredReaders, typedschemaexperiment.NameUint32)
+						require.Contains(t, manifest.Schema.RegisteredReaders, typedschemaexperiment.NameBytes)
+					} else {
+						require.Equal(t, []string{bond.DefaultKeySchemaName()}, manifest.Schema.RegisteredReaders)
+					}
+				})
+			}
+		})
+	}
+}
+
+func BenchmarkBondLifecycleTypedFamilies(b *testing.B) {
+	RunTypedFamilyLifecycleBenchmarks(b, repositoryRoot(b))
 }
 
 func repositoryRoot(tb testing.TB) string {

@@ -57,6 +57,14 @@ future-facing metadata while production remains on the legacy writer. See the
 [Accounts/Sessions/Events example](examples/catalog/main.go). Existing
 post-open `NewTable` callers remain supported as the legacy dynamic fallback.
 
+Typed `pk-u64`, `pk-u32`, and `pk-bytes` physical schemas were evaluated in
+isolated databases and rejected: none met the 5% size gate, and stock pinned
+Pebble cannot select a writer schema through its per-range policy. Production
+catalog family assignments therefore remain descriptive and the legacy global
+writer is unchanged. See the
+[typed-schema feasibility decision](docs/07-typed-schema-feasibility.md) for
+measurements and the separately scoped upstream proposal.
+
 Table create:
 ```go
 const (

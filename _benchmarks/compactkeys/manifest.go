@@ -326,6 +326,7 @@ var fingerprintSourcePaths = []string{
 	"go.mod",
 	"go.sum",
 	"internal/fullkeyexperiment",
+	"internal/typedschemaexperiment",
 	"keys.go",
 	"options.go",
 	"storage_compatibility.go",

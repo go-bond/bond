@@ -19,6 +19,8 @@ type KeyShape string
 const (
 	KeyShapeSequentialUint64 KeyShape = "sequential-u64"
 	KeyShapeRandomUint64     KeyShape = "random-u64"
+	KeyShapeSequentialUint32 KeyShape = "sequential-u32"
+	KeyShapeRandomUint32     KeyShape = "random-u32"
 	KeyShapeBytes20          KeyShape = "bytes-20"
 	KeyShapeBytes32          KeyShape = "bytes-32"
 	KeyShapeBytes64          KeyShape = "bytes-64"
@@ -84,6 +86,8 @@ func CoverageDatasetSpecs() []DatasetSpec {
 	keyShapes := []KeyShape{
 		KeyShapeSequentialUint64,
 		KeyShapeRandomUint64,
+		KeyShapeSequentialUint32,
+		KeyShapeRandomUint32,
 		KeyShapeBytes20,
 		KeyShapeBytes32,
 		KeyShapeBytes64,
@@ -239,7 +243,7 @@ func (s DatasetSpec) validate() error {
 	if s.ValueBytes < 0 {
 		return fmt.Errorf("value bytes must not be negative")
 	}
-	if !contains([]KeyShape{KeyShapeSequentialUint64, KeyShapeRandomUint64, KeyShapeBytes20, KeyShapeBytes32, KeyShapeBytes64, KeyShapeUUID, KeyShapeAddress, KeyShapeComposite2, KeyShapeComposite3, KeyShapeMixed}, s.KeyShape) {
+	if !contains([]KeyShape{KeyShapeSequentialUint64, KeyShapeRandomUint64, KeyShapeSequentialUint32, KeyShapeRandomUint32, KeyShapeBytes20, KeyShapeBytes32, KeyShapeBytes64, KeyShapeUUID, KeyShapeAddress, KeyShapeComposite2, KeyShapeComposite3, KeyShapeMixed}, s.KeyShape) {
 		return fmt.Errorf("unknown key shape %q", s.KeyShape)
 	}
 	if !contains([]OrderShape{OrderShapeNone, OrderShapeFixed, OrderShapeVariable, OrderShapeMixed}, s.OrderShape) {
@@ -265,6 +269,10 @@ func makePrimaryKey(shape KeyShape, seed int64, row int, rng *rand.Rand) []byte 
 		return builder.AddUint64Field(uint64(row)).Bytes()
 	case KeyShapeRandomUint64:
 		return builder.AddUint64Field(bits.Reverse64(uint64(row) ^ uint64(seed))).Bytes()
+	case KeyShapeSequentialUint32:
+		return builder.AddUint32Field(uint32(row)).Bytes()
+	case KeyShapeRandomUint32:
+		return builder.AddUint32Field(bits.Reverse32(uint32(row) ^ uint32(seed))).Bytes()
 	case KeyShapeBytes20:
 		return builder.AddBytesField(deterministicBytes(seed, row, 20)).Bytes()
 	case KeyShapeBytes32:

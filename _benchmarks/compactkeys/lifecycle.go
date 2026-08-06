@@ -20,6 +20,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/internal/fullkeyexperiment"
+	"github.com/go-bond/bond/internal/typedschemaexperiment"
 )
 
 type RunRequest struct {
@@ -92,7 +93,10 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 				TableFilter: request.Engine.TableFilter,
 			})
 			if err == nil {
-				if request.Engine.BundleSize > 0 {
+				if typedschemaexperiment.IsName(request.Engine.WriterSchema) {
+					err = typedschemaexperiment.Configure(opts, request.Engine.WriterSchema)
+				} else if request.Engine.BundleSize > 0 &&
+					(request.Engine.WriterSchema == "" || fullKeyExperimentName(request.Engine.WriterSchema)) {
 					err = fullkeyexperiment.Configure(opts, request.Engine.WriterSchema)
 				} else {
 					opts.EnsureDefaults()
@@ -658,10 +662,21 @@ func activeBundleSize(schemaName string, configured int) (int, error) {
 			return candidate.size, nil
 		}
 	}
+	if typedschemaexperiment.IsName(schemaName) {
+		if configured != 0 && configured != typedschemaexperiment.BundleSize {
+			return 0, fmt.Errorf("configured bundle size %d disagrees with active schema %q", configured, schemaName)
+		}
+		return typedschemaexperiment.BundleSize, nil
+	}
 	if configured <= 0 {
 		return 0, fmt.Errorf("bundle size is required for active schema %q", schemaName)
 	}
 	return configured, nil
+}
+
+func fullKeyExperimentName(name string) bool {
+	_, ok := fullkeyexperiment.BundleSize(name)
+	return ok
 }
 
 func summarizeLatencies(samples []time.Duration) LatencySummary {
