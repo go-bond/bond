@@ -1,0 +1,341 @@
+{
+  "manifest_version": 2,
+  "captured_at": "2026-08-06T08:54:09.432189943Z",
+  "revisions": {
+    "bond_commit": "c7a57a4d352e01082de14a2ca52b8d8ea5e9ea3a",
+    "bond_dirty": true,
+    "source_fingerprint": "373ad00ef5de9585a821d09ee93ae32578646163f280cc2136c15f9e080af298",
+    "pebble_version": "v0.0.0-20260707124150-8fb150d9135d",
+    "pebble_commit": "8fb150d9135d6f94e183a874475e0bd1afb18f63",
+    "pebble_origin_url": "https://github.com/cockroachdb/pebble"
+  },
+  "runtime": {
+    "go_version": "go1.26.5",
+    "goos": "linux",
+    "goarch": "amd64",
+    "compiler": "gc"
+  },
+  "machine": {
+    "hostname": "pax",
+    "kernel": "Linux 7.1.5",
+    "cpu_model": "AMD Ryzen 9 7950X 16-Core Processor",
+    "logical_cpus": 32,
+    "memory_bytes": 134649790464,
+    "filesystem_type": "0x9123683e",
+    "filesystem_bytes": 3997547102208,
+    "filesystem_free_bytes": 3120402501632,
+    "filesystem_block_bytes": 4096
+  },
+  "engine": {
+    "name": "full-key-schema-b16",
+    "performance": 1,
+    "compression": "legacy",
+    "table_filter": "uniform-bloom",
+    "writer_schema": "bond/full-key/v1-b16",
+    "bundle_size": 16
+  },
+  "run": {
+    "warmups": 1,
+    "repetitions": 3,
+    "run": 1,
+    "batch_size": 512
+  },
+  "dataset": {
+    "seed": 20260806,
+    "rows": 20000,
+    "secondary_indexes": 3,
+    "key_shape": "mixed",
+    "order_shape": "mixed",
+    "index_cardinality": "mixed",
+    "prefix_shape": "mixed",
+    "partial_index_percent": 70,
+    "value_bytes": 160
+  },
+  "dataset_digest": "4d0e5e997e9db4506464c418d2b95d60fdd8a08f4aafbc610ba8eeef9be5bd6e",
+  "logical_layout": "bond/logical-key/pre-catalog",
+  "format_major": 30,
+  "active_key_schema": "bond/full-key/v1-b16",
+  "storage_policy": {
+    "span_policy": {
+      "key_range_start_hex": "",
+      "key_range_end_hex": "",
+      "prefer_fast_compression": false,
+      "value_storage": {
+        "disable_separation_by_suffix": true,
+        "disable_blob_separation": true,
+        "override_blob_separation_minimum_size": 0,
+        "minimum_mvcc_garbage_size": 0
+      },
+      "tiering_policy_is_set": false
+    },
+    "value_separation": {
+      "enabled": true,
+      "minimum_size": 64,
+      "minimum_mvcc_garbage_size": 64,
+      "max_blob_reference_depth": 10,
+      "rewrite_minimum_age_ns": 60000000000,
+      "garbage_ratio_low_priority": 0.1,
+      "garbage_ratio_high_priority": 0.2
+    },
+    "value_blocks_enabled": true
+  },
+  "schema": {
+    "comparer_name": "leveldb.BytewiseComparator",
+    "active_writer": "bond/full-key/v1-b16",
+    "registered_readers": [
+      "DefaultKeySchema(leveldb.BytewiseComparator,16)",
+      "bond/full-key/v1-b16",
+      "bond/full-key/v1-b32",
+      "bond/full-key/v1-b64"
+    ],
+    "active_bundle_size": 16
+  },
+  "effective_pebble_options": "[Version]\n  pebble_version=0.1\n\n[Options]\n  bytes_per_sync=4194304\n  cache_size=268435456\n  cleaner=delete\n  compaction_debt_concurrency=1073741824\n  compaction_garbage_fraction_for_max_concurrency=0.40\n  comparer=leveldb.BytewiseComparator\n  disable_wal=false\n  iterator_stack=v1\n  flush_delay_delete_range=10s\n  flush_delay_range_key=10s\n  flush_split_bytes=4194304\n  format_major_version=30\n  key_schema=bond/full-key/v1-b16\n  l0_compaction_concurrency=2\n  l0_compaction_file_threshold=500\n  l0_compaction_threshold=4\n  l0_stop_writes_threshold=1000\n  lbase_max_bytes=268435456\n  concurrent_compactions=1\n  max_concurrent_compactions=32\n  max_concurrent_downloads=2\n  max_manifest_file_size=134217728\n  max_open_files=5000\n  mem_table_size=134217728\n  mem_table_stop_writes_threshold=4\n  min_deletion_rate=0\n  free_space_threshold_bytes=17179869184\n  free_space_timeframe=10s\n  obsolete_bytes_timeframe=5m0s\n  merger=pebble.concatenate\n  multilevel_compaction_heuristic=none\n  read_compaction_rate=16000\n  read_sampling_multiplier=-1\n  num_deletions_threshold=100\n  deletion_size_ratio_threshold=0.500000\n  tombstone_dense_compaction_threshold=0.100000\n  strict_wal_tail=true\n  table_cache_shards=32\n  validate_on_ingest=false\n  wal_dir=\n  wal_bytes_per_sync=0\n  secondary_cache_size_bytes=0\n  create_on_shared=0\n\n[Value Separation]\n  enabled=true\n  minimum_size=64\n  minimum_mvcc_garbage_size=64\n  max_blob_reference_depth=10\n  rewrite_minimum_age=1m0s\n  garbage_ratio_low_priority=0.10\n  garbage_ratio_high_priority=0.20\n\n[Level \"0\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=Snappy\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=2097152\n\n[Level \"1\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=Snappy\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=4194304\n\n[Level \"2\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=ZSTD\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=8388608\n\n[Level \"3\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=ZSTD\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=16777216\n\n[Level \"4\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=ZSTD\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=33554432\n\n[Level \"5\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=ZSTD\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=67108864\n\n[Level \"6\"]\n  block_restart_interval=16\n  block_size=32768\n  block_size_threshold=90\n  compression=ZSTD\n  filter_policy=rocksdb.BuiltinBloomFilter\n  filter_type=table\n  index_block_size=262144\n  target_file_size=134217728\n",
+  "results": {
+    "rows": 20000,
+    "initial_entries": 62000,
+    "final_entries": 59861,
+    "initial_index_entries": 42000,
+    "final_index_entries": 40551,
+    "database_bytes": 1642144,
+    "bytes_per_row": 82.1072,
+    "bytes_per_index_entry": 40.49577075781115,
+    "load_latency": {
+      "samples": 122,
+      "min_ns": 2555,
+      "p50_ns": 25078,
+      "p95_ns": 41829,
+      "p99_ns": 7769459,
+      "max_ns": 10614730,
+      "total_ns": 30939377
+    },
+    "mutation_latency": {
+      "samples": 7,
+      "min_ns": 44103,
+      "p50_ns": 62258,
+      "p95_ns": 135547,
+      "p99_ns": 135547,
+      "max_ns": 135547,
+      "total_ns": 505779
+    },
+    "hit_latency": {
+      "samples": 2048,
+      "min_ns": 691,
+      "p50_ns": 911,
+      "p95_ns": 1122,
+      "p99_ns": 1212,
+      "max_ns": 1493,
+      "total_ns": 1891584
+    },
+    "point_miss_latency": {
+      "samples": 2048,
+      "min_ns": 821,
+      "p50_ns": 902,
+      "p95_ns": 971,
+      "p99_ns": 1102,
+      "max_ns": 5160,
+      "total_ns": 1871809
+    },
+    "filter_probe_latency": {
+      "samples": 2048,
+      "min_ns": 90,
+      "p50_ns": 120,
+      "p95_ns": 140,
+      "p99_ns": 361,
+      "max_ns": 8727,
+      "total_ns": 259488
+    },
+    "flush_ns": 28363783,
+    "compaction_ns": 24091803,
+    "checkpoint_ns": 7402442,
+    "checkpoint_open_ns": 5828114,
+    "reopen_ns": 7412261,
+    "process_compaction_cpu_ns": 25648000,
+    "after_flush": {
+      "metrics": {
+        "pebble_compaction_duration_ns": 0,
+        "compaction_bytes_read": 0,
+        "compaction_bytes_written": 0,
+        "write_amplification": 1.3214627403639763,
+        "wal_bytes_in": 7156416,
+        "wal_bytes_written": 7162939,
+        "memtable_bytes": 8388608,
+        "l0_sublevels": 1,
+        "levels": [
+          {
+            "level": 0,
+            "files": 2,
+            "bytes": 2302618,
+            "sublevels": 1
+          },
+          {
+            "level": 1,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 2,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 3,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 4,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 5,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 6,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          }
+        ],
+        "cache": {
+          "hits": 0,
+          "misses": 0,
+          "bytes": 0
+        }
+      },
+      "sst": {
+        "files": 2,
+        "physical_bytes": 2302618,
+        "property_raw_key_bytes": 3897636,
+        "property_raw_value_bytes": 3089600,
+        "property_data_bytes": 2255931,
+        "property_index_uncompressed_bytes": 4862,
+        "property_filter_bytes": 42634,
+        "property_value_block_bytes": 0,
+        "compression_profiles": {
+          "Snappy": 2
+        },
+        "filter_families": {
+          "rocksdb.BuiltinBloomFilter": 2
+        },
+        "key_schemas": {
+          "bond/full-key/v1-b16": 2
+        },
+        "key_schema_bytes": {
+          "bond/full-key/v1-b16": 2302618
+        }
+      }
+    },
+    "after_compaction": {
+      "metrics": {
+        "pebble_compaction_duration_ns": 24074100,
+        "compaction_bytes_read": 2257766,
+        "compaction_bytes_written": 1638399,
+        "write_amplification": 1.5501955272828654,
+        "wal_bytes_in": 7156416,
+        "wal_bytes_written": 7162939,
+        "memtable_bytes": 8388608,
+        "l0_sublevels": 0,
+        "levels": [
+          {
+            "level": 0,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 1,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 2,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 3,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 4,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 5,
+            "files": 0,
+            "bytes": 0,
+            "sublevels": 0
+          },
+          {
+            "level": 6,
+            "files": 1,
+            "bytes": 1638399,
+            "sublevels": 1
+          }
+        ],
+        "cache": {
+          "hits": 0,
+          "misses": 177,
+          "bytes": 0
+        }
+      },
+      "sst": {
+        "files": 1,
+        "physical_bytes": 1638399,
+        "property_raw_key_bytes": 3763182,
+        "property_raw_value_bytes": 3089600,
+        "property_data_bytes": 1594799,
+        "property_index_uncompressed_bytes": 4544,
+        "property_filter_bytes": 41157,
+        "property_value_block_bytes": 0,
+        "compression_profiles": {
+          "ZSTD": 1
+        },
+        "filter_families": {
+          "rocksdb.BuiltinBloomFilter": 1
+        },
+        "key_schemas": {
+          "bond/full-key/v1-b16": 1
+        },
+        "key_schema_bytes": {
+          "bond/full-key/v1-b16": 1638399
+        }
+      }
+    },
+    "compaction_delta": {
+      "pebble_duration_ns": 24074100,
+      "table_bytes_read": 2257766,
+      "table_bytes_written": 1638399,
+      "blob_bytes_read": 0,
+      "blob_bytes_written": 0
+    },
+    "filter": {
+      "absent_probes": 2048,
+      "l6_filters_enabled": true,
+      "useful_negatives": 2017,
+      "false_positives": 31,
+      "observed_checks": 2048,
+      "false_positive_rate": 0.01513671875
+    },
+    "post_probe_cache": {
+      "hits": 14788,
+      "misses": 340,
+      "bytes": 5253659
+    }
+  }
+}

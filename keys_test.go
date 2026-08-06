@@ -269,6 +269,32 @@ func TestKeyBytes(t *testing.T) {
 	assert.Equal(t, []byte{0x01, 0x02}, keyBytes.Index())
 }
 
+func TestDefaultKeyComparerSplitHandlesSyntheticBounds(t *testing.T) {
+	testCases := []struct {
+		name     string
+		key      []byte
+		expected int
+	}{
+		{name: "empty", key: nil, expected: 0},
+		{name: "short", key: []byte{0x01, 0x01, 0x00}, expected: 3},
+		{name: "empty secondary index", key: []byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x00}, expected: 6},
+		{name: "complete secondary index", key: []byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0xaa, 0xbb}, expected: 8},
+		{name: "truncated secondary index", key: []byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0xaa}, expected: 7},
+		{name: "synthetic upper bound", key: []byte{0x01, 0xff, 0xff, 0xff, 0xff, 0xff}, expected: 6},
+		{name: "primary key ignores index length", key: []byte{0x01, 0x00, 0xff, 0xff, 0xff, 0xff}, expected: 6},
+	}
+
+	comparer := DefaultKeyComparer()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				assert.Equal(t, tc.expected, comparer.Split(tc.key))
+				assert.Equal(t, tc.expected, _KeyPrefix(tc.key))
+			})
+		})
+	}
+}
+
 func Benchmark_KeyBuilder(b *testing.B) {
 	buffer := make([]byte, 0, 512)
 

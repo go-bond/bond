@@ -36,6 +36,37 @@ if err != nil {
 defer func() { _ = db.Close() }()
 ```
 
+Bond production opens always use the pinned Pebble `FormatNewest` and the
+central legacy/default key-schema registry. Physical SST schemas are not part
+of mutation APIs. Offline storage diagnostics are available with:
+
+```bash
+bond-cli storage inspect --dir example
+```
+
+The report lists the active writer, registered readers, and encountered SST
+schema file/byte totals. Backup compatibility, restore validation, and rollback
+rules are documented in [Storage compatibility and inspection](docs/05-storage-compatibility.md).
+
+For new table definitions, Bond also provides a pre-open declarative catalog
+with stable IDs, durable descriptor versions, deterministic definition-drift
+diagnostics, and typed bound handles. The catalog still opens one Bond/Pebble
+database and uses ordinary logical batches; its physical-family assignments are
+future-facing metadata while production remains on the legacy writer. See the
+[catalog migration guide](docs/06-declarative-catalog.md) and the compile-tested
+[Accounts/Sessions/Events example](examples/catalog/main.go). Existing
+post-open `NewTable` callers remain supported as the legacy dynamic fallback.
+
+Typed `pk-u64`, `pk-u32`, and `pk-bytes` physical schemas were evaluated in
+isolated databases and rejected: none met the 5% size gate, and stock pinned
+Pebble cannot select a writer schema through its per-range policy. Production
+catalog family assignments therefore remain descriptive and the legacy global
+writer is unchanged. See the
+[typed-schema feasibility decision](docs/07-typed-schema-feasibility.md) for
+measurements and the separately scoped upstream proposal. The complete set of
+accepted and rejected storage decisions is summarized in the
+[compact-key final decision record](docs/08-compact-key-final-decisions.md).
+
 Table create:
 ```go
 const (
@@ -197,7 +228,8 @@ if err != nil {
 }
 ```
 
-Please see working example: [here](https://github.com/go-bond/bond/blob/master/_examples/simple/main.go) 
+See the compile-tested [catalog example](examples/catalog/main.go) for a
+complete multi-table program.
 
 ### Advanced:
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/retrypolicy"
+	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/utils"
 	"github.com/google/uuid"
 	"github.com/thanos-io/objstore"
@@ -26,14 +27,15 @@ var ErrChainBroken = errors.New("backup chain broken")
 
 // BackupMeta contains metadata about a single backup.
 type BackupMeta struct {
-	UUID                string     `json:"uuid"`
-	Type                BackupType `json:"type"`
-	Datetime            time.Time  `json:"datetime"`
-	PebbleFormatVersion uint64     `json:"pebble_format_version"`
-	BondDataVersion     uint32     `json:"bond_data_version"`
-	Files               []FileInfo `json:"files"`
-	CheckpointFiles     []FileInfo `json:"checkpoint_files"`
-	CreatedAt           time.Time  `json:"created_at"`
+	UUID                 string                     `json:"uuid"`
+	Type                 BackupType                 `json:"type"`
+	Datetime             time.Time                  `json:"datetime"`
+	PebbleFormatVersion  uint64                     `json:"pebble_format_version"`
+	BondDataVersion      uint32                     `json:"bond_data_version"`
+	Files                []FileInfo                 `json:"files"`
+	CheckpointFiles      []FileInfo                 `json:"checkpoint_files"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	StorageCompatibility *bond.StorageCompatibility `json:"storage_compatibility,omitempty"`
 }
 
 // FileInfo describes a file in a backup.
@@ -151,17 +153,53 @@ func generateUUID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
-func newBackupMeta(backupUUID string, bt BackupType, dt time.Time, pebbleFmtVer uint64, bondDataVer uint32, files, checkpointFiles []FileInfo) *BackupMeta {
+func newBackupMeta(
+	backupUUID string,
+	bt BackupType,
+	dt time.Time,
+	pebbleFmtVer uint64,
+	bondDataVer uint32,
+	storageCompatibility *bond.StorageCompatibility,
+	files, checkpointFiles []FileInfo,
+) *BackupMeta {
 	return &BackupMeta{
-		UUID:                backupUUID,
-		Type:                bt,
-		Datetime:            dt.UTC(),
-		PebbleFormatVersion: pebbleFmtVer,
-		BondDataVersion:     bondDataVer,
-		Files:               files,
-		CheckpointFiles:     checkpointFiles,
-		CreatedAt:           time.Now().UTC(),
+		UUID:                 backupUUID,
+		Type:                 bt,
+		Datetime:             dt.UTC(),
+		PebbleFormatVersion:  pebbleFmtVer,
+		BondDataVersion:      bondDataVer,
+		Files:                files,
+		CheckpointFiles:      checkpointFiles,
+		CreatedAt:            time.Now().UTC(),
+		StorageCompatibility: storageCompatibility,
 	}
+}
+
+func effectiveStorageCompatibility(meta *BackupMeta) (bond.StorageCompatibility, error) {
+	if meta.StorageCompatibility == nil {
+		compatibility := bond.StorageCompatibility{
+			ReaderEpoch:       0,
+			FormatMajor:       meta.PebbleFormatVersion,
+			RequiredKeySchema: []string{bond.DefaultKeySchemaName()},
+		}
+		if err := bond.ValidateStorageCompatibility(compatibility); err != nil {
+			return bond.StorageCompatibility{}, err
+		}
+		return compatibility, nil
+	}
+	compatibility := *meta.StorageCompatibility
+	compatibility.RequiredKeySchema = append([]string(nil), meta.StorageCompatibility.RequiredKeySchema...)
+	if compatibility.FormatMajor != meta.PebbleFormatVersion {
+		return bond.StorageCompatibility{}, fmt.Errorf(
+			"backup storage format %d disagrees with Pebble format %d",
+			compatibility.FormatMajor,
+			meta.PebbleFormatVersion,
+		)
+	}
+	if err := bond.ValidateStorageCompatibility(compatibility); err != nil {
+		return bond.StorageCompatibility{}, err
+	}
+	return compatibility, nil
 }
 
 const localMetaDir = "bond"
@@ -176,7 +214,7 @@ func writeLocalMeta(dbDir string, meta *BackupMeta) error {
 	if err != nil {
 		return fmt.Errorf("marshal local meta: %w", err)
 	}
-	return utils.WriteFileWithSync(filepath.Join(dir, localMetaFile), data, 0644)
+	return utils.ReplaceFileWithSync(filepath.Join(dir, localMetaFile), data, 0644)
 }
 
 func readLocalMeta(dbDir string) (*BackupMeta, error) {

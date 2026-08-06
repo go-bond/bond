@@ -1,0 +1,24 @@
+Phase 1 crypto11 existing-path compatibility probe
+Captured 2026-08-06 with go1.26.5 linux/amd64.
+
+This is retained research evidence, not a final graph requirement. `go mod
+why -m github.com/ThalesGroup/crypto11` reports that the main module does not
+need this module, and final `go mod tidy` leaves no crypto11, pkcs11, or pool
+requirement or checksum in Bond's go.mod/go.sum.
+
+If a future Bond package needs the old crypto11 module path, v1.6.7 is the
+latest release verified compatible with that path:
+
+$ go get github.com/ThalesGroup/crypto11@v1.6.7
+go: upgraded github.com/ThalesGroup/crypto11 v1.5.0 => v1.6.7
+go: upgraded github.com/miekg/pkcs11 v1.1.1 => v1.1.2
+exit code: 0
+
+The following command ran in a fresh temporary module created with `go mod
+init example.com/holdback`:
+
+$ go get github.com/ThalesGroup/crypto11@v1.6.8
+go: github.com/ThalesGroup/crypto11@v1.6.8 requires github.com/ThalesGroup/crypto11@v1.6.8: parsing go.mod:
+	module declares its path as: github.com/eclipse-keypont/crypto11
+	        but was required as: github.com/ThalesGroup/crypto11
+exit code: 1

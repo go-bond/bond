@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,6 +136,15 @@ func TestBackupComplete(t *testing.T) {
 	assert.Equal(t, meta.Files, meta.CheckpointFiles)
 	assert.Greater(t, meta.PebbleFormatVersion, uint64(0))
 	assert.Equal(t, uint32(bond.BOND_DB_DATA_VERSION), meta.BondDataVersion)
+	require.NotNil(t, meta.StorageCompatibility)
+	assert.Equal(t, bond.StorageReaderEpoch, meta.StorageCompatibility.ReaderEpoch)
+	assert.Equal(t, uint64(bond.PebbleDBFormat), meta.StorageCompatibility.FormatMajor)
+	assert.Len(t, meta.StorageCompatibility.RequiredKeySchema, 1)
+	assert.Contains(t, meta.StorageCompatibility.RequiredKeySchema[0], "DefaultKeySchema(")
+	assert.Contains(t, meta.CheckpointFiles, FileInfo{
+		Name: filepath.Join("bond", bond.StorageCompatibilityFile),
+		Size: checkpointFileSize(t, bucket, "backups/20250212120000-complete-00000", filepath.Join("bond", bond.StorageCompatibilityFile)),
+	})
 
 	// Verify meta.json exists in the bucket.
 	ok, err := bucket.Exists(ctx, "backups/20250212120000-complete-00000/meta.json")
@@ -148,6 +159,173 @@ func TestBackupComplete(t *testing.T) {
 	}
 	sort.Strings(objs)
 	assert.Greater(t, len(objs), 1) // at least meta.json + checkpoint files
+}
+
+func TestRestoreRejectsInvalidStorageCompatibilityBeforeDestinationMutation(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	insertTestData(t, db, 0, 4)
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	tests := []struct {
+		name    string
+		mutate  func(*BackupMeta)
+		wantErr string
+	}{
+		{
+			name: "unknown schema",
+			mutate: func(meta *BackupMeta) {
+				meta.StorageCompatibility.RequiredKeySchema = []string{"bond/full-key/v1-b32"}
+			},
+			wantErr: "unregistered key schemas",
+		},
+		{
+			name: "missing current schemas",
+			mutate: func(meta *BackupMeta) {
+				meta.StorageCompatibility.RequiredKeySchema = nil
+			},
+			wantErr: "missing required key schemas",
+		},
+		{
+			name: "format below supported range",
+			mutate: func(meta *BackupMeta) {
+				version := uint64(pebble.FormatMinSupported) - 1
+				meta.PebbleFormatVersion = version
+				meta.StorageCompatibility.FormatMajor = version
+			},
+			wantErr: "older than minimum supported format",
+		},
+		{
+			name: "format fields disagree",
+			mutate: func(meta *BackupMeta) {
+				meta.StorageCompatibility.FormatMajor--
+			},
+			wantErr: "disagrees with Pebble format",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := *meta
+			compatibility := *meta.StorageCompatibility
+			compatibility.RequiredKeySchema = append([]string(nil), meta.StorageCompatibility.RequiredKeySchema...)
+			candidate.StorageCompatibility = &compatibility
+			test.mutate(&candidate)
+			require.NoError(t, writeMeta(
+				ctx,
+				bucket,
+				"backups/20250212120000-complete-00000",
+				&candidate,
+				DefaultMaxUploadRetries,
+				DefaultInitialRetryBackoff,
+			))
+
+			restoreDir := filepath.Join(dir, "restore", strings.ReplaceAll(test.name, " ", "-"))
+			require.NoError(t, os.MkdirAll(restoreDir, 0o755))
+			sentinel := filepath.Join(restoreDir, "must-survive")
+			require.NoError(t, os.WriteFile(sentinel, []byte("unchanged"), 0o644))
+			require.NoError(t, writeRestoreIncompleteMarker(restoreDir))
+
+			err = Restore(ctx, bucket, RestoreOptions{Prefix: "backups", RestoreDir: restoreDir})
+			require.ErrorContains(t, err, test.wantErr)
+			data, readErr := os.ReadFile(sentinel)
+			require.NoError(t, readErr)
+			require.Equal(t, "unchanged", string(data))
+			incomplete, markerErr := HasIncompleteRestore(restoreDir)
+			require.NoError(t, markerErr)
+			require.True(t, incomplete)
+		})
+	}
+}
+
+func TestBackupIncrementalRejectsUnreadablePreviousBeforeCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	defer db.Close()
+	insertTestData(t, db, 0, 4)
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "complete-checkpoint"),
+	})
+	require.NoError(t, err)
+
+	meta.StorageCompatibility.RequiredKeySchema = []string{"bond/full-key/v1-b32"}
+	require.NoError(t, writeMeta(
+		ctx,
+		bucket,
+		"backups/20250212120000-complete-00000",
+		meta,
+		DefaultMaxUploadRetries,
+		DefaultInitialRetryBackoff,
+	))
+	incrementalCheckpoint := filepath.Join(dir, "incremental-checkpoint")
+	_, err = Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeIncremental,
+		At:            time.Date(2025, 2, 12, 13, 0, 0, 0, time.UTC),
+		CheckpointDir: incrementalCheckpoint,
+	})
+	require.ErrorContains(t, err, "previous backup is not readable")
+	require.ErrorContains(t, err, "unregistered key schemas")
+	_, statErr := os.Stat(incrementalCheckpoint)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestRestoreOldMetadataBackwardCompatible(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, filepath.Join(dir, "db"))
+	insertTestData(t, db, 0, 4)
+	want := collectAllKVs(t, db)
+	bucket := objstore.NewInMemBucket()
+	ctx := context.Background()
+	meta, err := Backup(ctx, db, bucket, BackupOptions{
+		Prefix:        "backups",
+		Type:          BackupTypeComplete,
+		At:            time.Date(2025, 2, 12, 12, 0, 0, 0, time.UTC),
+		CheckpointDir: filepath.Join(dir, "checkpoint"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	meta.StorageCompatibility = nil
+	require.NoError(t, writeMeta(
+		ctx,
+		bucket,
+		"backups/20250212120000-complete-00000",
+		meta,
+		DefaultMaxUploadRetries,
+		DefaultInitialRetryBackoff,
+	))
+	restoreDir := filepath.Join(dir, "restore")
+	require.NoError(t, Restore(ctx, bucket, RestoreOptions{Prefix: "backups", RestoreDir: restoreDir}))
+	compatibility, err := bond.ReadStorageCompatibility(restoreDir)
+	require.NoError(t, err)
+	require.NotNil(t, compatibility)
+	require.Equal(t, uint32(0), compatibility.ReaderEpoch)
+	require.Len(t, compatibility.RequiredKeySchema, 1)
+	require.Contains(t, compatibility.RequiredKeySchema[0], "DefaultKeySchema(")
+	restored := openTestDB(t, restoreDir)
+	require.Equal(t, want, collectAllKVs(t, restored))
+	require.NoError(t, restored.Close())
+}
+
+func checkpointFileSize(t *testing.T, bucket *objstore.InMemBucket, backupPrefix, name string) int64 {
+	t.Helper()
+	object, ok := bucket.Objects()[path.Join(backupPrefix, name)]
+	require.True(t, ok)
+	return int64(len(object))
 }
 
 func TestRestoreComplete(t *testing.T) {
@@ -1256,8 +1434,8 @@ type uploadFailingBucket struct {
 	*objstore.InMemBucket
 	mu           sync.Mutex
 	attempts     map[string]int // key -> number of Upload attempts so far
-	failAttempts int           // fail first N attempts per key with retryable error
-	alwaysFail   bool          // if true, always return permanent error (no delegation)
+	failAttempts int            // fail first N attempts per key with retryable error
+	alwaysFail   bool           // if true, always return permanent error (no delegation)
 }
 
 // isBackupCheckpointFile returns true for keys that are checkpoint file uploads (not lock or meta.json).
@@ -1299,9 +1477,9 @@ func TestBackup_UploadRetry_SuccessAfterRetries(t *testing.T) {
 
 	// Fail first 2 attempts per key, then succeed. Default MaxUploadRetries is 3, so we have enough.
 	bucket := &uploadFailingBucket{
-		InMemBucket:   objstore.NewInMemBucket(),
-		attempts:      make(map[string]int),
-		failAttempts:  2,
+		InMemBucket:  objstore.NewInMemBucket(),
+		attempts:     make(map[string]int),
+		failAttempts: 2,
 	}
 
 	ctx := context.Background()
@@ -1359,9 +1537,9 @@ func TestBackup_UploadRetry_ContextCancelDuringBackoff(t *testing.T) {
 
 	// Fail first attempt for every key so we enter backoff. Use long backoff so cancel happens during wait.
 	bucket := &uploadFailingBucket{
-		InMemBucket:   objstore.NewInMemBucket(),
-		attempts:      make(map[string]int),
-		failAttempts:  1,
+		InMemBucket:  objstore.NewInMemBucket(),
+		attempts:     make(map[string]int),
+		failAttempts: 1,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

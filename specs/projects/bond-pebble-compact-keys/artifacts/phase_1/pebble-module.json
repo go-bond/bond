@@ -1,0 +1,16 @@
+{
+	"Path": "github.com/cockroachdb/pebble",
+	"Version": "v0.0.0-20260707124150-8fb150d9135d",
+	"Query": "8fb150d9135d6f94e183a874475e0bd1afb18f63",
+	"Time": "2026-07-07T12:41:50Z",
+	"Dir": "/home/peter/Dev/go/pkg/mod/github.com/cockroachdb/pebble@v0.0.0-20260707124150-8fb150d9135d",
+	"GoMod": "/home/peter/Dev/go/pkg/mod/cache/download/github.com/cockroachdb/pebble/@v/v0.0.0-20260707124150-8fb150d9135d.mod",
+	"GoVersion": "1.25.3",
+	"Sum": "h1:kjcJPEUneVV25RWBqWiNgcosC4BtvEpUz8sL6SzuEsA=",
+	"GoModSum": "h1:ZDJqEfy0XjyRcqudiUC/FNs4lHlCnvbmOVD+YUJ8gBI=",
+	"Origin": {
+		"VCS": "git",
+		"URL": "https://github.com/cockroachdb/pebble",
+		"Hash": "8fb150d9135d6f94e183a874475e0bd1afb18f63"
+	}
+}

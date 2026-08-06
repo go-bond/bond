@@ -94,13 +94,13 @@ func TestBond_VersionCheck(t *testing.T) {
 	require.NoError(t, err)
 	buf, err := os.ReadFile(pebbelVersionPath)
 	require.NoError(t, err)
-	require.Equal(t, fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion), string(buf))
+	require.Equal(t, fmt.Sprintf("%d", PebbleDBFormat), string(buf))
 
 	// rewrite the version with some other version.
 	err = os.Remove(pebbelVersionPath)
 	require.NoError(t, err)
 	err = os.WriteFile(pebbelVersionPath,
-		[]byte(fmt.Sprintf("%d", opts.PebbleOptions.FormatMajorVersion-1)), os.ModePerm)
+		[]byte(fmt.Sprintf("%d", PebbleDBFormat-1)), os.ModePerm)
 	require.NoError(t, err)
 
 	// throw an error since db is written in different version.
@@ -111,22 +111,25 @@ func TestBond_VersionCheck(t *testing.T) {
 func Test_BondVersionMigrate(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbName) }()
 
+	require.NoError(t, os.MkdirAll(filepath.Join(dbName, "bond"), 0o755))
 	pebbleOpts := DefaultPebbleOptions()
 	pebbleOpts.FormatMajorVersion = pebble.FormatPrePebblev1MarkedCompacted
-	opts := DefaultOptions()
-	opts.PebbleOptions = pebbleOpts
-
-	db, err := Open(dbName, opts)
+	db, err := pebble.Open(dbName, pebbleOpts)
 	require.NoError(t, err)
 	err = db.Close()
 	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dbName, "bond", PebbleFormatFile),
+		[]byte(fmt.Sprintf("%d", pebble.FormatPrePebblev1MarkedCompacted)),
+		0o644,
+	))
 	version, err := PebbleFormatVersion(dbName)
 	require.NoError(t, err)
 	require.Equal(t, uint64(pebble.FormatPrePebblev1MarkedCompacted), uint64(version))
 
-	err = MigratePebbleFormatVersion(dbName, uint64(pebble.FormatVirtualSSTables))
+	err = MigratePebbleFormatVersion(dbName, uint64(PebbleDBFormat))
 	require.NoError(t, err)
 	version, err = PebbleFormatVersion(dbName)
 	require.NoError(t, err)
-	require.Equal(t, uint64(pebble.FormatVirtualSSTables), uint64(version))
+	require.Equal(t, uint64(PebbleDBFormat), uint64(version))
 }

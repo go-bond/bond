@@ -9,19 +9,22 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/bloom"
 	"github.com/cockroachdb/pebble/sstable"
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 )
 
-const PebbleDBFormat = pebble.FormatV2BlobFiles
+const PebbleDBFormat = pebble.FormatNewest
 
 const DefaultMaxConcurrentCompactions = 8
 
 type Options struct {
 	PebbleOptions *pebble.Options
 	Serializer    Serializer[any]
+	// Catalog is the complete declarative storage definition for this open. It
+	// is validated and frozen before any filesystem mutation. Nil retains the
+	// legacy dynamic-table mode unless this database already requires a catalog.
+	Catalog *Catalog
 }
 
 func DefaultOptions(performanceProfile ...PerformanceProfile) *Options {
@@ -44,306 +47,311 @@ const (
 	HighPerformance
 )
 
+// CompressionProfile identifies an attributable store-wide compression
+// candidate. The legacy profile is Bond's pre-Phase 2 configured level layout;
+// the other profiles are Pebble's definitions at the pinned module revision.
+type CompressionProfile string
+
+const (
+	CompressionLegacy   CompressionProfile = "legacy"
+	CompressionBalanced CompressionProfile = "balanced"
+	CompressionGood     CompressionProfile = "good"
+)
+
+// TableFilterProfile identifies an attributable store-wide table-filter
+// candidate. The progressive profiles deliberately delegate their per-level
+// choices to Pebble so Bond does not silently drift from the pinned engine.
+type TableFilterProfile string
+
+const (
+	TableFilterUniformBloom          TableFilterProfile = "uniform-bloom"
+	TableFilterProgressiveBloom      TableFilterProfile = "progressive-bloom"
+	TableFilterProgressiveBinaryFuse TableFilterProfile = "progressive-binary-fuse"
+)
+
+// The Phase 2 non-schema baseline. Keep these names in benchmark manifests so
+// later schema experiments change only the active KeySchema.
+const (
+	DefaultCompressionProfile = CompressionLegacy
+	DefaultTableFilterProfile = TableFilterUniformBloom
+)
+
+// PebbleOptionsConfig separates resource sizing from storage-policy
+// experiments. Zero values intentionally select the Phase 2 baseline.
+type PebbleOptionsConfig struct {
+	Performance PerformanceProfile
+	Compression CompressionProfile
+	TableFilter TableFilterProfile
+}
+
 func DefaultPebbleOptions(performanceProfile ...PerformanceProfile) *pebble.Options {
+	profile := MediumPerformance
 	if len(performanceProfile) > 0 {
 		switch performanceProfile[0] {
 		case LowPerformance:
-			return LowPerformancePebbleOptions()
+			profile = LowPerformance
 		case MediumPerformance:
-			return MediumPerformancePebbleOptions()
+			profile = MediumPerformance
 		case HighPerformance:
-			return HighPerformancePebbleOptions()
+			profile = HighPerformance
 		}
 	}
-	return MediumPerformancePebbleOptions()
+	return BuildPebbleOptions(profile)
 }
 
 func LowPerformancePebbleOptions() *pebble.Options {
-	maxOpenFileLimit := min(getMaxOpenFileLimit(slog.Default()), 2048)
-
-	opts := &pebble.Options{
-		CacheSize:                   128 << 20, // 128 MB
-		FS:                          vfs.Default,
-		Comparer:                    DefaultKeyComparer(),
-		L0CompactionFileThreshold:   500, // default in pebble
-		L0CompactionThreshold:       4,
-		L0StopWritesThreshold:       500,
-		LBaseMaxBytes:               64 << 20, // 64 MB
-		MaxOpenFiles:                maxOpenFileLimit,
-		Levels:                      [7]pebble.LevelOptions{},
-		MemTableSize:                64 << 20, // 64 MB
-		MemTableStopWritesThreshold: 2,
-		BytesPerSync:                1024 << 10, // 1024 KB
-	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
-
-	opts.WALMinSyncInterval = func() time.Duration {
-		return 200 * time.Millisecond
-	}
-
-	opts.FlushDelayDeleteRange = 10 * time.Second
-	opts.FlushDelayRangeKey = 10 * time.Second
-
-	opts.Experimental.L0CompactionConcurrency = 2
-	opts.Experimental.CompactionDebtConcurrency = 512 << 20 // 512 MB
-
-	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
-	opts.MaxConcurrentDownloads = func() int { return 2 }
-
-	opts.Experimental.L0CompactionConcurrency = 2
-	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
-
-	// opts.Experimental.EnableValueBlocks = func() bool { return false }
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
-	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-		return pebble.ValueSeparationPolicy{
-			Enabled:               true,
-			MinimumSize:           64,
-			MaxBlobReferenceDepth: 10,
-			RewriteMinimumAge:     60 * time.Second,
-		}
-	}
-
-	opts.Experimental.ReadSamplingMultiplier = -1
-
-	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
-	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
-		return pebble.NoMultiLevel{}
-	}
-
-	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
-
-	opts.Levels[0] = pebble.LevelOptions{
-		BlockSize:      32 << 10,  // 32 KB
-		IndexBlockSize: 256 << 10, // 256 KB
-		FilterPolicy:   bloom.FilterPolicy(10),
-		FilterType:     pebble.TableFilter,
-		Compression: func() *sstable.CompressionProfile {
-			return sstable.SnappyCompression
-		},
-	}
-	opts.Levels[0].EnsureL0Defaults()
-	for i := 1; i < len(opts.Levels); i++ {
-		l := &opts.Levels[i]
-		l.BlockSize = 32 << 10       // 32 KB
-		l.IndexBlockSize = 256 << 10 // 256 KB
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		if i <= 1 {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.SnappyCompression
-			}
-		} else {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.ZstdCompression
-			}
-		}
-		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-	}
-
-	opts.TargetFileSizes[0] = 2 << 20 // 2 MB
-	// opts.TargetFileSizes[0] = 4 << 20   // 4 MB
-
-	opts.EnsureDefaults()
-
-	return opts
+	return BuildPebbleOptions(LowPerformance)
 }
 
 func MediumPerformancePebbleOptions() *pebble.Options {
-	maxOpenFileLimit := min(getMaxOpenFileLimit(slog.Default()), defaultMaxOpenFiles)
-
-	opts := &pebble.Options{
-		CacheSize:                   256 << 20, // 256 MB
-		FS:                          vfs.Default,
-		Comparer:                    DefaultKeyComparer(),
-		L0CompactionFileThreshold:   500,
-		L0CompactionThreshold:       4,
-		L0StopWritesThreshold:       1000,
-		LBaseMaxBytes:               256 << 20, // 256 MB
-		MaxOpenFiles:                maxOpenFileLimit,
-		Levels:                      [7]pebble.LevelOptions{},
-		MemTableSize:                128 << 20, // 128 MB
-		MemTableStopWritesThreshold: 4,
-		BytesPerSync:                4096 << 10, // 4096 KB
-	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
-
-	opts.WALMinSyncInterval = func() time.Duration {
-		return 200 * time.Millisecond
-	}
-
-	opts.FlushDelayDeleteRange = 10 * time.Second
-	opts.FlushDelayRangeKey = 10 * time.Second
-
-	opts.Experimental.L0CompactionConcurrency = 2
-	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
-
-	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
-	opts.MaxConcurrentDownloads = func() int { return 2 }
-
-	opts.Experimental.L0CompactionConcurrency = 2
-	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
-
-	// opts.Experimental.EnableValueBlocks = func() bool { return false }
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
-	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-		return pebble.ValueSeparationPolicy{
-			Enabled:               true,
-			MinimumSize:           64,
-			MaxBlobReferenceDepth: 10,
-			RewriteMinimumAge:     60 * time.Second,
-		}
-	}
-
-	opts.Experimental.ReadSamplingMultiplier = -1
-
-	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
-	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
-		return pebble.NoMultiLevel{}
-	}
-
-	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
-
-	opts.Levels[0] = pebble.LevelOptions{
-		BlockSize:      32 << 10,  // 32 KB
-		IndexBlockSize: 256 << 10, // 256 KB
-		FilterPolicy:   bloom.FilterPolicy(10),
-		FilterType:     pebble.TableFilter,
-		Compression: func() *sstable.CompressionProfile {
-			return sstable.SnappyCompression
-		},
-	}
-	opts.Levels[0].EnsureL0Defaults()
-	for i := 1; i < len(opts.Levels); i++ {
-		l := &opts.Levels[i]
-		l.BlockSize = 32 << 10       // 32 KB
-		l.IndexBlockSize = 256 << 10 // 256 KB
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		if i <= 1 {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.SnappyCompression
-			}
-		} else {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.ZstdCompression
-			}
-		}
-		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-	}
-
-	opts.TargetFileSizes[0] = 2 << 20 // 2 MB
-	// opts.TargetFileSizes[0] = 4 << 20   // 4 MB
-
-	opts.EnsureDefaults()
-
-	return opts
+	return BuildPebbleOptions(MediumPerformance)
 }
 
 func HighPerformancePebbleOptions() *pebble.Options {
-	maxOpenFileLimit := getMaxOpenFileLimit(slog.Default())
+	return BuildPebbleOptions(HighPerformance)
+}
 
-	opts := &pebble.Options{
-		CacheSize:                   1024 << 20, // 1024 MB
-		FS:                          vfs.Default,
-		Comparer:                    DefaultKeyComparer(),
-		L0CompactionFileThreshold:   1000,
-		L0CompactionThreshold:       8,
-		L0StopWritesThreshold:       2000,
-		LBaseMaxBytes:               1024 << 20, // 1024 MB
-		MaxOpenFiles:                maxOpenFileLimit,
-		Levels:                      [7]pebble.LevelOptions{},
-		MemTableSize:                256 << 20, // 256 MB
-		MemTableStopWritesThreshold: 8,
-		BytesPerSync:                4096 << 10, // 4096 KB
+type pebbleProfileSettings struct {
+	cacheSize                   int64
+	l0CompactionFileThreshold   int
+	l0CompactionThreshold       int
+	l0StopWritesThreshold       int
+	lBaseMaxBytes               int64
+	maxOpenFiles                int
+	memTableSize                uint64
+	memTableStopWritesThreshold int
+	bytesPerSync                int
+	walMinSyncInterval          time.Duration
+	l0CompactionConcurrency     int
+	blockSize                   int
+	targetFileSize              int64
+}
+
+// BuildPebbleOptions applies Bond's common storage correctness settings and
+// then the resource sizing for a single performance profile.
+func BuildPebbleOptions(profile PerformanceProfile) *pebble.Options {
+	opts, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: profile})
+	if err != nil {
+		panic(err)
 	}
-
-	opts.FormatMajorVersion = PebbleDBFormat
-
-	opts.WALMinSyncInterval = func() time.Duration {
-		return 150 * time.Millisecond
-	}
-
-	opts.FlushDelayDeleteRange = 10 * time.Second
-	opts.FlushDelayRangeKey = 10 * time.Second
-
-	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
-	opts.MaxConcurrentDownloads = func() int { return 2 }
-
-	opts.Experimental.L0CompactionConcurrency = 4
-	opts.Experimental.CompactionDebtConcurrency = 1 << 30 // 1 GB
-
-	// opts.Experimental.EnableValueBlocks = func() bool { return false }
-	opts.Experimental.EnableValueBlocks = func() bool { return true }
-	opts.Experimental.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
-		return pebble.ValueSeparationPolicy{
-			Enabled:               true,
-			MinimumSize:           64,
-			MaxBlobReferenceDepth: 10,
-			RewriteMinimumAge:     60 * time.Second,
-		}
-	}
-
-	opts.Experimental.ReadSamplingMultiplier = -1
-
-	// disable multi-level compaction, see https://github.com/cockroachdb/pebble/issues/4139
-	opts.Experimental.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
-		return pebble.NoMultiLevel{}
-	}
-
-	opts.Experimental.SpanPolicyFunc = spanPolicyFunc
-
-	// TODO, collect these stats
-	// opts.EventListener = &pebble.EventListener{
-	// 	CompactionBegin: db.onCompactionBegin,
-	// 	CompactionEnd:   db.onCompactionEnd,
-	// 	WriteStallBegin: db.onWriteStallBegin,
-	// 	WriteStallEnd:   db.onWriteStallEnd,
-	// }
-
-	opts.Levels[0] = pebble.LevelOptions{
-		BlockSize:      64 << 10,  // 64 KB
-		IndexBlockSize: 256 << 10, // 256 KB
-		FilterPolicy:   bloom.FilterPolicy(10),
-		FilterType:     pebble.TableFilter,
-		Compression: func() *sstable.CompressionProfile {
-			return sstable.SnappyCompression
-		},
-	}
-	opts.Levels[0].EnsureL0Defaults()
-	for i := 1; i < len(opts.Levels); i++ {
-		l := &opts.Levels[i]
-		l.BlockSize = 32 << 10       // 32 KB
-		l.IndexBlockSize = 256 << 10 // 256 KB
-		l.FilterPolicy = bloom.FilterPolicy(10)
-		l.FilterType = pebble.TableFilter
-		if i <= 1 {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.SnappyCompression
-			}
-		} else {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.ZstdCompression
-			}
-		}
-		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
-	}
-
-	// opts.TargetFileSizes[0] = 2 << 20 // 2 MB
-	opts.TargetFileSizes[0] = 4 << 20 // 4 MB
-
-	opts.EnsureDefaults()
-
 	return opts
 }
 
-func spanPolicyFunc(startKey []byte) (policy pebble.SpanPolicy, endKey []byte, err error) {
-	policy.PreferFastCompression = true
-	policy.DisableValueSeparationBySuffix = true
-	policy.ValueStoragePolicy = pebble.ValueStorageLowReadLatency
-	return
+// BuildPebbleOptionsWithConfig builds an attributable Pebble resource and
+// storage-policy configuration. It retains Bond's comparer, format, and value
+// policy across every compression and table-filter candidate. Schema fields
+// remain empty until production preparation installs a fresh private registry,
+// or a controlled test/benchmark explicitly installs an experimental one.
+func BuildPebbleOptionsWithConfig(config PebbleOptionsConfig) (*pebble.Options, error) {
+	config = config.withDefaults()
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
+
+	settings := settingsForPerformanceProfile(config.Performance)
+	opts := &pebble.Options{
+		CacheSize:                   settings.cacheSize,
+		FS:                          vfs.Default,
+		Comparer:                    DefaultKeyComparer(),
+		FormatMajorVersion:          PebbleDBFormat,
+		L0CompactionFileThreshold:   settings.l0CompactionFileThreshold,
+		L0CompactionThreshold:       settings.l0CompactionThreshold,
+		L0StopWritesThreshold:       settings.l0StopWritesThreshold,
+		LBaseMaxBytes:               settings.lBaseMaxBytes,
+		MaxOpenFiles:                settings.maxOpenFiles,
+		Levels:                      [7]pebble.LevelOptions{},
+		MemTableSize:                settings.memTableSize,
+		MemTableStopWritesThreshold: settings.memTableStopWritesThreshold,
+		BytesPerSync:                settings.bytesPerSync,
+		L0CompactionConcurrency:     settings.l0CompactionConcurrency,
+		CompactionDebtConcurrency:   1 << 30,
+		ReadSamplingMultiplier:      -1,
+	}
+
+	opts.WALMinSyncInterval = func() time.Duration {
+		return settings.walMinSyncInterval
+	}
+	opts.FlushDelayDeleteRange = 10 * time.Second
+	opts.FlushDelayRangeKey = 10 * time.Second
+	opts.CompactionConcurrencyRange = func() (int, int) { return 1, max(DefaultMaxConcurrentCompactions, runtime.NumCPU()) }
+	opts.MaxConcurrentDownloads = func() int { return 2 }
+	opts.EnableValueBlocks = func() bool { return true }
+	opts.ValueSeparationPolicy = func() pebble.ValueSeparationPolicy {
+		return pebble.ValueSeparationPolicy{
+			Enabled:                  true,
+			MinimumSize:              64,
+			MinimumMVCCGarbageSize:   64,
+			MaxBlobReferenceDepth:    10,
+			RewriteMinimumAge:        60 * time.Second,
+			GarbageRatioLowPriority:  0.10,
+			GarbageRatioHighPriority: 0.20,
+		}
+	}
+
+	// Disabled pending resolution of https://github.com/cockroachdb/pebble/issues/4139.
+	opts.MultiLevelCompactionHeuristic = func() pebble.MultiLevelHeuristic {
+		return pebble.NoMultiLevel{}
+	}
+	opts.SpanPolicyFunc = spanPolicyFunc
+
+	opts.Levels[0] = pebble.LevelOptions{
+		BlockSize:      settings.blockSize,
+		IndexBlockSize: 256 << 10,
+	}
+	for i := 1; i < len(opts.Levels); i++ {
+		l := &opts.Levels[i]
+		l.BlockSize = 32 << 10
+		l.IndexBlockSize = 256 << 10
+	}
+	applyCompressionProfile(opts, config.Compression)
+	applyTableFilterProfile(opts, config.TableFilter)
+	opts.Levels[0].EnsureL0Defaults()
+	for i := 1; i < len(opts.Levels); i++ {
+		l := &opts.Levels[i]
+		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
+	}
+
+	opts.TargetFileSizes[0] = settings.targetFileSize
+	opts.EnsureDefaults()
+	// Schema ownership belongs to productionPebbleOptions. Leaving these fields
+	// empty prevents caller-visible mutable definitions from being reused by a
+	// later production open; raw controlled harnesses configure their registry
+	// explicitly.
+	opts.KeySchema = ""
+	opts.KeySchemas = nil
+	return opts, nil
+}
+
+func (c PebbleOptionsConfig) withDefaults() PebbleOptionsConfig {
+	if c.Compression == "" {
+		c.Compression = DefaultCompressionProfile
+	}
+	if c.TableFilter == "" {
+		c.TableFilter = DefaultTableFilterProfile
+	}
+	return c
+}
+
+func (c PebbleOptionsConfig) validate() error {
+	if c.Performance < LowPerformance || c.Performance > HighPerformance {
+		return fmt.Errorf("bond: unknown performance profile %d", c.Performance)
+	}
+	switch c.Compression {
+	case CompressionLegacy, CompressionBalanced, CompressionGood:
+	default:
+		return fmt.Errorf("bond: unknown compression profile %q", c.Compression)
+	}
+	switch c.TableFilter {
+	case TableFilterUniformBloom, TableFilterProgressiveBloom, TableFilterProgressiveBinaryFuse:
+	default:
+		return fmt.Errorf("bond: unknown table-filter profile %q", c.TableFilter)
+	}
+	return nil
+}
+
+func applyCompressionProfile(opts *pebble.Options, profile CompressionProfile) {
+	switch profile {
+	case CompressionLegacy:
+		opts.Levels[0].Compression = func() *sstable.CompressionProfile {
+			return sstable.SnappyCompression
+		}
+		for i := 1; i < len(opts.Levels); i++ {
+			if i <= 1 {
+				opts.Levels[i].Compression = func() *sstable.CompressionProfile {
+					return sstable.SnappyCompression
+				}
+			} else {
+				opts.Levels[i].Compression = func() *sstable.CompressionProfile {
+					return sstable.ZstdCompression
+				}
+			}
+		}
+	case CompressionBalanced:
+		opts.ApplyCompressionSettings(func() pebble.DBCompressionSettings {
+			return pebble.DBCompressionBalanced
+		})
+	case CompressionGood:
+		opts.ApplyCompressionSettings(func() pebble.DBCompressionSettings {
+			return pebble.DBCompressionGood
+		})
+	}
+}
+
+func applyTableFilterProfile(opts *pebble.Options, profile TableFilterProfile) {
+	switch profile {
+	case TableFilterUniformBloom:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyUniform
+		})
+	case TableFilterProgressiveBloom:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyProgressive
+		})
+	case TableFilterProgressiveBinaryFuse:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyBinaryFuseProgressive
+		})
+	}
+}
+
+func settingsForPerformanceProfile(profile PerformanceProfile) pebbleProfileSettings {
+	maxOpenFiles := getMaxOpenFileLimit(slog.Default())
+	switch profile {
+	case LowPerformance:
+		return pebbleProfileSettings{
+			cacheSize:                   128 << 20,
+			l0CompactionFileThreshold:   500,
+			l0CompactionThreshold:       4,
+			l0StopWritesThreshold:       500,
+			lBaseMaxBytes:               64 << 20,
+			maxOpenFiles:                min(maxOpenFiles, 2048),
+			memTableSize:                64 << 20,
+			memTableStopWritesThreshold: 2,
+			bytesPerSync:                1024 << 10,
+			walMinSyncInterval:          200 * time.Millisecond,
+			l0CompactionConcurrency:     2,
+			blockSize:                   32 << 10,
+			targetFileSize:              2 << 20,
+		}
+	case HighPerformance:
+		return pebbleProfileSettings{
+			cacheSize:                   1024 << 20,
+			l0CompactionFileThreshold:   1000,
+			l0CompactionThreshold:       8,
+			l0StopWritesThreshold:       2000,
+			lBaseMaxBytes:               1024 << 20,
+			maxOpenFiles:                maxOpenFiles,
+			memTableSize:                256 << 20,
+			memTableStopWritesThreshold: 8,
+			bytesPerSync:                4096 << 10,
+			walMinSyncInterval:          150 * time.Millisecond,
+			l0CompactionConcurrency:     4,
+			blockSize:                   64 << 10,
+			targetFileSize:              4 << 20,
+		}
+	default:
+		return pebbleProfileSettings{
+			cacheSize:                   256 << 20,
+			l0CompactionFileThreshold:   500,
+			l0CompactionThreshold:       4,
+			l0StopWritesThreshold:       1000,
+			lBaseMaxBytes:               256 << 20,
+			maxOpenFiles:                min(maxOpenFiles, defaultMaxOpenFiles),
+			memTableSize:                128 << 20,
+			memTableStopWritesThreshold: 4,
+			bytesPerSync:                4096 << 10,
+			walMinSyncInterval:          200 * time.Millisecond,
+			l0CompactionConcurrency:     2,
+			blockSize:                   32 << 10,
+			targetFileSize:              2 << 20,
+		}
+	}
+}
+
+func spanPolicyFunc(_ pebble.UserKeyBounds) (pebble.SpanPolicy, error) {
+	return pebble.SpanPolicy{
+		ValueStoragePolicy: pebble.ValueStorageLowReadLatency,
+	}, nil
 }
 
 func ToPerformanceProfile(performanceProfile string) PerformanceProfile {

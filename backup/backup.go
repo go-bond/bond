@@ -124,6 +124,9 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		if err != nil {
 			return nil, fmt.Errorf("read previous backup meta: %w", err)
 		}
+		if _, err := effectiveStorageCompatibility(latestBucketMeta); err != nil {
+			return nil, fmt.Errorf("previous backup is not readable by this binary: %w", err)
+		}
 		if latestBucketMeta.UUID == "" {
 			return nil, fmt.Errorf("latest bucket backup has no UUID; a complete backup is required to start a new chain: %w", ErrChainBroken)
 		}
@@ -147,13 +150,17 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 		_ = os.RemoveAll(opts.CheckpointDir)
 	}()
 
-	if ckErr := db.Backend().Checkpoint(opts.CheckpointDir); ckErr != nil {
-		return nil, fmt.Errorf("pebble checkpoint: %w", ckErr)
+	if ckErr := db.Checkpoint(opts.CheckpointDir); ckErr != nil {
+		return nil, fmt.Errorf("bond checkpoint: %w", ckErr)
+	}
+	storageCompatibility, err := db.StorageCompatibility()
+	if err != nil {
+		return nil, fmt.Errorf("inspect checkpoint storage compatibility: %w", err)
 	}
 
 	// Collect all files in the checkpoint.
 	var allFiles []FileInfo
-	err := filepath.WalkDir(opts.CheckpointDir, func(p string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(opts.CheckpointDir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -248,7 +255,16 @@ func Backup(ctx context.Context, db bond.DB, bucket objstore.Bucket, opts Backup
 	bondDataVer := uint32(bond.BOND_DB_DATA_VERSION)
 
 	backupUUID := generateUUID()
-	meta := newBackupMeta(backupUUID, opts.Type, dt, pebbleFmtVer, bondDataVer, filesToUpload, allFiles)
+	meta := newBackupMeta(
+		backupUUID,
+		opts.Type,
+		dt,
+		pebbleFmtVer,
+		bondDataVer,
+		&storageCompatibility,
+		filesToUpload,
+		allFiles,
+	)
 	if err := writeMeta(ctx, bucket, objPrefix, meta, maxRetries, initialBackoff); err != nil {
 		return nil, err
 	}

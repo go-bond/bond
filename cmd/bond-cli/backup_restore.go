@@ -57,13 +57,13 @@ func backupRestoreCommand() *cli.Command {
 				Before:         before,
 				Concurrency:    ctx.Int("concurrency"),
 				MaxDownloadBPS: ctx.Int64("max-download-bps"),
-			OnProgress: func(ev backup.ProgressEvent) {
-				fmt.Printf("\x1b[2K\r[%d/%d files] %s / %s  %s",
-					ev.FilesDone, ev.FilesTotal,
-					humanize.IBytes(uint64(ev.BytesDone)),
-					humanize.IBytes(uint64(ev.BytesTotal)),
-					ev.File)
-			},
+				OnProgress: func(ev backup.ProgressEvent) {
+					fmt.Printf("\x1b[2K\r[%d/%d files] %s / %s  %s",
+						ev.FilesDone, ev.FilesTotal,
+						humanize.IBytes(uint64(ev.BytesDone)),
+						humanize.IBytes(uint64(ev.BytesTotal)),
+						ev.File)
+				},
 			}
 
 			fmt.Printf("Restoring backup to %s ...\n", ctx.String("restore-dir"))

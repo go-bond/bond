@@ -1,0 +1,17 @@
+{
+	"Path": "github.com/cockroachdb/pebble",
+	"Version": "v0.0.0-20260707124150-8fb150d9135d",
+	"Query": "8fb150d9135d6f94e183a874475e0bd1afb18f63",
+	"Info": "/tmp/bond-phase1-pebble.MgRGHS/cache/download/github.com/cockroachdb/pebble/@v/v0.0.0-20260707124150-8fb150d9135d.info",
+	"GoMod": "/tmp/bond-phase1-pebble.MgRGHS/cache/download/github.com/cockroachdb/pebble/@v/v0.0.0-20260707124150-8fb150d9135d.mod",
+	"Zip": "/tmp/bond-phase1-pebble.MgRGHS/cache/download/github.com/cockroachdb/pebble/@v/v0.0.0-20260707124150-8fb150d9135d.zip",
+	"Dir": "/tmp/bond-phase1-pebble.MgRGHS/github.com/cockroachdb/pebble@v0.0.0-20260707124150-8fb150d9135d",
+	"Sum": "h1:kjcJPEUneVV25RWBqWiNgcosC4BtvEpUz8sL6SzuEsA=",
+	"GoModSum": "h1:ZDJqEfy0XjyRcqudiUC/FNs4lHlCnvbmOVD+YUJ8gBI=",
+	"Origin": {
+		"VCS": "git",
+		"URL": "https://github.com/cockroachdb/pebble",
+		"Hash": "8fb150d9135d6f94e183a874475e0bd1afb18f63",
+		"TagSum": "t1:eN9Fc4Yg+DmnBOMPbYYQ6wRfJyjx6mbPudVreGw65Rc="
+	}
+}
