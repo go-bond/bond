@@ -29,7 +29,7 @@ Every new backup records optional `storage_compatibility` metadata:
 }
 ```
 
-The same document is stored as `bond/STORAGE_COMPATIBILITY.json` in the checkpoint. Required schemas include the sorted enabled reader registry plus names encountered in SST properties. This conservative set also covers WAL data that may flush after restore and avoids races with concurrent compaction. Sidecar replacement uses a synced same-directory temporary file, atomic rename, and directory sync. An ordinary open leaves byte-identical metadata untouched but still syncs its directory, allowing a retry to finish durability after a prior post-rename directory-sync failure.
+The same document is stored as `bond/STORAGE_COMPATIBILITY.json` in the checkpoint. Required schemas include the sorted enabled reader registry plus names encountered in SST properties. This conservative set also covers WAL data that may flush after restore and avoids races with concurrent compaction. Sidecars are immutable publications: Bond writes and syncs a uniquely created same-directory temporary file, hard-links it into place without replacement, syncs the directory, and removes only that unique temporary link. Byte-identical existing metadata is an idempotent success whose directory is synced again; differing existing content is a deterministic conflict and is never truncated, overwritten, or unlinked.
 
 Use `db.Checkpoint(path)` for operational checkpoints. It writes both the
 Pebble format sidecar and storage compatibility sidecar; calling
@@ -56,7 +56,7 @@ Offline inspection does not open the database. It reads SST properties blocks di
 
 Inspection accepts every Pebble format supported by the pinned binary, from `pebble.FormatMinSupported` through `PebbleDBFormat`. This permits diagnostics before an older database is migrated; production opens and migration targets remain pinned to `FormatNewest`.
 
-The bounded JSON report contains the reader epoch, format, active writer, sorted registered readers, SST file/byte totals by encountered schema, unknown encountered names, and catalog routes. Catalog routes are empty until the pre-open catalog is introduced. Full stored names belong in diagnostics rather than application-controlled metric labels.
+The bounded JSON report contains the reader epoch, format, active writer, sorted registered readers, SST file/byte totals by encountered schema, unknown encountered names, and catalog routes. Phase 5 catalogs may describe future physical families, but production writer routing remains unsupported on stock pinned Pebble, so catalog routes stay empty until that feasibility work succeeds. Full stored names belong in diagnostics rather than application-controlled metric labels. See [Declarative catalog and API migration](./06-declarative-catalog.md) for the descriptor-versus-runtime distinction.
 
 ## Rollout and rollback rule
 

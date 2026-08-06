@@ -48,6 +48,15 @@ The report lists the active writer, registered readers, and encountered SST
 schema file/byte totals. Backup compatibility, restore validation, and rollback
 rules are documented in [Storage compatibility and inspection](docs/05-storage-compatibility.md).
 
+For new table definitions, Bond also provides a pre-open declarative catalog
+with stable IDs, durable descriptor versions, deterministic definition-drift
+diagnostics, and typed bound handles. The catalog still opens one Bond/Pebble
+database and uses ordinary logical batches; its physical-family assignments are
+future-facing metadata while production remains on the legacy writer. See the
+[catalog migration guide](docs/06-declarative-catalog.md) and the compile-tested
+[Accounts/Sessions/Events example](examples/catalog/main.go). Existing
+post-open `NewTable` callers remain supported as the legacy dynamic fallback.
+
 Table create:
 ```go
 const (

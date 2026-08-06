@@ -149,6 +149,26 @@ type _table[T any] struct {
 }
 
 func NewTable[T any](opt TableOptions[T]) Table[T] {
+	return newTable(opt, nil)
+}
+
+func newCatalogTable[T any](opt TableOptions[T], definition *TableDefinition[T]) *_table[T] {
+	return newTable(opt, definition)
+}
+
+func newTable[T any](opt TableOptions[T], definition *TableDefinition[T]) *_table[T] {
+	authorization := opt.DB.catalogAuthorization()
+	if definition == nil && authorization.catalog != nil && authorization.catalog.ownsTableID(opt.TableID) {
+		panic(fmt.Errorf(
+			"bond: table ID %d is owned by pre-open catalog %q/%q; use BindTable with its definition instead of NewTable",
+			opt.TableID,
+			authorization.catalog.Name(),
+			authorization.catalog.Version(),
+		))
+	}
+	if definition != nil && (authorization.owner == nil || authorization.catalog != definition.catalog || definition.ID() != opt.TableID) {
+		panic(fmt.Errorf("bond: unauthorized catalog binding for table ID %d", opt.TableID))
+	}
 	var serializer = &SerializerAnyWrapper[*T]{Serializer: opt.DB.Serializer()}
 	if opt.Serializer != nil {
 		serializer = &SerializerAnyWrapper[*T]{Serializer: opt.Serializer}

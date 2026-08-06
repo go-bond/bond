@@ -16,6 +16,7 @@ import (
 	"github.com/cockroachdb/pebble/sstable"
 	"github.com/cockroachdb/pebble/sstable/colblk"
 	"github.com/cockroachdb/pebble/vfs"
+	"github.com/go-bond/bond/utils"
 )
 
 const (
@@ -47,8 +48,9 @@ type StorageSchemaUsage struct {
 	Bytes uint64 `json:"bytes"`
 }
 
-// StorageSchemaRoute is reserved for Phase 5's declarative catalog. Phase 4
-// reports an empty route list explicitly.
+// StorageSchemaRoute is reserved for a future stock-Pebble routing phase.
+// Phase 5 catalog family assignments are descriptive and still report an
+// empty route list explicitly.
 type StorageSchemaRoute struct {
 	Start  []byte `json:"start"`
 	End    []byte `json:"end"`
@@ -442,7 +444,7 @@ func WriteStorageCompatibility(databaseDir string, compatibility StorageCompatib
 }
 
 type atomicFileWriteHooks struct {
-	beforeRename  func(string) error
+	beforePublish func(string) error
 	syncDirectory func(string) error
 }
 
@@ -451,8 +453,11 @@ func writeFileAtomically(
 ) error {
 	dir := filepath.Dir(path)
 	existing, err := os.ReadFile(path)
-	if err == nil && slices.Equal(existing, data) {
-		return syncAtomicFileDirectory(dir, hooks)
+	if err == nil {
+		if slices.Equal(existing, data) {
+			return syncAtomicFileDirectory(dir, hooks)
+		}
+		return fmt.Errorf("%w at %q", utils.ErrFileContentConflict, path)
 	}
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -463,11 +468,8 @@ func writeFileAtomically(
 		return err
 	}
 	temporaryPath := temporary.Name()
-	renamed := false
 	defer func() {
-		if !renamed {
-			_ = os.Remove(temporaryPath)
-		}
+		_ = os.Remove(temporaryPath)
 	}()
 	if err := temporary.Chmod(mode); err != nil {
 		_ = temporary.Close()
@@ -484,15 +486,30 @@ func writeFileAtomically(
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if hooks.beforeRename != nil {
-		if err := hooks.beforeRename(temporaryPath); err != nil {
+	if hooks.beforePublish != nil {
+		if err := hooks.beforePublish(temporaryPath); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := os.Link(temporaryPath, path); err != nil {
+		if !os.IsExist(err) {
+			return err
+		}
+		existing, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if !slices.Equal(existing, data) {
+			return fmt.Errorf("%w at %q", utils.ErrFileContentConflict, path)
+		}
+		return syncAtomicFileDirectory(dir, hooks)
+	}
+	if err := syncAtomicFileDirectory(dir, hooks); err != nil {
 		return err
 	}
-	renamed = true
+	if err := os.Remove(temporaryPath); err != nil {
+		return err
+	}
 	return syncAtomicFileDirectory(dir, hooks)
 }
 

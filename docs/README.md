@@ -4,6 +4,7 @@
 
 - [Architecture](./architecture.md)
 - [Storage compatibility and inspection](./05-storage-compatibility.md)
+- [Declarative catalog and API migration](./06-declarative-catalog.md)
 - [Research](./research/README.md)
 
 ## Organization of documentation

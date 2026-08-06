@@ -3,6 +3,7 @@ package bond
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -49,8 +50,10 @@ const DefaultNumberOfPreAllocBytesArrays = 50
 
 type DB interface {
 	internalPools
+	catalogAuthorization() catalogAuthorization
 
 	Backend() *pebble.DB
+	Catalog() *Catalog
 	Serializer() Serializer[any]
 	Dir() string
 	StorageCompatibility() (StorageCompatibility, error)
@@ -134,6 +137,7 @@ type _db struct {
 	dir     string
 	pebble  *pebble.DB
 	storage productionSchemaRegistry
+	catalog *Catalog
 
 	serializer Serializer[any]
 
@@ -145,9 +149,26 @@ type _db struct {
 	onCloseCallbacks []func(db DB)
 }
 
-func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfile) (DB, error) {
+type catalogAuthorization struct {
+	owner   *_db
+	catalog *Catalog
+}
+
+var (
+	writeOpenStorageCompatibility     = WriteStorageCompatibility
+	afterOpenPreparedPebble           = func(*pebble.DB) error { return nil }
+	readOpenBondInitializationPending = readBondInitializationPending
+	markOpenBondInitializationPending = markBondInitializationPending
+)
+
+func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfile) (opened DB, retErr error) {
 	if opts == nil {
 		opts = DefaultOptions(performanceProfile...)
+	}
+	if opts.Catalog != nil {
+		if err := opts.Catalog.Validate(); err != nil {
+			return nil, fmt.Errorf("bond: validate catalog before open: %w", err)
+		}
 	}
 	if opts.PebbleOptions == nil {
 		opts.PebbleOptions = DefaultPebbleOptions(performanceProfile...)
@@ -162,40 +183,49 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	if err != nil {
 		return nil, err
 	}
+	dirname, err = canonicalizeDefaultFSDestination(pebbleOptions.FS, dirname)
+	if err != nil {
+		return nil, fmt.Errorf("bond: resolve database destination: %w", err)
+	}
+	transaction, err := inspectOpenDestination(pebbleOptions.FS, dirname)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if releaseErr := transaction.claim.Close(); releaseErr != nil {
+			if retErr == nil && opened != nil {
+				retErr = errors.Join(retErr, opened.Close())
+				opened = nil
+			}
+			retErr = errors.Join(retErr, fmt.Errorf("bond: release database open claim: %w", releaseErr))
+		}
+	}()
+	if transaction.preexisting && !transaction.hasManifestPointer {
+		return nil, errors.New("bond: pre-existing Pebble artifacts are present without a current manifest pointer; refusing to initialize a new store")
+	}
+	initializationIntent, err := inspectBondInitializationIntent(dirname)
+	if err != nil {
+		return nil, err
+	}
+	if !transaction.preexisting && initializationIntent == nil {
+		initializationIntent, err = createBondInitializationIntent(dirname)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := validateStorageCompatibilitySidecar(dirname); err != nil {
 		return nil, err
 	}
 
 	bondPath := filepath.Join(dirname, "bond")
-	_, err = os.Stat(bondPath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-	if err != nil && os.IsNotExist(err) {
-		// create dir if db dir didn't exit.
-		if err := os.MkdirAll(bondPath, os.ModePerm); err != nil {
-			return nil, err
-		}
-	}
-
 	pebbelVersionPath := filepath.Join(bondPath, PebbleFormatFile)
-	// retive the pebble version.
 	version, err := os.ReadFile(pebbelVersionPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-
+	needsPebbleVersionSidecar := false
 	if err != nil && os.IsNotExist(err) {
-		// create version file to check invariant in the
-		// next open.
-		err = utils.WriteFileWithSync(
-			pebbelVersionPath,
-			[]byte(fmt.Sprintf("%d", pebbleOptions.FormatMajorVersion)),
-			os.ModePerm,
-		)
-		if err != nil {
-			return nil, err
-		}
+		needsPebbleVersionSidecar = true
 	} else {
 		existingVersion, err := strconv.ParseUint(string(version), 10, 64)
 		if err != nil {
@@ -212,6 +242,45 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 	if err != nil {
 		return nil, err
 	}
+	if err := afterOpenPreparedPebble(pdb); err != nil {
+		_ = pdb.Close()
+		return nil, err
+	}
+	existingBondVersion, hasBondVersion, err := readBondDataVersion(pdb)
+	if err != nil {
+		_ = pdb.Close()
+		return nil, err
+	}
+	if hasBondVersion && existingBondVersion != BOND_DB_DATA_VERSION {
+		_ = pdb.Close()
+		return nil, fmt.Errorf("bond db version is %d but expecting %d", existingBondVersion, BOND_DB_DATA_VERSION)
+	}
+	var reconciliation catalogReconciliation
+	newStore := false
+	if hasBondVersion {
+		reconciliation, err = inspectCatalogDefinition(pdb, opts.Catalog)
+		if err != nil {
+			_ = pdb.Close()
+			return nil, err
+		}
+	} else {
+		if initializationIntent == nil {
+			_ = pdb.Close()
+			return nil, errors.New("bond: database version metadata is missing from a pre-existing Pebble store without a valid external initialization intent")
+		}
+		initializationPending, err := readOpenBondInitializationPending(pdb)
+		if err != nil {
+			_ = pdb.Close()
+			return nil, err
+		}
+		if !initializationPending {
+			if err := markOpenBondInitializationPending(pdb); err != nil {
+				_ = pdb.Close()
+				return nil, err
+			}
+		}
+		newStore = true
+	}
 
 	var serializer Serializer[any]
 	if opts.Serializer != nil {
@@ -224,6 +293,7 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 		dir:        dirname,
 		pebble:     pdb,
 		storage:    storage,
+		catalog:    opts.Catalog,
 		serializer: serializer,
 		keyBufferPool: utils.NewPreAllocatedSyncPool[[]byte](func() any {
 			return make([]byte, 0, DefaultKeyBufferSize)
@@ -239,21 +309,35 @@ func Open(dirname string, opts *Options, performanceProfile ...PerformanceProfil
 		}, DefaultNumberOfPreAllocBytesArrays),
 	}
 
-	if db.Version() == 0 {
-		if err := db.initVersion(); err != nil {
-			_ = pdb.Close()
-			return nil, err
-		}
-	} else if db.Version() != BOND_DB_DATA_VERSION {
-		_ = pdb.Close()
-		return nil, fmt.Errorf("bond db version is %d but expecting %d", db.Version(), BOND_DB_DATA_VERSION)
-	}
 	compatibility, err := db.StorageCompatibility()
 	if err != nil {
 		_ = pdb.Close()
 		return nil, err
 	}
-	if err := WriteStorageCompatibility(dirname, compatibility); err != nil {
+	if needsPebbleVersionSidecar {
+		if err := os.MkdirAll(bondPath, os.ModePerm); err != nil {
+			_ = pdb.Close()
+			return nil, err
+		}
+		if err := utils.WriteFileWithSync(
+			pebbelVersionPath,
+			[]byte(fmt.Sprintf("%d", pebbleOptions.FormatMajorVersion)),
+			os.ModePerm,
+		); err != nil {
+			_ = pdb.Close()
+			return nil, err
+		}
+	}
+	if err := writeOpenStorageCompatibility(dirname, compatibility); err != nil {
+		_ = pdb.Close()
+		return nil, err
+	}
+	if newStore {
+		if err := initializeBondMetadata(pdb, opts.Catalog); err != nil {
+			_ = pdb.Close()
+			return nil, err
+		}
+	} else if err := reconciliation.commit(pdb); err != nil {
 		_ = pdb.Close()
 		return nil, err
 	}
@@ -271,6 +355,14 @@ func (db *_db) Dir() string {
 
 func (db *_db) Backend() *pebble.DB {
 	return db.pebble
+}
+
+func (db *_db) Catalog() *Catalog {
+	return db.catalog
+}
+
+func (db *_db) catalogAuthorization() catalogAuthorization {
+	return catalogAuthorization{owner: db, catalog: db.catalog}
 }
 
 func (db *_db) Serializer() Serializer[any] {

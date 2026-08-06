@@ -21,6 +21,10 @@ const DefaultMaxConcurrentCompactions = 8
 type Options struct {
 	PebbleOptions *pebble.Options
 	Serializer    Serializer[any]
+	// Catalog is the complete declarative storage definition for this open. It
+	// is validated and frozen before any filesystem mutation. Nil retains the
+	// legacy dynamic-table mode unless this database already requires a catalog.
+	Catalog *Catalog
 }
 
 func DefaultOptions(performanceProfile ...PerformanceProfile) *Options {
