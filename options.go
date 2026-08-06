@@ -10,7 +10,6 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
-	"github.com/cockroachdb/pebble/sstable/tablefilters/bloom"
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/go-bond/bond/serializers"
 )
@@ -43,6 +42,43 @@ const (
 	MediumPerformance
 	HighPerformance
 )
+
+// CompressionProfile identifies an attributable store-wide compression
+// candidate. The legacy profile is Bond's pre-Phase 2 configured level layout;
+// the other profiles are Pebble's definitions at the pinned module revision.
+type CompressionProfile string
+
+const (
+	CompressionLegacy   CompressionProfile = "legacy"
+	CompressionBalanced CompressionProfile = "balanced"
+	CompressionGood     CompressionProfile = "good"
+)
+
+// TableFilterProfile identifies an attributable store-wide table-filter
+// candidate. The progressive profiles deliberately delegate their per-level
+// choices to Pebble so Bond does not silently drift from the pinned engine.
+type TableFilterProfile string
+
+const (
+	TableFilterUniformBloom          TableFilterProfile = "uniform-bloom"
+	TableFilterProgressiveBloom      TableFilterProfile = "progressive-bloom"
+	TableFilterProgressiveBinaryFuse TableFilterProfile = "progressive-binary-fuse"
+)
+
+// The Phase 2 non-schema baseline. Keep these names in benchmark manifests so
+// later schema experiments change only the active KeySchema.
+const (
+	DefaultCompressionProfile = CompressionLegacy
+	DefaultTableFilterProfile = TableFilterUniformBloom
+)
+
+// PebbleOptionsConfig separates resource sizing from storage-policy
+// experiments. Zero values intentionally select the Phase 2 baseline.
+type PebbleOptionsConfig struct {
+	Performance PerformanceProfile
+	Compression CompressionProfile
+	TableFilter TableFilterProfile
+}
 
 func DefaultPebbleOptions(performanceProfile ...PerformanceProfile) *pebble.Options {
 	profile := MediumPerformance
@@ -90,7 +126,23 @@ type pebbleProfileSettings struct {
 // BuildPebbleOptions applies Bond's common storage correctness settings and
 // then the resource sizing for a single performance profile.
 func BuildPebbleOptions(profile PerformanceProfile) *pebble.Options {
-	settings := settingsForPerformanceProfile(profile)
+	opts, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: profile})
+	if err != nil {
+		panic(err)
+	}
+	return opts
+}
+
+// BuildPebbleOptionsWithConfig builds an attributable Pebble configuration.
+// It retains Bond's comparer, format, schema registry, and value policy across
+// every compression and table-filter candidate.
+func BuildPebbleOptionsWithConfig(config PebbleOptionsConfig) (*pebble.Options, error) {
+	config = config.withDefaults()
+	if err := config.validate(); err != nil {
+		return nil, err
+	}
+
+	settings := settingsForPerformanceProfile(config.Performance)
 	opts := &pebble.Options{
 		CacheSize:                   settings.cacheSize,
 		FS:                          vfs.Default,
@@ -139,36 +191,95 @@ func BuildPebbleOptions(profile PerformanceProfile) *pebble.Options {
 	opts.Levels[0] = pebble.LevelOptions{
 		BlockSize:      settings.blockSize,
 		IndexBlockSize: 256 << 10,
-		TableFilterPolicy: func() pebble.TableFilterPolicy {
-			return bloom.FilterPolicy(10)
-		},
-		Compression: func() *sstable.CompressionProfile {
-			return sstable.SnappyCompression
-		},
 	}
-	opts.Levels[0].EnsureL0Defaults()
 	for i := 1; i < len(opts.Levels); i++ {
 		l := &opts.Levels[i]
 		l.BlockSize = 32 << 10
 		l.IndexBlockSize = 256 << 10
-		l.TableFilterPolicy = func() pebble.TableFilterPolicy {
-			return bloom.FilterPolicy(10)
-		}
-		if i <= 1 {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.SnappyCompression
-			}
-		} else {
-			l.Compression = func() *sstable.CompressionProfile {
-				return sstable.ZstdCompression
-			}
-		}
+	}
+	applyCompressionProfile(opts, config.Compression)
+	applyTableFilterProfile(opts, config.TableFilter)
+	opts.Levels[0].EnsureL0Defaults()
+	for i := 1; i < len(opts.Levels); i++ {
+		l := &opts.Levels[i]
 		l.EnsureL1PlusDefaults(&opts.Levels[i-1])
 	}
 
 	opts.TargetFileSizes[0] = settings.targetFileSize
 	opts.EnsureDefaults()
-	return opts
+	return opts, nil
+}
+
+func (c PebbleOptionsConfig) withDefaults() PebbleOptionsConfig {
+	if c.Compression == "" {
+		c.Compression = DefaultCompressionProfile
+	}
+	if c.TableFilter == "" {
+		c.TableFilter = DefaultTableFilterProfile
+	}
+	return c
+}
+
+func (c PebbleOptionsConfig) validate() error {
+	if c.Performance < LowPerformance || c.Performance > HighPerformance {
+		return fmt.Errorf("bond: unknown performance profile %d", c.Performance)
+	}
+	switch c.Compression {
+	case CompressionLegacy, CompressionBalanced, CompressionGood:
+	default:
+		return fmt.Errorf("bond: unknown compression profile %q", c.Compression)
+	}
+	switch c.TableFilter {
+	case TableFilterUniformBloom, TableFilterProgressiveBloom, TableFilterProgressiveBinaryFuse:
+	default:
+		return fmt.Errorf("bond: unknown table-filter profile %q", c.TableFilter)
+	}
+	return nil
+}
+
+func applyCompressionProfile(opts *pebble.Options, profile CompressionProfile) {
+	switch profile {
+	case CompressionLegacy:
+		opts.Levels[0].Compression = func() *sstable.CompressionProfile {
+			return sstable.SnappyCompression
+		}
+		for i := 1; i < len(opts.Levels); i++ {
+			if i <= 1 {
+				opts.Levels[i].Compression = func() *sstable.CompressionProfile {
+					return sstable.SnappyCompression
+				}
+			} else {
+				opts.Levels[i].Compression = func() *sstable.CompressionProfile {
+					return sstable.ZstdCompression
+				}
+			}
+		}
+	case CompressionBalanced:
+		opts.ApplyCompressionSettings(func() pebble.DBCompressionSettings {
+			return pebble.DBCompressionBalanced
+		})
+	case CompressionGood:
+		opts.ApplyCompressionSettings(func() pebble.DBCompressionSettings {
+			return pebble.DBCompressionGood
+		})
+	}
+}
+
+func applyTableFilterProfile(opts *pebble.Options, profile TableFilterProfile) {
+	switch profile {
+	case TableFilterUniformBloom:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyUniform
+		})
+	case TableFilterProgressiveBloom:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyProgressive
+		})
+	case TableFilterProgressiveBinaryFuse:
+		opts.ApplyTableFilterPolicy(func() pebble.DBTableFilterPolicy {
+			return pebble.DBTableFilterPolicyBinaryFuseProgressive
+		})
+	}
 }
 
 func settingsForPerformanceProfile(profile PerformanceProfile) pebbleProfileSettings {
@@ -227,8 +338,7 @@ func settingsForPerformanceProfile(profile PerformanceProfile) pebbleProfileSett
 
 func spanPolicyFunc(_ pebble.UserKeyBounds) (pebble.SpanPolicy, error) {
 	return pebble.SpanPolicy{
-		PreferFastCompression: true,
-		ValueStoragePolicy:    pebble.ValueStorageLowReadLatency,
+		ValueStoragePolicy: pebble.ValueStorageLowReadLatency,
 	}, nil
 }
 

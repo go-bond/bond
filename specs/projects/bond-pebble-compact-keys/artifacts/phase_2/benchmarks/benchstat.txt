@@ -1,0 +1,62 @@
+benchstat: golang.org/x/perf v0.0.0-20260709024250-82a0b07e230d
+command: go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260709024250-82a0b07e230d specs/projects/bond-pebble-compact-keys/artifacts/phase_2/benchmarks/raw-benchmark.txt
+
+goos: linux
+goarch: amd64
+pkg: github.com/go-bond/bond/_benchmarks
+cpu: AMD Ryzen 9 7950X 16-Core Processor
+                                                             │ raw-benchmark.txt │
+                                                             │      sec/op       │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32           154.6m ± 14%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32         149.4m ±  4%
+BondLifecycleBaselines/compression-good-uniform-bloom-32             147.4m ± 10%
+BondLifecycleBaselines/filter-progressive-bloom-32                   148.4m ±  7%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32             148.9m ±  5%
+geomean                                                              149.7m
+
+                                                             │ compact-cpu-sec/op │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32           435.0µ ± 26%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32         448.0µ ± 17%
+BondLifecycleBaselines/compression-good-uniform-bloom-32             423.5µ ± 22%
+BondLifecycleBaselines/filter-progressive-bloom-32                   428.0µ ± 26%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32             427.5µ ±  5%
+geomean                                                              432.3µ
+
+                                                             │ filter-bytes/op │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32          2.192Ki ± 0%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32        2.192Ki ± 0%
+BondLifecycleBaselines/compression-good-uniform-bloom-32            2.192Ki ± 0%
+BondLifecycleBaselines/filter-progressive-bloom-32                  3.442Ki ± 0%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32            5.014Ki ± 0%
+geomean                                                             2.831Ki
+
+                                                             │ filter-fp-rate │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32          6.000m ± 0%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32        6.000m ± 0%
+BondLifecycleBaselines/compression-good-uniform-bloom-32            6.000m ± 0%
+BondLifecycleBaselines/filter-progressive-bloom-32                  2.000m ± 0%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32             0.000 ± 0%
+
+                                                             │ sst-bytes/op │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32          114.0Ki ± 0%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32        110.7Ki ± 0%
+BondLifecycleBaselines/compression-good-uniform-bloom-32            110.7Ki ± 0%
+BondLifecycleBaselines/filter-progressive-bloom-32                  115.2Ki ± 0%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32            116.8Ki ± 0%
+geomean                                                             113.4Ki
+
+                                                             │ B/op │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32          5.313Mi ±  1%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32        5.212Mi ±  1%
+BondLifecycleBaselines/compression-good-uniform-bloom-32            5.208Mi ±  1%
+BondLifecycleBaselines/filter-progressive-bloom-32                  5.366Mi ±  2%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32            8.105Mi ± 13%
+geomean                                                             5.748Mi
+
+                                                             │ allocs/op │
+BondLifecycleBaselines/compression-legacy-uniform-bloom-32           14.70k ± 0%
+BondLifecycleBaselines/compression-balanced-uniform-bloom-32         14.68k ± 0%
+BondLifecycleBaselines/compression-good-uniform-bloom-32             14.69k ± 0%
+BondLifecycleBaselines/filter-progressive-bloom-32                   14.72k ± 0%
+BondLifecycleBaselines/filter-progressive-binary-fuse-32             14.68k ± 0%
+geomean                                                              14.69k

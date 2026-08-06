@@ -1,7 +1,10 @@
 package bond
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -10,7 +13,6 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
-	"github.com/cockroachdb/pebble/sstable/tablefilters/bloom"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,6 +79,15 @@ func TestBuildPebbleOptionsProfiles(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := BuildPebbleOptions(tc.profile)
+			wantCompression := [7]*sstable.CompressionProfile{
+				sstable.SnappyCompression,
+				sstable.SnappyCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+			}
 
 			require.NoError(t, opts.Validate())
 			require.Equal(t, pebble.FormatNewest, opts.FormatMajorVersion)
@@ -84,11 +95,9 @@ func TestBuildPebbleOptionsProfiles(t *testing.T) {
 			require.Equal(t, DefaultKeyComparer().Name, opts.Comparer.Name)
 			require.NotEmpty(t, opts.KeySchema)
 			require.Contains(t, opts.KeySchemas, opts.KeySchema)
-			require.Equal(t, bloom.FilterPolicy(10).Name(), opts.Levels[0].TableFilterPolicy().Name())
-			require.Same(t, sstable.SnappyCompression, opts.Levels[0].Compression())
-			require.Same(t, sstable.SnappyCompression, opts.Levels[1].Compression())
-			for level := 2; level < len(opts.Levels); level++ {
-				require.Same(t, sstable.ZstdCompression, opts.Levels[level].Compression())
+			for level := range opts.Levels {
+				require.Equal(t, pebble.DBTableFilterPolicyUniform[level].Name(), opts.Levels[level].TableFilterPolicy().Name())
+				require.Same(t, wantCompression[level], opts.Levels[level].Compression())
 			}
 
 			valuePolicy := opts.ValueSeparationPolicy()
@@ -100,7 +109,8 @@ func TestBuildPebbleOptionsProfiles(t *testing.T) {
 
 			spanPolicy, err := opts.SpanPolicyFunc(pebble.UserKeyBounds{})
 			require.NoError(t, err)
-			require.True(t, spanPolicy.PreferFastCompression)
+			require.False(t, spanPolicy.PreferFastCompression)
+			require.Equal(t, pebble.ValueStorageLowReadLatency, spanPolicy.ValueStoragePolicy)
 			require.True(t, spanPolicy.ValueStoragePolicy.DisableSeparationBySuffix)
 			require.True(t, spanPolicy.ValueStoragePolicy.DisableBlobSeparation)
 
@@ -115,6 +125,113 @@ func TestBuildPebbleOptionsProfiles(t *testing.T) {
 			require.Equal(t, tc.walMinSyncInterval, opts.WALMinSyncInterval())
 		})
 	}
+}
+
+func TestBuildPebbleOptionsExperimentProfiles(t *testing.T) {
+	testCases := []struct {
+		name        string
+		compression CompressionProfile
+		filter      TableFilterProfile
+		wantComp    pebble.DBCompressionSettings
+		wantFilter  pebble.DBTableFilterPolicy
+	}{
+		{
+			name:        "legacy-uniform-bloom",
+			compression: CompressionLegacy,
+			filter:      TableFilterUniformBloom,
+			wantComp: pebble.DBCompressionSettings{Levels: [7]*sstable.CompressionProfile{
+				sstable.SnappyCompression,
+				sstable.SnappyCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+				sstable.ZstdCompression,
+			}},
+			wantFilter: pebble.DBTableFilterPolicyUniform,
+		},
+		{
+			name:        "balanced-progressive-bloom",
+			compression: CompressionBalanced,
+			filter:      TableFilterProgressiveBloom,
+			wantComp:    pebble.DBCompressionBalanced,
+			wantFilter:  pebble.DBTableFilterPolicyProgressive,
+		},
+		{
+			name:        "good-progressive-binary-fuse",
+			compression: CompressionGood,
+			filter:      TableFilterProgressiveBinaryFuse,
+			wantComp:    pebble.DBCompressionGood,
+			wantFilter:  pebble.DBTableFilterPolicyBinaryFuseProgressive,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{
+				Performance: MediumPerformance,
+				Compression: tc.compression,
+				TableFilter: tc.filter,
+			})
+			require.NoError(t, err)
+			require.NoError(t, opts.Validate())
+			for level := range opts.Levels {
+				require.Equal(t, tc.wantComp.Levels[level].Name, opts.Levels[level].Compression().Name)
+				require.Equal(t, tc.wantFilter[level].Name(), opts.Levels[level].TableFilterPolicy().Name())
+			}
+		})
+	}
+
+	_, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: PerformanceProfile(99)})
+	require.ErrorContains(t, err, "unknown performance profile")
+	_, err = BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Compression: CompressionProfile("unknown")})
+	require.ErrorContains(t, err, "unknown compression profile")
+	_, err = BuildPebbleOptionsWithConfig(PebbleOptionsConfig{TableFilter: TableFilterProfile("unknown")})
+	require.ErrorContains(t, err, "unknown table-filter profile")
+}
+
+func TestConfiguredCompressionVisibleInSSTProperties(t *testing.T) {
+	opts, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{
+		Performance: MediumPerformance,
+		Compression: CompressionGood,
+		TableFilter: TableFilterUniformBloom,
+	})
+	require.NoError(t, err)
+	for level := range opts.Levels {
+		opts.Levels[level].Compression = func() *sstable.CompressionProfile {
+			return sstable.GoodCompression
+		}
+	}
+	opts.DisableAutomaticCompactions = true
+
+	db, err := pebble.Open(t.TempDir(), opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	batch := db.NewBatch()
+	for i := range 2_000 {
+		primaryKey := NewKeyBuilder(nil).AddUint64Field(uint64(i)).Bytes()
+		key := KeyEncode(Key{TableID: 1, PrimaryKey: primaryKey})
+		value := bytes.Repeat([]byte(fmt.Sprintf("value-%04d-", i%32)), 16)
+		require.NoError(t, batch.Set(key, value, nil))
+	}
+	require.NoError(t, batch.Commit(pebble.Sync))
+	require.NoError(t, batch.Close())
+	require.NoError(t, db.Flush())
+	require.NoError(t, db.Compact(context.Background(), []byte{0x00}, []byte{0xff}, false))
+
+	levels, err := db.SSTables(pebble.WithProperties())
+	require.NoError(t, err)
+	var tables int
+	for _, level := range levels {
+		for _, table := range level {
+			tables++
+			require.NotNil(t, table.Properties)
+			require.Equal(t, sstable.GoodCompression.Name, table.Properties.CompressionName)
+			require.NotEqual(t, sstable.FastestCompression.Name, table.Properties.CompressionName)
+		}
+	}
+	require.Positive(t, tables)
 }
 
 func TestPebbleModuleOrigin(t *testing.T) {

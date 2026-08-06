@@ -1,0 +1,43 @@
+goos: linux
+goarch: amd64
+pkg: github.com/go-bond/bond/_benchmarks
+cpu: AMD Ryzen 9 7950X 16-Core Processor
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       7	 151644426 ns/op	    435000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5574708 B/op	   14735 allocs/op
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       7	 157511867 ns/op	    456000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5573764 B/op	   14688 allocs/op
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       7	 148980517 ns/op	    435000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5616252 B/op	   14695 allocs/op
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       7	 176418198 ns/op	    321000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5551571 B/op	   14676 allocs/op
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       8	 148253133 ns/op	    448000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5569225 B/op	   14700 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 148794314 ns/op	    523000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5542858 B/op	   14695 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 149117786 ns/op	    415000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5394898 B/op	   14667 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 149676226 ns/op	    444000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5477789 B/op	   14690 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 154927243 ns/op	    414000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5510149 B/op	   14670 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 147081180 ns/op	    454000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5452883 B/op	   14673 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       8	 146631339 ns/op	    427000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5456341 B/op	   14689 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       8	 148200615 ns/op	    427000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5488464 B/op	   14681 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       7	 148138531 ns/op	    436000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5462898 B/op	   14707 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       7	 162511855 ns/op	    330000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5473105 B/op	   14692 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       8	 144869917 ns/op	    420000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5458877 B/op	   14679 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 149631783 ns/op	    528000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5655352 B/op	   14755 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 148306466 ns/op	    450000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5605565 B/op	   14732 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 144264179 ns/op	    432000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5515790 B/op	   14698 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 148496984 ns/op	    420000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5682188 B/op	   14715 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 147271935 ns/op	    424000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5615100 B/op	   14708 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 156400552 ns/op	    414000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 7420249 B/op	   14645 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 148647932 ns/op	    438000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 8481969 B/op	   14690 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 149234839 ns/op	    428000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 9038320 B/op	   14686 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 149443930 ns/op	    426000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 8515164 B/op	   14693 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 147716252 ns/op	    427000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 7454438 B/op	   14654 allocs/op
+PASS
+ok  	github.com/go-bond/bond/_benchmarks	30.793s
+
+goos: linux
+goarch: amd64
+pkg: github.com/go-bond/bond/_benchmarks
+cpu: AMD Ryzen 9 7950X 16-Core Processor
+BenchmarkBondLifecycleBaselines/compression-legacy-uniform-bloom-32          	       7	 167337884 ns/op	    427000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    116694 sst-bytes/op	 5566325 B/op	   14721 allocs/op
+BenchmarkBondLifecycleBaselines/compression-balanced-uniform-bloom-32        	       7	 152315127 ns/op	    452000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5420649 B/op	   14702 allocs/op
+BenchmarkBondLifecycleBaselines/compression-good-uniform-bloom-32            	       7	 145523271 ns/op	    415000 compact-cpu-ns/op	      2245 filter-bytes/op	         0.006000 filter-fp-rate	    113355 sst-bytes/op	 5433953 B/op	   14703 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-bloom-32                  	       7	 158136286 ns/op	    317000 compact-cpu-ns/op	      3525 filter-bytes/op	         0.002000 filter-fp-rate	    117974 sst-bytes/op	 5638083 B/op	   14724 allocs/op
+BenchmarkBondLifecycleBaselines/filter-progressive-binary-fuse-32            	       7	 148087603 ns/op	    451000 compact-cpu-ns/op	      5134 filter-bytes/op	         0 filter-fp-rate	    119559 sst-bytes/op	 8518881 B/op	   14678 allocs/op
+PASS
+ok  	github.com/go-bond/bond/_benchmarks	6.166s

@@ -49,6 +49,12 @@ bench: clean
 bench-csv: clean
 	@cd _benchmarks && go run ./benchmark.go --report=csv
 
+bench-compact-keys:
+	@cd _benchmarks && go test -run '^$$' -bench '^BenchmarkBondLifecycleBaselines$$' -benchmem
+
+bench-compact-key-baseline:
+	@cd _benchmarks && go run ./compactkeys/cmd/compact-key-baseline
+
 todo:
 	@git grep TODO -- './*' ':!./vendor/' ':!./Makefile' || :
 
