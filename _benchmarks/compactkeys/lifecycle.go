@@ -19,6 +19,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/internal/fullkeyexperiment"
 )
 
 type RunRequest struct {
@@ -90,6 +91,9 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 				Compression: request.Engine.Compression,
 				TableFilter: request.Engine.TableFilter,
 			})
+			if err == nil && request.Engine.BundleSize > 0 {
+				err = fullkeyexperiment.Configure(opts, request.Engine.WriterSchema)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -102,7 +106,7 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 		return RunManifest{}, err
 	}
 	if request.Engine.WriterSchema != "" && request.Engine.WriterSchema != opts.KeySchema {
-		return RunManifest{}, fmt.Errorf("Phase 2 runner supports default writer %q, requested %q", opts.KeySchema, request.Engine.WriterSchema)
+		return RunManifest{}, fmt.Errorf("options selected writer %q, requested %q", opts.KeySchema, request.Engine.WriterSchema)
 	}
 
 	db, err := pebble.Open(dbDir, opts)
@@ -458,6 +462,7 @@ func collectSSTResults(db *pebble.DB) (SSTResults, error) {
 		CompressionProfiles: make(map[string]int),
 		FilterFamilies:      make(map[string]int),
 		KeySchemas:          make(map[string]int),
+		KeySchemaBytes:      make(map[string]uint64),
 	}
 	for _, level := range levels {
 		for _, table := range level {
@@ -476,6 +481,7 @@ func collectSSTResults(db *pebble.DB) (SSTResults, error) {
 			result.CompressionProfiles[properties.CompressionName]++
 			result.FilterFamilies[properties.FilterFamily]++
 			result.KeySchemas[properties.KeySchemaName]++
+			result.KeySchemaBytes[properties.KeySchemaName] += table.Size
 		}
 	}
 	return result, nil
@@ -605,6 +611,21 @@ func activeBundleSize(schemaName string, configured int) (int, error) {
 			return 0, fmt.Errorf("configured bundle size %d disagrees with active schema %q", configured, schemaName)
 		}
 		return parsed, nil
+	}
+	for _, candidate := range []struct {
+		name string
+		size int
+	}{
+		{name: fullkeyexperiment.NameB16, size: 16},
+		{name: fullkeyexperiment.NameB32, size: 32},
+		{name: fullkeyexperiment.NameB64, size: 64},
+	} {
+		if schemaName == candidate.name {
+			if configured != 0 && configured != candidate.size {
+				return 0, fmt.Errorf("configured bundle size %d disagrees with active schema %q", configured, schemaName)
+			}
+			return candidate.size, nil
+		}
 	}
 	if configured <= 0 {
 		return 0, fmt.Errorf("bundle size is required for active schema %q", schemaName)

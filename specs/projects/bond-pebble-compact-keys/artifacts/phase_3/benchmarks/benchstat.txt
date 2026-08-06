@@ -1,0 +1,67 @@
+goos: linux
+goarch: amd64
+pkg: github.com/go-bond/bond/_benchmarks/compactkeys
+cpu: AMD Ryzen 9 7950X 16-Core Processor
+                                                   │ raw-benchmark.txt │
+                                                   │      sec/op       │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32           142.4m ± 8%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32         141.3m ± 6%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32         139.7m ± 3%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32         141.6m ± 5%
+geomean                                                    141.3m
+
+                                                   │ raw-benchmark.txt  │
+                                                   │ compact-cpu-sec/op │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32          434.5µ ±  37%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32        425.5µ ±  26%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32        476.5µ ± 177%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32        428.5µ ±  12%
+geomean                                                   440.8µ
+
+                                                   │ raw-benchmark.txt │
+                                                   │   data-bytes/op   │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32          110.9Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32        108.9Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32        109.7Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32        110.4Ki ± 0%
+geomean                                                   110.0Ki
+
+                                                   │ raw-benchmark.txt │
+                                                   │  filter-bytes/op  │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32          2.192Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32        2.192Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32        2.192Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32        2.192Ki ± 0%
+geomean                                                   2.192Ki
+
+                                                   │ raw-benchmark.txt │
+                                                   │  index-bytes/op   │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32            292.0 ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32          250.0 ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32          250.0 ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32          296.0 ± 0%
+geomean                                                     271.1
+
+                                                   │ raw-benchmark.txt │
+                                                   │   sst-bytes/op    │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32          114.0Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32        112.0Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32        112.7Ki ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32        113.5Ki ± 0%
+geomean                                                   113.0Ki
+
+                                                   │ raw-benchmark.txt │
+                                                   │       B/op        │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32          5.362Mi ± 1%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32        5.501Mi ± 1%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32        5.563Mi ± 1%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32        5.642Mi ± 1%
+geomean                                                   5.516Mi
+
+                                                   │ raw-benchmark.txt │
+                                                   │     allocs/op     │
+BondLifecycleFullKeySchemas/legacy-schema-b16-32           14.75k ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b16-32         18.74k ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b32-32         18.74k ± 0%
+BondLifecycleFullKeySchemas/full-key-schema-b64-32         18.75k ± 0%
+geomean                                                    17.65k

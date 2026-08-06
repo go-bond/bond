@@ -53,7 +53,7 @@ Replace the current three independently assembled Pebble profiles with a shared 
 type OpenConfig struct {
     Profile      PerformanceProfile
     Catalog      *Catalog
-    WriterSchema string
+    WriterSchema string // accepted durable schemas only
     Filter       TableFilterProfile
 }
 
@@ -61,6 +61,8 @@ func BuildPebbleOptions(cfg OpenConfig) (*pebble.Options, error)
 ```
 
 Profile-specific sizes and concurrency are applied after common correctness settings. The builder always installs `DefaultKeyComparer()`, `pebble.FormatNewest`, a validated schema registry, and the stock bounds-based span policy. All calls to `pebble.Open`, including migration and tooling, consume this builder or a lower-level validated result returned by it.
+
+`WriterSchema` is a Phase 4 rollout control for schemas that have passed their activation gates. Phase 3's rejected full-key candidates do not add this field to the production `PebbleOptionsConfig`, do not register production readers, and do not alter Bond mutation behavior.
 
 Phase 1 ports moved Bloom/filter packages, stabilized option fields, current `SpanPolicyFunc`, value-storage settings, and validation requirements. Tests assert effective settings so compilation cannot conceal semantic drift.
 
@@ -80,11 +82,11 @@ Policy experiments are sequenced to preserve attribution:
 
 ## Full-Key Physical Schema
 
-`bond/full-key/v1-b{16,32,64}` uses a complete-key `PrefixBytes` column. Its KeyWriter computes physical shared prefix across complete keys but returns `KeyComparison.PrefixLen = comparer.Split(key)`. Its KeySeeker reconstructs the exact logical bytes and delegates ordering decisions to bytewise semantics.
+The controlled `bond/full-key/v1-b{16,32,64}` experiment uses a complete-key `PrefixBytes` column. Its KeyWriter computes physical shared prefix across complete keys but returns `KeyComparison.PrefixLen = comparer.Split(key)`. Its KeySeeker reconstructs the exact logical bytes and delegates ordering decisions to bytewise semantics.
 
-Implementation lives in an isolated package or small file set without catalog dependencies. The schema constructor receives the finalized Bond comparer and bundle size; durable names bind both algorithm and bundle size. Tests reuse Pebble-native writer/seeker patterns and add Bond's valid, invalid, short-bound, prefix, reverse, randomized, and concurrency corpus.
+The pinned PrefixBytes implementation cannot safely represent a stored empty key, so the candidate fails Bond's existing logical-key contract in addition to missing the size gate. Its implementation therefore lives in `internal/fullkeyexperiment`, with construction and writer selection available only to repository tests and benchmarks. Production options retain only Pebble's legacy schema, and Bond's public empty-key behavior remains unchanged. Tests reuse Pebble-native writer/seeker patterns and preserve the non-empty experimental corpus, empty seek targets, corruption cases, mixed-schema lifecycle evidence, and the exact benchmark results.
 
-The active writer is a name, not an implementation pointer exposed to callers. Selecting a different writer changes only future flush/compaction outputs. Natural compaction may leave mixed schemas indefinitely.
+For any future accepted schema, the active writer is a validated name rather than an implementation pointer exposed to callers. Selecting a different accepted writer changes only future flush/compaction outputs. Natural compaction may leave mixed schemas indefinitely. No such selection is active for the rejected Phase 3 candidates.
 
 ## Durable Registry, Backup, and Tools
 

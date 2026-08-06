@@ -34,10 +34,10 @@ status: complete
 
 1. Provide immutable candidates `bond/full-key/v1-b16`, `bond/full-key/v1-b32`, and `bond/full-key/v1-b64` unless the pinned API forces an equivalent durable naming scheme.
 2. Encode the entire logical Bond user key in a `PrefixBytes` physical column while reporting the original comparer-defined logical prefix length.
-3. Writers and seekers must handle empty/short bounds, truncated Bond-like keys, exact and gap seeks, before/after range seeks, duplicate user keys with different internal suffixes, forward/reverse iteration, strict prefix iteration, synthetic prefixes/suffixes, corruption, independent concurrent seekers, and block reset/reuse.
+3. An experimental writer must preserve stored empty keys before it may roll out because Bond's existing mutation API permits them. If the pinned KeySchema API cannot satisfy that invariant, the candidate is rejected and kept outside production options. Seekers must still handle empty/short bounds, truncated Bond-like keys, exact and gap seeks, before/after range seeks, duplicate user keys with different internal suffixes, forward/reverse iteration, strict prefix iteration, synthetic prefixes/suffixes, corruption, independent concurrent seekers, and block reset/reuse.
 4. Property tests must prove decoded bytes, ordering, seeks, and `Split` are equivalent to the logical bytewise oracle.
-5. Mixed legacy and full-key SSTs must open, compact, back up, restore, inspect, and roll back to an older writer selection while retaining every required reader.
-6. A schema may be activated beyond experiments only when representative results meet an explicitly recorded gate. A neutral or losing result is a valid completed outcome.
+5. Controlled mixed legacy and full-key SST experiments must open, compact, back up, restore, inspect, and roll back to the legacy writer with every experimental reader present.
+6. A schema may be activated beyond experiments only when representative results meet an explicitly recorded gate and all existing logical-key contracts. A neutral, losing, or incompatible result is a valid completed outcome; rejected schemas expose no production reader or writer selection.
 
 ## 5. Schema Registry and Operational Compatibility
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/cockroachdb/pebble"
 	"github.com/go-bond/bond"
+	"github.com/go-bond/bond/internal/fullkeyexperiment"
 	"github.com/stretchr/testify/require"
 )
 
@@ -167,6 +168,7 @@ func TestManifestRoundTrip(t *testing.T) {
 				CompressionProfiles: map[string]int{"Balanced": 1},
 				FilterFamilies:      map[string]int{"bloom": 1},
 				KeySchemas:          map[string]int{"default": 1},
+				KeySchemaBytes:      map[string]uint64{"default": 1234},
 			}},
 			CompactionDelta: CompactionDelta{
 				TableBytesRead:    100,
@@ -227,6 +229,36 @@ func TestLifecycleOracleAndManifest(t *testing.T) {
 
 func BenchmarkBondLifecycleBaselines(b *testing.B) {
 	RunLifecycleBenchmarks(b, repositoryRoot(b))
+}
+
+func TestLifecycleFullKeyCandidates(t *testing.T) {
+	dataset, err := Generate(RepresentativeDatasetSpec(20260806, 80))
+	require.NoError(t, err)
+	for _, candidate := range FullKeyCandidates(bond.LowPerformance) {
+		t.Run(candidate.Name, func(t *testing.T) {
+			manifest, err := RunLifecycle(context.Background(), RunRequest{
+				RepoRoot: repositoryRoot(t),
+				RootDir:  filepath.Join(t.TempDir(), "lifecycle"),
+				Engine:   candidate,
+				Run:      RunSpec{Repetitions: 1, Run: 1, BatchSize: 32},
+				Dataset:  dataset,
+			})
+			require.NoError(t, err)
+			require.Equal(t, dataset.Digest, manifest.DatasetDigest)
+			require.Equal(t, bond.DefaultCompressionProfile, manifest.Engine.Compression)
+			require.Equal(t, bond.DefaultTableFilterProfile, manifest.Engine.TableFilter)
+			require.Equal(t, candidate.BundleSize, manifest.Schema.ActiveBundleSize)
+			require.Contains(t, manifest.Schema.RegisteredReaders, fullkeyexperiment.NameB16)
+			require.Contains(t, manifest.Schema.RegisteredReaders, fullkeyexperiment.NameB32)
+			require.Contains(t, manifest.Schema.RegisteredReaders, fullkeyexperiment.NameB64)
+			require.Positive(t, manifest.Results.AfterCompaction.SST.KeySchemas[manifest.ActiveKeySchema])
+			require.Positive(t, manifest.Results.AfterCompaction.SST.KeySchemaBytes[manifest.ActiveKeySchema])
+		})
+	}
+}
+
+func BenchmarkBondLifecycleFullKeySchemas(b *testing.B) {
+	RunFullKeyLifecycleBenchmarks(b, repositoryRoot(b))
 }
 
 func repositoryRoot(tb testing.TB) string {

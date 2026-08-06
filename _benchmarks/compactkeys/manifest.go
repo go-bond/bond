@@ -19,7 +19,7 @@ import (
 	"github.com/go-bond/bond"
 )
 
-const ManifestVersion = 1
+const ManifestVersion = 2
 
 const approvedPebbleCommit = "8fb150d9135d6f94e183a874475e0bd1afb18f63"
 
@@ -87,17 +87,18 @@ type LevelResult struct {
 }
 
 type SSTResults struct {
-	Files                          int            `json:"files"`
-	PhysicalBytes                  uint64         `json:"physical_bytes"`
-	PropertyRawKeyBytes            uint64         `json:"property_raw_key_bytes"`
-	PropertyRawValueBytes          uint64         `json:"property_raw_value_bytes"`
-	PropertyDataBytes              uint64         `json:"property_data_bytes"`
-	PropertyIndexUncompressedBytes uint64         `json:"property_index_uncompressed_bytes"`
-	PropertyFilterBytes            uint64         `json:"property_filter_bytes"`
-	PropertyValueBlockBytes        uint64         `json:"property_value_block_bytes"`
-	CompressionProfiles            map[string]int `json:"compression_profiles"`
-	FilterFamilies                 map[string]int `json:"filter_families"`
-	KeySchemas                     map[string]int `json:"key_schemas"`
+	Files                          int               `json:"files"`
+	PhysicalBytes                  uint64            `json:"physical_bytes"`
+	PropertyRawKeyBytes            uint64            `json:"property_raw_key_bytes"`
+	PropertyRawValueBytes          uint64            `json:"property_raw_value_bytes"`
+	PropertyDataBytes              uint64            `json:"property_data_bytes"`
+	PropertyIndexUncompressedBytes uint64            `json:"property_index_uncompressed_bytes"`
+	PropertyFilterBytes            uint64            `json:"property_filter_bytes"`
+	PropertyValueBlockBytes        uint64            `json:"property_value_block_bytes"`
+	CompressionProfiles            map[string]int    `json:"compression_profiles"`
+	FilterFamilies                 map[string]int    `json:"filter_families"`
+	KeySchemas                     map[string]int    `json:"key_schemas"`
+	KeySchemaBytes                 map[string]uint64 `json:"key_schema_bytes"`
 }
 
 type FilterResults struct {
@@ -324,6 +325,8 @@ func fingerprintSources(repoRoot string) (string, error) {
 	paths := []string{
 		"go.mod",
 		"go.sum",
+		"internal/fullkeyexperiment",
+		"keys.go",
 		"options.go",
 		"_benchmarks/compactkeys",
 	}
