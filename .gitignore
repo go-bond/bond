@@ -18,3 +18,6 @@ bond-cli
 *.ipynb
 
 _benchmarks/bench_db
+
+# Per-worktree state for the spec workflow.
+.specs_skill_state/
