@@ -63,7 +63,9 @@ Pebble cannot select a writer schema through its per-range policy. Production
 catalog family assignments therefore remain descriptive and the legacy global
 writer is unchanged. See the
 [typed-schema feasibility decision](docs/07-typed-schema-feasibility.md) for
-measurements and the separately scoped upstream proposal.
+measurements and the separately scoped upstream proposal. The complete set of
+accepted and rejected storage decisions is summarized in the
+[compact-key final decision record](docs/08-compact-key-final-decisions.md).
 
 Table create:
 ```go
@@ -226,7 +228,8 @@ if err != nil {
 }
 ```
 
-Please see working example: [here](https://github.com/go-bond/bond/blob/master/_examples/simple/main.go) 
+See the compile-tested [catalog example](examples/catalog/main.go) for a
+complete multi-table program.
 
 ### Advanced:
 

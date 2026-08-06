@@ -18,11 +18,72 @@ type filePublicationHooks struct {
 	syncDirectory func(string) error
 }
 
+type fileReplacementHooks struct {
+	beforeRename  func(string) error
+	syncDirectory func(string) error
+}
+
 // WriteFileWithSync publishes immutable file content without ever truncating,
 // overwriting, or unlinking the destination. An identical destination is an
 // idempotent success; a different destination is a conflict.
 func WriteFileWithSync(path string, data []byte, mode os.FileMode) error {
 	return writeFileWithSync(path, data, mode, filePublicationHooks{})
+}
+
+// ReplaceFileWithSync atomically replaces mutable file content. The new file
+// and the containing directory are synced before the operation returns.
+// Byte-identical content is not rewritten, but the directory is synced so a
+// retry can complete durability after an earlier post-rename sync failure.
+func ReplaceFileWithSync(path string, data []byte, mode os.FileMode) error {
+	return replaceFileWithSync(path, data, mode, fileReplacementHooks{})
+}
+
+func replaceFileWithSync(path string, data []byte, mode os.FileMode, hooks fileReplacementHooks) error {
+	dir := filepath.Dir(path)
+	existing, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(existing, data) {
+		return syncReplacementDirectory(dir, hooks)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	temporary, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	if err := temporary.Chmod(mode); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("failed to write replacement file: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("failed to sync replacement file: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("failed to close replacement file: %w", err)
+	}
+	if hooks.beforeRename != nil {
+		if err := hooks.beforeRename(temporaryPath); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return fmt.Errorf("replace file atomically: %w", err)
+	}
+	renamed = true
+	return syncReplacementDirectory(dir, hooks)
 }
 
 func writeFileWithSync(path string, data []byte, mode os.FileMode, hooks filePublicationHooks) error {
@@ -116,6 +177,22 @@ func fileContentConflict(path string) error {
 }
 
 func syncPublishedFileDirectory(dir string, hooks filePublicationHooks) error {
+	if hooks.syncDirectory != nil {
+		return hooks.syncDirectory(dir)
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
+}
+
+func syncReplacementDirectory(dir string, hooks fileReplacementHooks) error {
 	if hooks.syncDirectory != nil {
 		return hooks.syncDirectory(dir)
 	}

@@ -44,7 +44,7 @@ func (f *FilterFSStorer) Set(key []byte, value []byte, opt bond.WriteOptions, ba
 		}
 	}
 
-	err := utils.WriteFileWithSync(filePath, value, 0660)
+	err := utils.ReplaceFileWithSync(filePath, value, 0660)
 	if err != nil {
 		return err
 	}

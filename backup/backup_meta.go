@@ -214,7 +214,7 @@ func writeLocalMeta(dbDir string, meta *BackupMeta) error {
 	if err != nil {
 		return fmt.Errorf("marshal local meta: %w", err)
 	}
-	return utils.WriteFileWithSync(filepath.Join(dir, localMetaFile), data, 0644)
+	return utils.ReplaceFileWithSync(filepath.Join(dir, localMetaFile), data, 0644)
 }
 
 func readLocalMeta(dbDir string) (*BackupMeta, error) {

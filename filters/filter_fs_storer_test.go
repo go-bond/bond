@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewFSFilterStorer(t *testing.T) {
-	storer := NewFSFilterStorer(".")
+	storer := NewFSFilterStorer(t.TempDir())
 
 	err := storer.Set([]byte("test_1"), []byte("value1"), bond.Sync)
 	require.NoError(t, err)
@@ -19,11 +19,13 @@ func TestNewFSFilterStorer(t *testing.T) {
 
 	err = storer.Set([]byte("test_3"), []byte("value3"), bond.Sync)
 	require.NoError(t, err)
+	err = storer.Set([]byte("test_1"), []byte("replacement"), bond.Sync)
+	require.NoError(t, err)
 
 	data, closer, err := storer.Get([]byte("test_1"))
 	require.NoError(t, err)
 	require.NotNil(t, closer)
-	assert.Equal(t, []byte("value1"), data)
+	assert.Equal(t, []byte("replacement"), data)
 
 	data, closer, err = storer.Get([]byte("test_2"))
 	require.NoError(t, err)

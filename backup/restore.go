@@ -262,7 +262,7 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 
 	versionFile := filepath.Join(bondDir, "PEBBLE_FORMAT_VERSION")
 	versionData := []byte(fmt.Sprintf("%d", lastStorageCompatibility.FormatMajor))
-	if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
+	if err := utils.ReplaceFileWithSync(versionFile, versionData, 0644); err != nil {
 		return fmt.Errorf("write pebble format version: %w", err)
 	}
 	if err := bond.WriteStorageCompatibility(opts.RestoreDir, lastStorageCompatibility); err != nil {

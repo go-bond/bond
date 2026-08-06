@@ -73,3 +73,38 @@ func TestWriteFileWithSyncAcceptsOnlyIdenticalExistingContent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("same"), stored)
 }
+
+func TestReplaceFileWithSyncPreservesTargetBeforeRename(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata")
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+
+	err := replaceFileWithSync(path, []byte("new"), 0o600, fileReplacementHooks{
+		beforeRename: func(temporaryPath string) error {
+			replacement, readErr := os.ReadFile(temporaryPath)
+			require.NoError(t, readErr)
+			require.Equal(t, []byte("new"), replacement)
+			return errors.New("injected pre-rename failure")
+		},
+	})
+	require.ErrorContains(t, err, "injected pre-rename failure")
+	stored, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	require.Equal(t, []byte("old"), stored)
+	temporary, globErr := filepath.Glob(filepath.Join(dir, ".metadata.tmp-*"))
+	require.NoError(t, globErr)
+	require.Empty(t, temporary)
+}
+
+func TestReplaceFileWithSyncReplacesMutableContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata")
+	require.NoError(t, ReplaceFileWithSync(path, []byte("old"), 0o644))
+	require.NoError(t, ReplaceFileWithSync(path, []byte("new"), 0o600))
+	stored, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, []byte("new"), stored)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}

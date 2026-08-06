@@ -4,6 +4,7 @@ go 1.25.3
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.1
+	github.com/cockroachdb/errors v1.14.0
 	github.com/cockroachdb/pebble v0.0.0-20260707124150-8fb150d9135d
 	github.com/dustin/go-humanize v1.0.1
 	github.com/failsafe-go/failsafe-go v0.9.6
@@ -13,7 +14,7 @@ require (
 	github.com/go-kit/log v0.2.1
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.19.1
+	github.com/klauspost/compress v1.19.2
 	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/mattn/go-isatty v0.0.24
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
@@ -78,7 +79,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/cockroachdb/crlib v0.0.0-20251122031428-fe658a2dbda1 // indirect
-	github.com/cockroachdb/errors v1.14.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20241215232642-bb51bb14a506 // indirect
 	github.com/cockroachdb/metamorphic v0.0.0-20231120015718-884f2746775a // indirect
 	github.com/cockroachdb/redact v1.1.8 // indirect

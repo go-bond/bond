@@ -825,7 +825,7 @@ func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
 	if actualVersion != pebble.FormatMajorVersion(upgradeVersion) {
 		return fmt.Errorf("pebble format migration requested %d but opened at %d", upgradeVersion, actualVersion)
 	}
-	if err := utils.WriteFileWithSync(
+	if err := utils.ReplaceFileWithSync(
 		filepath.Join(dir, "bond", PebbleFormatFile),
 		[]byte(fmt.Sprintf("%d", actualVersion)),
 		os.ModePerm,

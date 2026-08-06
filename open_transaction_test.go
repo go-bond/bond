@@ -143,12 +143,11 @@ func TestOpenRecognizesPinnedTemporaryAndBlobMetadataMarkers(t *testing.T) {
 					requested.FS = configuredFS
 				}
 				require.NoError(t, configuredFS.MkdirAll(dir, 0o755))
-				markerContents := []byte("damaged-state-marker")
-				writeVFSFile(t, configuredFS, configuredFS.PathJoin(dir, marker), markerContents)
+				writeVFSFile(t, configuredFS, configuredFS.PathJoin(dir, marker), []byte("damaged-state-marker"))
 
 				_, err := Open(dir, &Options{Catalog: minimalOpenTestCatalog(t), PebbleOptions: requested})
 				require.ErrorContains(t, err, "pre-existing Pebble artifacts are present without a current manifest pointer")
-				require.Equal(t, markerContents, readVFSFile(t, configuredFS, configuredFS.PathJoin(dir, marker)))
+				require.Equal(t, []byte("damaged-state-marker"), readVFSFile(t, configuredFS, configuredFS.PathJoin(dir, marker)))
 				entries, err := configuredFS.List(dir)
 				require.NoError(t, err)
 				require.Contains(t, entries, marker)
@@ -529,14 +528,14 @@ func TestOpenClaimCoordinatesAcrossProcesses(t *testing.T) {
 	command.Stderr = &output
 	require.NoError(t, command.Start())
 	t.Cleanup(func() {
-		if command.ProcessState == nil {
+		if command.Process != nil {
 			_ = command.Process.Kill()
 		}
 	})
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(ready)
 		return err == nil
-	}, 5*time.Second, 10*time.Millisecond, output.String())
+	}, 5*time.Second, 10*time.Millisecond, "helper did not become ready")
 
 	_, err := inspectOpenDestination(vfs.Default, dir)
 	require.ErrorContains(t, err, "another Open may be active")

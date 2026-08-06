@@ -15,7 +15,6 @@ import (
 	"github.com/cockroachdb/pebble/sstable"
 	"github.com/cockroachdb/pebble/sstable/colblk"
 	"github.com/go-bond/bond/internal/fullkeyexperiment"
-	"github.com/go-bond/bond/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -237,7 +236,7 @@ func TestProductionOpenDoesNotRewriteUnchangedStorageCompatibility(t *testing.T)
 	require.True(t, os.SameFile(before, after), "unchanged metadata should retain the same file")
 }
 
-func TestStorageCompatibilityAtomicWriteRejectsReplacement(t *testing.T) {
+func TestStorageCompatibilityAtomicWritePreservesTargetBeforeRename(t *testing.T) {
 	dir := t.TempDir()
 	compatibility := StorageCompatibility{
 		ReaderEpoch:       StorageReaderEpoch,
@@ -249,8 +248,15 @@ func TestStorageCompatibilityAtomicWriteRejectsReplacement(t *testing.T) {
 	original, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	err = writeFileAtomically(path, []byte("replacement"), 0o644, atomicFileWriteHooks{})
-	require.ErrorIs(t, err, utils.ErrFileContentConflict)
+	err = writeFileAtomically(path, []byte("replacement"), 0o644, atomicFileWriteHooks{
+		beforeRename: func(temporaryPath string) error {
+			temporary, readErr := os.ReadFile(temporaryPath)
+			require.NoError(t, readErr)
+			require.Equal(t, "replacement", string(temporary))
+			return errors.New("simulated crash boundary")
+		},
+	})
+	require.ErrorContains(t, err, "simulated crash boundary")
 	current, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, original, current)
@@ -259,10 +265,11 @@ func TestStorageCompatibilityAtomicWriteRejectsReplacement(t *testing.T) {
 	require.Empty(t, temporaryFiles)
 }
 
-func TestStorageCompatibilityRetriesDirectorySyncAfterPublicationFailure(t *testing.T) {
+func TestStorageCompatibilityRetriesDirectorySyncAfterRenameFailure(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "bond")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	path := filepath.Join(dir, StorageCompatibilityFile)
+	require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
 	syncCalls := 0
 	hooks := atomicFileWriteHooks{
 		syncDirectory: func(dir string) error {
@@ -278,12 +285,12 @@ func TestStorageCompatibilityRetriesDirectorySyncAfterPublicationFailure(t *test
 	require.ErrorContains(t, err, "injected directory sync failure")
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "new", string(data), "publication completes before the injected sync failure")
+	require.Equal(t, "new", string(data), "rename completes before the injected sync failure")
 	require.NoError(t, writeFileAtomically(path, []byte("new"), 0o644, hooks))
 	require.Equal(t, 2, syncCalls, "unchanged retry must repeat directory sync")
 }
 
-func TestWriteStorageCompatibilityRejectsTruncatedFileWithoutReplacingIt(t *testing.T) {
+func TestWriteStorageCompatibilityReplacesTruncatedFile(t *testing.T) {
 	dir := t.TempDir()
 	metadataDir := filepath.Join(dir, "bond")
 	require.NoError(t, os.MkdirAll(metadataDir, 0o755))
@@ -296,11 +303,10 @@ func TestWriteStorageCompatibilityRejectsTruncatedFileWithoutReplacingIt(t *test
 		RequiredKeySchema: []string{DefaultKeySchemaName()},
 	}
 
-	err := WriteStorageCompatibility(dir, compatibility)
-	require.ErrorIs(t, err, utils.ErrFileContentConflict)
-	stored, readErr := os.ReadFile(filepath.Join(metadataDir, StorageCompatibilityFile))
-	require.NoError(t, readErr)
-	require.Equal(t, []byte("{\n"), stored)
+	require.NoError(t, WriteStorageCompatibility(dir, compatibility))
+	stored, err := ReadStorageCompatibility(dir)
+	require.NoError(t, err)
+	require.Equal(t, compatibility, *stored)
 }
 
 func TestInspectStorageDirectorySupportsOlderFormat(t *testing.T) {
