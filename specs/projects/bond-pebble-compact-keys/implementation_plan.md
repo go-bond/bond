@@ -11,7 +11,7 @@ The root `PLAN.md` is retained as the approved detailed source and is part of th
 ## Phases
 
 - [x] Phase 0: Materialize the approved spec project and freeze the current Bond/Pebble branch, worktree, environment, option, and artifact baselines without touching Go modules or implementation source.
-- [ ] Phase 1: Establish the dependency/build baseline—pin Pebble exact commit `8fb150d9135d6f94e183a874475e0bd1afb18f63`, verify it with `go list -m`, run `go-outdated`, upgrade all other dependencies to latest compatible versions, move to pinned `FormatNewest`, adapt APIs, and prove build/reopen/restore behavior.
+- [x] Phase 1: Establish the dependency/build baseline—pin Pebble exact commit `8fb150d9135d6f94e183a874475e0bd1afb18f63`, verify it with `go list -m`, run `go-outdated`, upgrade all other dependencies to latest compatible versions, move to pinned `FormatNewest`, adapt APIs, and prove build/reopen/restore behavior.
 - [ ] Phase 2: Add the deterministic benchmark/oracle harness, correct compression policy, compare table filters independently, retain reproducible manifests, and freeze the winning non-schema baseline.
 - [ ] Phase 3: Implement and prove global `bond/full-key/v1` bundle candidates on stock Pebble with unit, fuzz/property, integration, mixed-schema, and lifecycle benchmarks; accept or reject with data.
 - [ ] Phase 4: Centralize the reader registry and writer selection, add backup/checkpoint compatibility metadata and restore validation, update all open paths and inspection tooling, and exercise reversible writer rollout.

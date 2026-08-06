@@ -373,7 +373,11 @@ func _KeyPrefixSplit(rawKey []byte) int {
 	}
 
 	if KeyBytes(rawKey).IndexID() != PrimaryIndexID {
-		return _KeyPrefixSplitIndexOffset + int(binary.BigEndian.Uint32(rawKey[2:6]))
+		indexLength := binary.BigEndian.Uint32(rawKey[2:6])
+		if uint64(indexLength) > uint64(len(rawKey)-_KeyPrefixSplitIndexOffset) {
+			return len(rawKey)
+		}
+		return _KeyPrefixSplitIndexOffset + int(indexLength)
 	}
 	return len(rawKey)
 }
@@ -383,5 +387,9 @@ func _KeyPrefix(rawKey []byte) int {
 		return len(rawKey)
 	}
 
-	return _KeyPrefixSplitIndexOffset + int(binary.BigEndian.Uint32(rawKey[2:6]))
+	indexLength := binary.BigEndian.Uint32(rawKey[2:6])
+	if uint64(indexLength) > uint64(len(rawKey)-_KeyPrefixSplitIndexOffset) {
+		return len(rawKey)
+	}
+	return _KeyPrefixSplitIndexOffset + int(indexLength)
 }

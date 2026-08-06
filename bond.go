@@ -633,29 +633,37 @@ func PebbleFormatVersion(dir string) (uint64, error) {
 }
 
 func MigratePebbleFormatVersion(dir string, upgradeVersion uint64) error {
-	opt := DefaultPebbleOptions()
-	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
-
 	// expand the path if it is not absolute
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}
 
+	currentVersion, err := PebbleFormatVersion(dir)
+	if err != nil {
+		return err
+	}
+	if currentVersion > upgradeVersion {
+		return fmt.Errorf("cannot downgrade pebble format from %d to %d", currentVersion, upgradeVersion)
+	}
+
+	opt := DefaultPebbleOptions()
+	opt.FormatMajorVersion = pebble.FormatMajorVersion(upgradeVersion)
 	db, err := pebble.Open(dir, opt)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	versionFile, err := os.OpenFile(filepath.Join(dir, "bond", PebbleFormatFile), os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModePerm)
-	if err != nil {
-		return err
+	actualVersion := db.FormatMajorVersion()
+	if actualVersion != pebble.FormatMajorVersion(upgradeVersion) {
+		return fmt.Errorf("pebble format migration requested %d but opened at %d", upgradeVersion, actualVersion)
 	}
-
-	defer versionFile.Close()
-	_, err = versionFile.Write([]byte(fmt.Sprintf("%d", upgradeVersion)))
-	return err
+	return utils.WriteFileWithSync(
+		filepath.Join(dir, "bond", PebbleFormatFile),
+		[]byte(fmt.Sprintf("%d", actualVersion)),
+		os.ModePerm,
+	)
 }
 
 // StringToBytes converts a string to a byte slice without copying.
