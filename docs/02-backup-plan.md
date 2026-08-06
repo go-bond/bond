@@ -52,7 +52,7 @@ This way, the next incremental can read the previous backup's `checkpoint_files`
 
 ### 1.5 Bond metadata preservation
 
-Pebble Checkpoint doesn't include `bond/PEBBLE_FORMAT_VERSION`. During backup, the Pebble format version is read via `db.Backend().FormatMajorVersion()` and stored in `meta.json`. During restore, the file is recreated using `utils.WriteFileWithSync` so `bond.Open()` succeeds. The bond data version (`BOND_DB_DATA_VERSION` constant) is also stored in `meta.json` and comes for free in the checkpoint as a Pebble key.
+Pebble Checkpoint alone doesn't include Bond metadata. Backup uses `db.Checkpoint`, which adds `bond/PEBBLE_FORMAT_VERSION` and `bond/STORAGE_COMPATIBILITY.json`; the same format and reader requirements are stored in `meta.json`. Restore validates metadata before destination mutation and recreates both sidecars. The bond data version (`BOND_DB_DATA_VERSION` constant) also remains in Pebble as a key.
 
 ---
 
@@ -246,7 +246,7 @@ var ErrLockRefreshFailed = fmt.Errorf("lock refresh failed for longer than TTL")
 8. Compute object prefix via `backupObjectPrefix(opts.Prefix, dt, opts.Type)`
 9. Validate `opts.CheckpointDir` is non-empty (required)
 10. Remove any stale checkpoint at `opts.CheckpointDir` via `os.RemoveAll` + `defer os.RemoveAll(opts.CheckpointDir)` for cleanup
-11. `db.Backend().Checkpoint(opts.CheckpointDir)` into the caller-provided directory
+11. `db.Checkpoint(opts.CheckpointDir)` into the caller-provided directory, including Bond format/reader sidecars
 12. `filepath.WalkDir(opts.CheckpointDir, ...)` to collect all checkpoint files as `[]FileInfo{Name, Size}`
 13. Resolve retry parameters: `MaxUploadRetries` (default `DefaultMaxUploadRetries`), `InitialRetryBackoff` (default `DefaultInitialRetryBackoff`)
 14. Upload ALL files in parallel using `errgroup` with configurable concurrency (`opts.Concurrency`, default `DefaultConcurrency`), calling `opts.OnProgress` after each file
@@ -456,7 +456,7 @@ Helper functions:
 
 | File | What is used |
 |------|-------------|
-| `bond.go:53` | `db.Backend()` -> `*pebble.DB` for `Checkpoint()` and `FormatMajorVersion()` |
+| `bond.go` | `db.Checkpoint()` creates Pebble plus Bond compatibility metadata; `db.Backend().FormatMajorVersion()` reports the live format |
 | `bond.go:35` | `PebbleFormatFile` constant (`"PEBBLE_FORMAT_VERSION"`) |
 | `version.go:12` | `BOND_DB_DATA_VERSION` constant (currently `1`) |
 | `utils/file.go:8` | `WriteFileWithSync()` for safe file writes during restore |

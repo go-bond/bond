@@ -14,6 +14,7 @@ import (
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/retrypolicy"
 	"github.com/fujiwara/shapeio"
+	"github.com/go-bond/bond"
 	"github.com/go-bond/bond/utils"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
@@ -112,24 +113,17 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		return fmt.Errorf("RestoreDir must be specified")
 	}
 
-	// Check for a .incomplete marker from a previously interrupted restore.
-	// If found, clean the directory so we can start fresh.
+	// Inspect destination state without changing it. Compatibility validation
+	// below must complete before an interrupted destination is cleaned.
 	incomplete, err := HasIncompleteRestore(opts.RestoreDir)
 	if err != nil {
 		return fmt.Errorf("check incomplete restore: %w", err)
 	}
-	if incomplete {
-		if err := cleanRestoreDir(opts.RestoreDir); err != nil {
-			return fmt.Errorf("clean incomplete restore: %w", err)
-		}
-	}
-
-	// Validate that RestoreDir is empty or doesn't exist.
 	entries, err := os.ReadDir(opts.RestoreDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("read restore dir: %w", err)
 	}
-	if len(entries) > 0 {
+	if len(entries) > 0 && !incomplete {
 		return fmt.Errorf("restore directory %q is not empty", opts.RestoreDir)
 	}
 
@@ -139,14 +133,6 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 	}
 	if len(restoreSet) == 0 {
 		return fmt.Errorf("no backups found for prefix %q", opts.Prefix)
-	}
-
-	// Create the restore directory and place the .incomplete marker.
-	if err := os.MkdirAll(opts.RestoreDir, 0755); err != nil {
-		return fmt.Errorf("create restore dir: %w", err)
-	}
-	if err := writeRestoreIncompleteMarker(opts.RestoreDir); err != nil {
-		return err
 	}
 
 	maxRetries := opts.MaxDownloadRetries
@@ -165,14 +151,42 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 		if err != nil {
 			return fmt.Errorf("read meta for %s: %w", backup.Prefix, err)
 		}
+		if _, err := effectiveStorageCompatibility(meta); err != nil {
+			return fmt.Errorf("backup %s is not readable by this binary: %w", backup.Prefix, err)
+		}
 		allBackups = append(allBackups, backupWithMeta{prefix: backup.Prefix, meta: meta})
 	}
 
 	// Use the last backup's CheckpointFiles as the definitive file set
 	// and resolve each file to its most recent source backup.
 	lastMeta := allBackups[len(allBackups)-1].meta
+	if lastMeta.BondDataVersion != uint32(bond.BOND_DB_DATA_VERSION) {
+		return fmt.Errorf(
+			"backup Bond data version %d is incompatible with version %d",
+			lastMeta.BondDataVersion,
+			bond.BOND_DB_DATA_VERSION,
+		)
+	}
+	lastStorageCompatibility, err := effectiveStorageCompatibility(lastMeta)
+	if err != nil {
+		return fmt.Errorf("validate final backup storage compatibility: %w", err)
+	}
 	resolved, err := resolveFileSources(lastMeta.CheckpointFiles, allBackups)
 	if err != nil {
+		return err
+	}
+
+	// Compatibility and chain validation are complete. Destination mutations
+	// may begin only after this point.
+	if incomplete {
+		if err := cleanRestoreDir(opts.RestoreDir); err != nil {
+			return fmt.Errorf("clean incomplete restore: %w", err)
+		}
+	}
+	if err := os.MkdirAll(opts.RestoreDir, 0755); err != nil {
+		return fmt.Errorf("create restore dir: %w", err)
+	}
+	if err := writeRestoreIncompleteMarker(opts.RestoreDir); err != nil {
 		return err
 	}
 
@@ -247,9 +261,12 @@ func Restore(ctx context.Context, bucket objstore.Bucket, opts RestoreOptions) e
 	}
 
 	versionFile := filepath.Join(bondDir, "PEBBLE_FORMAT_VERSION")
-	versionData := []byte(fmt.Sprintf("%d", lastMeta.PebbleFormatVersion))
+	versionData := []byte(fmt.Sprintf("%d", lastStorageCompatibility.FormatMajor))
 	if err := utils.WriteFileWithSync(versionFile, versionData, 0644); err != nil {
 		return fmt.Errorf("write pebble format version: %w", err)
+	}
+	if err := bond.WriteStorageCompatibility(opts.RestoreDir, lastStorageCompatibility); err != nil {
+		return fmt.Errorf("write storage compatibility: %w", err)
 	}
 
 	// Write local backup meta so incremental backups can validate chain integrity.

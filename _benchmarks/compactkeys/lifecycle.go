@@ -91,8 +91,12 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 				Compression: request.Engine.Compression,
 				TableFilter: request.Engine.TableFilter,
 			})
-			if err == nil && request.Engine.BundleSize > 0 {
-				err = fullkeyexperiment.Configure(opts, request.Engine.WriterSchema)
+			if err == nil {
+				if request.Engine.BundleSize > 0 {
+					err = fullkeyexperiment.Configure(opts, request.Engine.WriterSchema)
+				} else {
+					opts.EnsureDefaults()
+				}
 			}
 		}
 		if err != nil {
@@ -222,6 +226,10 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 	if err := db.Checkpoint(checkpointDir); err != nil {
 		return RunManifest{}, fmt.Errorf("checkpoint: %w", err)
 	}
+	checkpointCompatibility := benchmarkStorageCompatibility(opts, results.AfterCompaction.SST)
+	if err := bond.WriteStorageCompatibility(checkpointDir, checkpointCompatibility); err != nil {
+		return RunManifest{}, fmt.Errorf("write checkpoint compatibility: %w", err)
+	}
 	results.CheckpointNS = time.Since(started).Nanoseconds()
 	checkpointOptions, err := newOptions()
 	if err != nil {
@@ -309,9 +317,32 @@ func RunLifecycle(ctx context.Context, request RunRequest) (manifest RunManifest
 		ActiveKeySchema:  opts.KeySchema,
 		StoragePolicy:    storagePolicy,
 		Schema:           schema,
+		Compatibility:    checkpointCompatibility,
 		EffectiveOptions: opts.String(),
 		Results:          results,
 	}, nil
+}
+
+func benchmarkStorageCompatibility(opts *pebble.Options, sst SSTResults) bond.StorageCompatibility {
+	requiredSet := make(map[string]struct{})
+	for name, count := range sst.KeySchemas {
+		if count > 0 {
+			requiredSet[name] = struct{}{}
+		}
+	}
+	if len(requiredSet) == 0 && opts.KeySchema != "" {
+		requiredSet[opts.KeySchema] = struct{}{}
+	}
+	required := make([]string, 0, len(requiredSet))
+	for name := range requiredSet {
+		required = append(required, name)
+	}
+	sort.Strings(required)
+	return bond.StorageCompatibility{
+		ReaderEpoch:       bond.StorageReaderEpoch,
+		FormatMajor:       uint64(opts.FormatMajorVersion),
+		RequiredKeySchema: required,
+	}
 }
 
 func writeEntries(db *pebble.DB, entries []Entry, batchSize int) ([]time.Duration, error) {

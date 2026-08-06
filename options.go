@@ -133,9 +133,11 @@ func BuildPebbleOptions(profile PerformanceProfile) *pebble.Options {
 	return opts
 }
 
-// BuildPebbleOptionsWithConfig builds an attributable Pebble configuration.
-// It retains Bond's comparer, format, schema registry, and value policy across
-// every compression and table-filter candidate.
+// BuildPebbleOptionsWithConfig builds an attributable Pebble resource and
+// storage-policy configuration. It retains Bond's comparer, format, and value
+// policy across every compression and table-filter candidate. Schema fields
+// remain empty until production preparation installs a fresh private registry,
+// or a controlled test/benchmark explicitly installs an experimental one.
 func BuildPebbleOptionsWithConfig(config PebbleOptionsConfig) (*pebble.Options, error) {
 	config = config.withDefaults()
 	if err := config.validate(); err != nil {
@@ -207,6 +209,12 @@ func BuildPebbleOptionsWithConfig(config PebbleOptionsConfig) (*pebble.Options, 
 
 	opts.TargetFileSizes[0] = settings.targetFileSize
 	opts.EnsureDefaults()
+	// Schema ownership belongs to productionPebbleOptions. Leaving these fields
+	// empty prevents caller-visible mutable definitions from being reused by a
+	// later production open; raw controlled harnesses configure their registry
+	// explicitly.
+	opts.KeySchema = ""
+	opts.KeySchemas = nil
 	return opts, nil
 }
 

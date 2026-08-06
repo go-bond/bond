@@ -60,7 +60,7 @@ type OpenConfig struct {
 func BuildPebbleOptions(cfg OpenConfig) (*pebble.Options, error)
 ```
 
-Profile-specific sizes and concurrency are applied after common correctness settings. The builder always installs `DefaultKeyComparer()`, `pebble.FormatNewest`, a validated schema registry, and the stock bounds-based span policy. All calls to `pebble.Open`, including migration and tooling, consume this builder or a lower-level validated result returned by it.
+Profile-specific sizes and concurrency are applied after common correctness settings. The resource/profile builder installs `DefaultKeyComparer()`, `pebble.FormatNewest`, and the stock bounds-based span policy, but deliberately returns empty schema fields. The production preparation layer rejects caller-prepopulated reserved schema names and installs a fresh private validated schema registry for each open. Controlled raw-Pebble tests and benchmarks configure their isolated registry explicitly. All production calls to `pebble.Open`, including migration, consume the validated production result.
 
 `WriterSchema` is a Phase 4 rollout control for schemas that have passed their activation gates. Phase 3's rejected full-key candidates do not add this field to the production `PebbleOptionsConfig`, do not register production readers, and do not alter Bond mutation behavior.
 

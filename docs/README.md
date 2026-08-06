@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Architecture](./architecture.md)
+- [Storage compatibility and inspection](./05-storage-compatibility.md)
 - [Research](./research/README.md)
 
 ## Organization of documentation

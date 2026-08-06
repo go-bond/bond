@@ -19,7 +19,7 @@ import (
 	"github.com/go-bond/bond"
 )
 
-const ManifestVersion = 2
+const ManifestVersion = 3
 
 const approvedPebbleCommit = "8fb150d9135d6f94e183a874475e0bd1afb18f63"
 
@@ -208,22 +208,23 @@ type LifecycleResults struct {
 }
 
 type RunManifest struct {
-	ManifestVersion  int                     `json:"manifest_version"`
-	CapturedAt       time.Time               `json:"captured_at"`
-	Revisions        Revisions               `json:"revisions"`
-	Runtime          RuntimeInfo             `json:"runtime"`
-	Machine          MachineInfo             `json:"machine"`
-	Engine           EngineSpec              `json:"engine"`
-	Run              RunSpec                 `json:"run"`
-	Dataset          DatasetSpec             `json:"dataset"`
-	DatasetDigest    string                  `json:"dataset_digest"`
-	LogicalLayout    string                  `json:"logical_layout"`
-	FormatMajor      uint64                  `json:"format_major"`
-	ActiveKeySchema  string                  `json:"active_key_schema"`
-	StoragePolicy    StoragePolicyProvenance `json:"storage_policy"`
-	Schema           SchemaProvenance        `json:"schema"`
-	EffectiveOptions string                  `json:"effective_pebble_options"`
-	Results          LifecycleResults        `json:"results"`
+	ManifestVersion  int                       `json:"manifest_version"`
+	CapturedAt       time.Time                 `json:"captured_at"`
+	Revisions        Revisions                 `json:"revisions"`
+	Runtime          RuntimeInfo               `json:"runtime"`
+	Machine          MachineInfo               `json:"machine"`
+	Engine           EngineSpec                `json:"engine"`
+	Run              RunSpec                   `json:"run"`
+	Dataset          DatasetSpec               `json:"dataset"`
+	DatasetDigest    string                    `json:"dataset_digest"`
+	LogicalLayout    string                    `json:"logical_layout"`
+	FormatMajor      uint64                    `json:"format_major"`
+	ActiveKeySchema  string                    `json:"active_key_schema"`
+	StoragePolicy    StoragePolicyProvenance   `json:"storage_policy"`
+	Schema           SchemaProvenance          `json:"schema"`
+	Compatibility    bond.StorageCompatibility `json:"storage_compatibility"`
+	EffectiveOptions string                    `json:"effective_pebble_options"`
+	Results          LifecycleResults          `json:"results"`
 }
 
 func (m RunManifest) JSON() ([]byte, error) {
@@ -321,17 +322,19 @@ func collectMachine(storageRoot string) (MachineInfo, error) {
 	}, nil
 }
 
+var fingerprintSourcePaths = []string{
+	"go.mod",
+	"go.sum",
+	"internal/fullkeyexperiment",
+	"keys.go",
+	"options.go",
+	"storage_compatibility.go",
+	"_benchmarks/compactkeys",
+}
+
 func fingerprintSources(repoRoot string) (string, error) {
-	paths := []string{
-		"go.mod",
-		"go.sum",
-		"internal/fullkeyexperiment",
-		"keys.go",
-		"options.go",
-		"_benchmarks/compactkeys",
-	}
 	var files []string
-	for _, relative := range paths {
+	for _, relative := range fingerprintSourcePaths {
 		absolute := filepath.Join(repoRoot, relative)
 		info, err := os.Stat(absolute)
 		if err != nil {

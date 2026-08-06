@@ -3,6 +3,7 @@ package compactkeys
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -28,6 +29,42 @@ func TestDatasetGeneratorDeterministic(t *testing.T) {
 	changed, err := Generate(RepresentativeDatasetSpec(0x5eee, 128))
 	require.NoError(t, err)
 	require.NotEqual(t, first.Digest, changed.Digest)
+}
+
+func TestFingerprintSourcesIncludesEveryBenchmarkDependency(t *testing.T) {
+	require.Equal(t, []string{
+		"go.mod",
+		"go.sum",
+		"internal/fullkeyexperiment",
+		"keys.go",
+		"options.go",
+		"storage_compatibility.go",
+		"_benchmarks/compactkeys",
+	}, fingerprintSourcePaths)
+
+	repoRoot := t.TempDir()
+	files := make([]string, 0, len(fingerprintSourcePaths))
+	for _, relative := range fingerprintSourcePaths {
+		path := filepath.Join(repoRoot, relative)
+		if filepath.Ext(relative) == "" && relative != "go.mod" && relative != "go.sum" {
+			path = filepath.Join(path, "source.go")
+		}
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte(relative), 0o644))
+		files = append(files, path)
+	}
+
+	baseline, err := fingerprintSources(repoRoot)
+	require.NoError(t, err)
+	for index, path := range files {
+		original, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(path, append(original, byte(index)), 0o644))
+		changed, err := fingerprintSources(repoRoot)
+		require.NoError(t, err)
+		require.NotEqual(t, baseline, changed, "%s did not affect the source fingerprint", fingerprintSourcePaths[index])
+		require.NoError(t, os.WriteFile(path, original, 0o644))
+	}
 }
 
 func TestDatasetGeneratorCoversShapes(t *testing.T) {
@@ -161,6 +198,11 @@ func TestManifestRoundTrip(t *testing.T) {
 			RegisteredReaders: []string{"default", "reader-v1"},
 			ActiveBundleSize:  16,
 		},
+		Compatibility: bond.StorageCompatibility{
+			ReaderEpoch:       bond.StorageReaderEpoch,
+			FormatMajor:       30,
+			RequiredKeySchema: []string{"default"},
+		},
 		EffectiveOptions: "[Options]",
 		Results: LifecycleResults{
 			Rows: 100,
@@ -224,7 +266,12 @@ func TestLifecycleOracleAndManifest(t *testing.T) {
 	require.Equal(t, 16, manifest.Schema.ActiveBundleSize)
 	require.Equal(t, manifest.ActiveKeySchema, manifest.Schema.ActiveWriter)
 	require.True(t, sort.StringsAreSorted(manifest.Schema.RegisteredReaders))
-	require.Contains(t, manifest.Schema.RegisteredReaders, manifest.ActiveKeySchema)
+	require.Equal(t, []string{manifest.ActiveKeySchema}, manifest.Schema.RegisteredReaders)
+	require.Equal(t, bond.StorageReaderEpoch, manifest.Compatibility.ReaderEpoch)
+	require.Equal(t, manifest.FormatMajor, manifest.Compatibility.FormatMajor)
+	require.Equal(t, []string{manifest.ActiveKeySchema}, manifest.Compatibility.RequiredKeySchema)
+	require.Len(t, manifest.Results.AfterCompaction.SST.KeySchemas, 1)
+	require.Positive(t, manifest.Results.AfterCompaction.SST.KeySchemas[manifest.ActiveKeySchema])
 }
 
 func BenchmarkBondLifecycleBaselines(b *testing.B) {

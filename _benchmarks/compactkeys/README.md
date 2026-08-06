@@ -24,7 +24,9 @@ go run ./compactkeys/cmd/compact-key-baseline \
 Phase 3 full-key schema comparisons use the internal rejected-schema package,
 keep the frozen Phase 2 policy, and vary only the controlled physical writer
 and its immutable bundle size. These commands do not enable a Bond production
-reader or writer:
+reader or writer. Bond production opens reject these names; the harness opens
+isolated raw Pebble databases with the internal registry solely to retain the
+mixed-schema and rollback evidence:
 
 ```bash
 cd _benchmarks
@@ -39,4 +41,6 @@ go run ./compactkeys/cmd/compact-key-schema \
 
 Compression candidates always use uniform Bloom so compression remains attributable. Filter candidates use the frozen corrected-legacy compression baseline. Point misses use `Get` and require `pebble.ErrNotFound`; separate filter-diagnostic probes use `SeekPrefixGE` with `UseL6Filters=true` because the diagnostic full compaction normally places the representative corpus in L6. All databases and checkpoints live under isolated temporary run roots.
 
-Each JSON manifest records the Bond commit/dirty state plus a content fingerprint of the benchmark-relevant source, exact Pebble origin hash, Go/runtime and machine/storage context, complete effective Pebble options, structured span/value-storage policy, active writer and sorted schema readers, actual bundle size, `FormatNewest`, logical layout, dataset spec/digest, warmups/repetitions, latency distributions, post-flush and post-compaction Pebble/SST snapshots, compaction deltas, and filter observations. SST physical bytes and non-reconcilable table-property byte counters are labeled independently.
+Non-schema baselines use Pebble's comparer-derived legacy writer and exactly one legacy reader. Only explicit compact-key candidates install the internal experimental reader set. Manifest/checkpoint compatibility requirements are derived from encountered SST schema properties (with the active writer as an empty-SST fallback), not every reader registered for a controlled experiment.
+
+Each JSON manifest records the Bond commit/dirty state plus a content fingerprint of the benchmark-relevant source (including key encoding, options, storage compatibility, internal schema experiments, module resolution, and the harness itself), exact Pebble origin hash, Go/runtime and machine/storage context, complete effective Pebble options, structured span/value-storage policy, active writer and sorted schema readers, actual bundle size, `FormatNewest`, logical layout, dataset spec/digest, warmups/repetitions, latency distributions, post-flush and post-compaction Pebble/SST snapshots, compaction deltas, and filter observations. SST physical bytes and non-reconcilable table-property byte counters are labeled independently.

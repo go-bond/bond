@@ -48,13 +48,15 @@ func TestFormatNewestMigration(t *testing.T) {
 	require.Equal(t, uint64(30), formatVersion)
 	require.ErrorContains(t,
 		bond.MigratePebbleFormatVersion(dbDir, uint64(pebble.FormatV2BlobFiles)),
-		"cannot downgrade pebble format",
+		"must target FormatNewest",
 	)
 
 	olderOptions := bond.DefaultOptions(bond.MediumPerformance)
 	olderOptions.PebbleOptions.FormatMajorVersion = pebble.FormatV2BlobFiles
-	_, err = bond.Open(dbDir, olderOptions)
-	require.ErrorContains(t, err, "the user trying to open pebble version")
+	dbWithForcedNewest, err := bond.Open(dbDir, olderOptions)
+	require.NoError(t, err)
+	require.Equal(t, pebble.FormatNewest, dbWithForcedNewest.Backend().FormatMajorVersion())
+	require.NoError(t, dbWithForcedNewest.Close())
 
 	db := openTestDB(t, dbDir)
 	require.Equal(t, pebble.FormatNewest, db.Backend().FormatMajorVersion())

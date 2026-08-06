@@ -36,6 +36,18 @@ if err != nil {
 defer func() { _ = db.Close() }()
 ```
 
+Bond production opens always use the pinned Pebble `FormatNewest` and the
+central legacy/default key-schema registry. Physical SST schemas are not part
+of mutation APIs. Offline storage diagnostics are available with:
+
+```bash
+bond-cli storage inspect --dir example
+```
+
+The report lists the active writer, registered readers, and encountered SST
+schema file/byte totals. Backup compatibility, restore validation, and rollback
+rules are documented in [Storage compatibility and inspection](docs/05-storage-compatibility.md).
+
 Table create:
 ```go
 const (

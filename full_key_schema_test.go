@@ -348,7 +348,11 @@ func TestFullKeySchemaCorruptSSTDataBlock(t *testing.T) {
 }
 
 func TestExperimentalSchemaSelectionIsNotInProductionOptions(t *testing.T) {
-	production, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: LowPerformance})
+	base, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: LowPerformance})
+	require.NoError(t, err)
+	require.Empty(t, base.KeySchema)
+	require.Empty(t, base.KeySchemas)
+	production, _, err := productionPebbleOptions(base, false)
 	require.NoError(t, err)
 	require.Contains(t, production.KeySchema, "DefaultKeySchema(")
 	require.Len(t, production.KeySchemas, 1)
@@ -374,8 +378,8 @@ func TestExperimentalSchemaSelectionIsNotInProductionOptions(t *testing.T) {
 	require.ErrorContains(t, err, "unknown experimental Pebble writer schema")
 }
 
-func TestFullKeySchemaBondTableLifecycle(t *testing.T) {
-	writers := []string{"", fullkeyexperiment.NameB16, fullkeyexperiment.NameB32, fullkeyexperiment.NameB64}
+func TestProductionLegacySchemaBondTableLifecycle(t *testing.T) {
+	writers := []string{""}
 	for _, writer := range writers {
 		name := writer
 		if name == "" {
@@ -384,7 +388,7 @@ func TestFullKeySchemaBondTableLifecycle(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			directory := t.TempDir()
 			open := func() DB {
-				pebbleOptions, err := experimentalPebbleOptions(writer)
+				pebbleOptions, err := BuildPebbleOptionsWithConfig(PebbleOptionsConfig{Performance: LowPerformance})
 				require.NoError(t, err)
 				db, err := Open(directory, &Options{PebbleOptions: pebbleOptions})
 				require.NoError(t, err)
@@ -576,6 +580,35 @@ func TestMixedSchemasReopenCompactRollback(t *testing.T) {
 	counts := schemaFileCounts(t, rolledBack)
 	require.Positive(t, counts[fullkeyexperiment.NameB32])
 	require.Positive(t, counts["DefaultKeySchema(leveldb.BytewiseComparator,16)"])
+	experimentalOptions, err := experimentalPebbleOptions("")
+	require.NoError(t, err)
+	readers := make([]string, 0, len(experimentalOptions.KeySchemas))
+	for name := range experimentalOptions.KeySchemas {
+		readers = append(readers, name)
+	}
+	diagnostics, err := inspectPebbleStorage(
+		rolledBack,
+		rolledBack.FormatMajorVersion(),
+		experimentalOptions.KeySchema,
+		readers,
+	)
+	require.NoError(t, err)
+	require.Len(t, diagnostics.EncounteredSSTSchemas, 2)
+	require.Empty(t, diagnostics.UnknownSchemas)
+	require.Equal(t, experimentalOptions.KeySchema, diagnostics.ActiveWriter)
+	productionRegistry := newProductionSchemaRegistry(DefaultKeyComparer())
+	productionView, err := inspectPebbleStorage(
+		rolledBack,
+		rolledBack.FormatMajorVersion(),
+		productionRegistry.active,
+		productionRegistry.readerName,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{fullkeyexperiment.NameB32}, productionView.UnknownSchemas)
+	require.ErrorContains(t,
+		ValidateStorageCompatibility(compatibilityFromDiagnostics(diagnostics)),
+		"unregistered key schemas",
+	)
 	require.NoError(t, rolledBack.Close())
 }
 
