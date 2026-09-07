@@ -203,21 +203,21 @@ Please see working example: [here](https://github.com/go-bond/bond/blob/master/_
 
 Layers, top to bottom: user API (`Table[T]` / `Index[T]` / `Query[T]`) -> the typed table/index/query layer -> `Batch` (atomic unit of work) -> Pebble (`*pebble.DB`).
 
-Key layout — `KeyEncode` (keys.go:215-240) writes `[TableID 1B][IndexID 1B][len(Index) uint32 BE][Index][len(IndexOrder) uint32 BE][IndexOrder][PrimaryKey]`. Both length words are explicit big-endian `uint32`s; `PrimaryKey` has no length prefix, since it always trails the rest of the key. A key *prefix* (used to range-scan one index) omits the `IndexOrder` length word and `PrimaryKey` entirely (keys.go:222-224, 233-237).
+Key layout — `KeyEncode` (in [keys.go](https://github.com/go-bond/bond/blob/master/keys.go)) writes `[TableID 1B][IndexID 1B][len(Index) uint32 BE][Index][len(IndexOrder) uint32 BE][IndexOrder][PrimaryKey]`. Both length words are explicit big-endian `uint32`s; `PrimaryKey` has no length prefix, since it always trails the rest of the key. A key *prefix* (used to range-scan one index) omits the `IndexOrder` length word and `PrimaryKey` entirely.
 
 Core types:
-- `DB` (bond.go:50) — root handle; Getter/Setter/Deleter/Batcher/Applier over `*pebble.DB`.
-- `Table[T]` (table.go:109) — typed record store, `TableReader[T]` + `TableWriter[T]`; options at table.go:114.
-- `Index[T]` (index.go:151, `NewIndex` at :160) — secondary index; key/filter/order functions at index.go:14,16,17.
-- `Query[T]` (query.go:27) — fluent builder: index selector, filter, order, offset/limit, after-cursor.
-- `Batch` (batch.go:28) — atomic unit of work over Pebble; `Type()`, `Count()`, Get/Set/Delete.
-- `KeyBuilder` (keys.go:15) — fluent order-preserving field encoder (`AddUint64Field`, ...).
-- `Key` / `KeyEncode` (keys.go:165-171 / 215-240) — key struct and the wire layout above.
-- `Filter` (filter.go:27) — `Add`/`MayContain` membership test with `Load`/`Save`/`Clear` persistence.
-- `BloomFilter` (bloom/bloom_filter.go:33) — bloom implementation of `Filter`.
-- `Serializer[T]` (serializer.go:5) — `Serialize`/`Deserialize`; implementations in `serializers/` (JSON, CBOR, Protobuf).
-- `cond` (cond/cond.go:9,25-156) — record predicates: `Func`, `Eq`, `Gt`, `Gte`, `Lt`, `Lte`, `And`, `Or`, `Not`.
-- `inspect` (inspect/inspect.go:13,25) — runtime introspection: `Inspect`, `NewInspect`, HTTP handler + CLI.
+- `DB` (in [bond.go](https://github.com/go-bond/bond/blob/master/bond.go)) — root handle; Getter/Setter/Deleter/Batcher/Applier over `*pebble.DB`.
+- `Table[T]` (in [table.go](https://github.com/go-bond/bond/blob/master/table.go)) — typed record store, `TableReader[T]` + `TableWriter[T]`; options also in `table.go`.
+- `Index[T]` (in [index.go](https://github.com/go-bond/bond/blob/master/index.go), constructed via `NewIndex`) — secondary index; key/filter/order functions also in `index.go`.
+- `Query[T]` (in [query.go](https://github.com/go-bond/bond/blob/master/query.go)) — fluent builder: index selector, filter, order, offset/limit, after-cursor.
+- `Batch` (in [batch.go](https://github.com/go-bond/bond/blob/master/batch.go)) — atomic unit of work over Pebble; `Type()`, `Count()`, Get/Set/Delete.
+- `KeyBuilder` (in `keys.go`) — fluent order-preserving field encoder (`AddUint64Field`, ...).
+- `Key` / `KeyEncode` (in `keys.go`) — key struct and the wire layout above.
+- `Filter` (in [filter.go](https://github.com/go-bond/bond/blob/master/filter.go)) — `Add`/`MayContain` membership test with `Load`/`Save`/`Clear` persistence.
+- `BloomFilter` (in [bloom/bloom_filter.go](https://github.com/go-bond/bond/blob/master/bloom/bloom_filter.go)) — bloom implementation of `Filter`.
+- `Serializer[T]` (in [serializer.go](https://github.com/go-bond/bond/blob/master/serializer.go)) — `Serialize`/`Deserialize`; implementations in `serializers/` (JSON, CBOR, Protobuf).
+- `cond` (in [cond/cond.go](https://github.com/go-bond/bond/blob/master/cond/cond.go)) — record predicates: `Func`, `Eq`, `Gt`, `Gte`, `Lt`, `Lte`, `And`, `Or`, `Not`.
+- `inspect` (in [inspect/inspect.go](https://github.com/go-bond/bond/blob/master/inspect/inspect.go)) — runtime introspection: `Inspect`, `NewInspect`, HTTP handler + CLI.
 
 #### Backup
 
@@ -232,7 +232,7 @@ Public entry points, package `backup`:
 - `backup.ListBackups(ctx, bucket objstore.Bucket, prefix string) ([]BackupInfo, error)`
 - `backup.FindRestoreSet(ctx, bucket objstore.Bucket, prefix string, before time.Time) ([]BackupInfo, error)`
 
-`bond.DB` also embeds a root-level `Backup` interface (bond.go:67); that is a lower-level, DB-scoped hook, distinct from and not implemented in terms of the package-`backup` API above.
+`bond.DB` also embeds a root-level `Backup` interface (in `bond.go`); that is a lower-level, DB-scoped hook, distinct from and not implemented in terms of the package-`backup` API above.
 
 ### Benchmarks:
 
@@ -299,5 +299,6 @@ today register only `CBORSerializer` (the `JSONSerializer` entry is commented ou
 Treat these numbers as historical and indicative only, not a current measurement or a guarantee for your
 workload or hardware.
 
-**How to re-run** (see `Makefile:46-50`): `make bench` runs `cd _benchmarks && go test -timeout=25m -bench=.`;
-`make bench-csv` runs `cd _benchmarks && go run ./benchmark.go --report=csv` and writes a CSV report.
+**How to re-run** (see the Makefile): both `make bench` and `make bench-csv` depend on `clean`, which runs
+`go clean -cache -testcache` first; `make bench` then runs `cd _benchmarks && go test -timeout=25m -bench=.`,
+and `make bench-csv` runs `cd _benchmarks && go run ./benchmark.go --report=csv` and writes a CSV report.
